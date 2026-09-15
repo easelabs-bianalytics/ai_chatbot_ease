@@ -1,0 +1,46 @@
+# Infraestrutura LOCAL de desenvolvimento e testes. Portas diferentes das do
+# projeto de referência (5433/6380), que roda na mesma máquina.
+services:
+  # Banco da aplicação: conversas e auditoria (ADR-0002).
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${APP_DB_NAME:-bi_chatbot}
+      POSTGRES_USER: ${APP_DB_USER:-bi_chatbot}
+      POSTGRES_PASSWORD: ${APP_DB_PASSWORD:-bi_chatbot_dev}
+    ports:
+      - "${APP_DB_PORT:-5434}:5432"
+    volumes:
+      - bi_chatbot_pgdata:/var/lib/postgresql/data
+
+  # Broker do Celery (ADR-0003).
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6381}:6379"
+    volumes:
+      - bi_chatbot_redisdata:/data
+
+  # Banco analítico SINTÉTICO: imita o RDS (PostgreSQL 16) sem nenhum dado
+  # real. Usado pelos testes do executor e pelos casos sintéticos. O schema
+  # espelhando as referências entra na Fase 3.
+  analytics_db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: analytics
+      POSTGRES_USER: analytics_owner
+      POSTGRES_PASSWORD: ${ANALYTICS_DB_OWNER_PASSWORD:-analytics_owner_dev}
+      ANALYTICS_READONLY_PASSWORD: ${ANALYTICS_READONLY_PASSWORD:-bi_readonly_dev}
+    ports:
+      - "${ANALYTICS_DB_PORT:-5435}:5432"
+    volumes:
+      - bi_chatbot_analyticsdata:/var/lib/postgresql/data
+      - ./infra/analytics_db/init:/docker-entrypoint-initdb.d:ro
+
+volumes:
+  bi_chatbot_pgdata:
+  bi_chatbot_redisdata:
+  bi_chatbot_analyticsdata:
