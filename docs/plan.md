@@ -40,14 +40,16 @@ Commit só quando pedido.
 - [x] 24 testes automatizados passando
 
 ## Fase 2 — Modelos, canal e API do chat
-**Status: 🔲**
+**Status: ✅ concluída (2026-09-15)**
 
-- [ ] Apps `conversations`, `messaging`, `ai_orchestrator` (modelos), `datasource` (modelos)
-- [ ] `Conversation`, `Message` (`client_message_id` único), `AIReply`, `AICall`, `QueryRun`, `CatalogGap`
-- [ ] `Channel` + `FakeChannel` + `WebChannel`; `services.py` de ingestão idempotente
-- [ ] API: criar conversa, enviar mensagem (`202`), polling; só conversas do próprio usuário
-- [ ] Admin com inlines e filtros
-- [ ] Testes: idempotência, isolamento entre usuários, login obrigatório
+- [x] Apps `conversations`, `messaging`, `ai_orchestrator`, `datasource`
+- [x] `Conversation`, `Message`, `AIReply`, `AICall`, `QueryRun`, `CatalogGap`
+- [x] Idempotência por `client_message_id`, única **por conversa** (e não global como na referência): identificador repetido entre usuários não cruza resposta
+- [x] `Channel` + `WebChannel` + `FakeChannel`; `services.py` com ingestão idempotente e entrega que registra falha em vez de estourar
+- [x] API: criar e listar conversas, enviar pergunta (`202`; duplicada `200`), polling com `after`; conversa de outro usuário responde `404`
+- [x] Admin: conversas, mensagens, respostas da IA com chamadas e consultas aninhadas (somente leitura) e fila de lacunas com ação de resolver
+- [x] Migrations aplicando no banco local
+- [x] 54 testes automatizados passando
 
 ## Fase 3 — Catálogo e acesso ao banco
 **Status: 🔲** (executor real ⏳ D-01)

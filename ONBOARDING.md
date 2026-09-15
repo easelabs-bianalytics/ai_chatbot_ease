@@ -6,11 +6,15 @@
 
 ## 1. Status
 
-- **Fases concluídas:** 0 (descoberta e decisões) e 1 (fundação).
+- **Fases concluídas:** 0 (decisões), 1 (fundação) e 2 (modelos, canal e API
+  do chat).
 - **Existe hoje:** projeto Django configurado, healthcheck, infraestrutura
   local (Postgres, Redis e banco analítico sintético com usuário de leitura),
-  Docker/Railway e a suíte de testes da fundação.
-- **Ainda não existe:** chat, IA, catálogo e executor de consultas (Fases 2 a 5).
+  Docker/Railway, a API do chat com idempotência e isolamento por usuário, os
+  modelos de auditoria e o Admin.
+- **Ainda não existe:** IA, catálogo e executor de consultas (Fases 3 a 5). A
+  API aceita a pergunta e a registra, mas ninguém responde ainda — o
+  enfileiramento entra na Fase 4, no ponto marcado em `messaging/views.py`.
 - **Bloqueios externos:** usuário de leitura no RDS (D-01), rede Railway → RDS
   (D-02) e chave da OpenAI (D-03). Ver `docs/open-decisions.md`.
 
@@ -47,7 +51,10 @@ bi/
 │   │   ├── settings_test.py   # suíte: sem .env, banco local, Celery eager
 │   │   ├── env.py             # leitura do ambiente + trava contra o RDS
 │   │   ├── celery.py · urls.py · views.py (health) · wsgi.py · asgi.py
-│   └── ai_orchestrator/prompts/planner_v1.md   # rascunho do prompt (Fase 5)
+│   ├── conversations/         # Conversation (thread de um usuário)
+│   ├── messaging/             # Message, channels/{base,web,fake}, services, API
+│   ├── ai_orchestrator/       # AIReply, AICall, CatalogGap + prompts/planner_v1.md
+│   └── datasource/            # QueryRun (cada tentativa de consulta)
 ├── infra/analytics_db/init/   # cria o usuário de leitura do banco sintético
 ├── tests/ conftest.py · unit/ · integration/
 ├── docs/ adr/ · plan.md · open-decisions.md · catalog-checklist.md
@@ -55,8 +62,9 @@ bi/
 └── .env.example
 ```
 
-A estrutura completa planejada (apps `conversations`, `messaging`,
-`datasource`, `catalog`, `ai_orchestrator`, `reporting`) está no `CLAUDE.md`.
+Faltam os apps `catalog` e `reporting`, e os módulos de orquestração
+(`rules`, `grounding`, `providers`, `tasks`) dentro de `ai_orchestrator`. A
+estrutura completa planejada está no `CLAUDE.md`.
 
 ## 5. Decisões que valem entender antes de mexer no código
 
@@ -74,6 +82,11 @@ A estrutura completa planejada (apps `conversations`, `messaging`,
 - **API fechada por padrão (ADR-0011).** O DRF exige login em toda view que
   não declarar o contrário. Na referência, a ausência dessa configuração
   deixou os webhooks abertos.
+- **Idempotência por conversa.** O navegador manda um `client_message_id` por
+  pergunta e a unicidade é por conversa, não global: identificador repetido
+  entre usuários diferentes não pode cruzar respostas.
+- **Conversa alheia responde 404**, e não 403, para não confirmar que ela
+  existe.
 - **SQL gerado pela IA com as referências como norte (ADR-0014)**, validado
   em três camadas (ADR-0008), e nenhum número sem consulta registrada
   (ADR-0010). Isso começa a virar código na Fase 3.
