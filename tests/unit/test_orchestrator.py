@@ -768,3 +768,112 @@ def test_com_grafico_a_consulta_guarda_o_resultado_inteiro(conversa, catalogo):
     )
 
     assert len(reply.query_runs.get().result_sample["rows"]) == 12
+
+
+# --- continuações da conversa ------------------------------------------------
+
+
+def _com_sugestoes(conversa, catalogo, sugestoes, pergunta="unidades de Extrato em agosto de 2026"):
+    provider = ScriptedAIProvider(
+        [plano()],
+        [resposta("Foram 47 unidades.", followups=tuple(sugestoes))],
+    )
+    return _responder(_pergunta(conversa, pergunta), catalogo, provider=provider,
+                      executor=FakeQueryExecutor([RESULTADO]))
+
+
+def test_sugestoes_de_continuacao_chegam_na_resposta(conversa, catalogo):
+    """A investigação raramente termina na primeira pergunta."""
+    reply = _com_sugestoes(conversa, catalogo, ["E por rede?", "Compara com julho"])
+
+    assert reply.raw_response["sugestoes"] == ["E por rede?", "Compara com julho"]
+
+
+def test_no_maximo_tres_continuacoes(conversa, catalogo):
+    reply = _com_sugestoes(conversa, catalogo, ["Uma?", "Duas?", "Três?", "Quatro?"])
+
+    assert len(reply.raw_response["sugestoes"]) == 3
+
+
+def test_descarta_continuacao_repetida_ou_longa_demais(conversa, catalogo):
+    """Frase longa quebra o botão; repetida confunde."""
+    reply = _com_sugestoes(conversa, catalogo, [
+        "E por rede?", "e por rede", " ",
+        "Quero que você me diga como ficou a evolução disso tudo mês a mês por rede e por PDV também",
+    ])
+
+    assert reply.raw_response["sugestoes"] == ["E por rede?"]
+
+
+def test_descarta_continuacao_que_repete_a_pergunta(conversa, catalogo):
+    """Sugerir o que o usuário acabou de perguntar faz parecer que a IA não
+    entendeu."""
+    reply = _com_sugestoes(conversa, catalogo, ["unidades de Extrato em agosto de 2026", "E por rede?"],
+                           pergunta="unidades de Extrato em agosto de 2026")
+
+    assert reply.raw_response["sugestoes"] == ["E por rede?"]
+
+
+def test_sem_continuacao_o_campo_nem_aparece(conversa, catalogo):
+    reply = _com_sugestoes(conversa, catalogo, [])
+
+    assert "sugestoes" not in reply.raw_response
+
+
+# --- ajuste do gráfico pela conversa -----------------------------------------
+
+
+def _conversa_com_grafico(conversa, catalogo):
+    """Deixa na conversa uma resposta com gráfico, como a tela mostraria."""
+    provider = ScriptedAIProvider(
+        [plano()],
+        [resposta("Foram 47 unidades.",
+                  chart={"tipo": "linha", "x": "sku", "series": ["unidades"], "titulo": "Unidades"})],
+    )
+    oito_skus = make_result(("sku", "unidades"),
+                            [("259434", 47.0)] + [(f"2594{n}", float(n)) for n in range(35, 42)])
+    reply = _responder(_pergunta(conversa, "unidades por SKU"), catalogo, provider=provider,
+                       executor=FakeQueryExecutor([oito_skus]))
+    assert reply.raw_response["grafico"]["tipo"] == "linha"
+    return reply
+
+
+def test_troca_o_tipo_do_grafico_sem_ia_e_sem_banco(conversa, catalogo):
+    """Os números já estão na tela: refazer a consulta e pagar duas chamadas
+    de modelo para trocar um tipo de gráfico seria desperdício."""
+    _conversa_com_grafico(conversa, catalogo)
+    provider = ScriptedAIProvider([], [])      # nenhuma chamada programada
+    executor = FakeQueryExecutor()
+
+    reply = _responder(_pergunta(conversa, "muda para barras", client_id="c-9"),
+                       catalogo, provider=provider, executor=executor)
+
+    assert reply.rule == "ajuste_de_grafico"
+    assert reply.decision == AIReply.Decision.CONVERSATION
+    assert reply.raw_response["grafico"]["tipo"] == "barras"
+    assert reply.raw_response["grafico"]["x"] == "sku"        # o resto continua
+    assert provider.plan_requests == [] and executor.executed == []
+    assert reply.calls.count() == 0
+    assert reply.cost_estimate in (None, 0)
+
+
+def test_corte_pedido_entra_na_especificacao(conversa, catalogo):
+    _conversa_com_grafico(conversa, catalogo)
+
+    reply = _responder(_pergunta(conversa, "só os 5 primeiros", client_id="c-9"), catalogo,
+                       provider=ScriptedAIProvider([], []), executor=FakeQueryExecutor())
+
+    assert reply.raw_response["grafico"]["limite"] == 5
+    assert "tabela acima continua" in reply.reply_text
+
+
+def test_sem_grafico_na_conversa_o_pedido_segue_para_a_ia(conversa, catalogo):
+    """"Muda para barras" numa conversa sem gráfico não é ajuste: é pergunta,
+    e quem decide o que fazer com ela é o modelo."""
+    provider = ScriptedAIProvider([plano(intent=Plan.Intent.CLARIFY, sql="",
+                                         clarification_question="Barras de quê?")])
+
+    reply = _responder(_pergunta(conversa, "muda para barras"), catalogo, provider=provider)
+
+    assert reply.decision == AIReply.Decision.CLARIFY
+    assert reply.rule == ""

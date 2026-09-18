@@ -1,5 +1,6 @@
 """API do chat (ADR-0007). Tudo exige login (ADR-0011)."""
 
+from django.db.models import Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils.text import slugify
@@ -83,6 +84,25 @@ def _fonte(resposta, mostrar_custo: bool):
             # O gráfico é desenhado no navegador com os números da consulta.
             fonte["grafico"] = grafico
             fonte["dados"] = {"columns": amostra.get("columns", []), "rows": amostra["rows"]}
+    origem = (reply.raw_response or {}).get("grafico_de")
+    if origem and not fonte.get("grafico"):
+        # Ajuste de gráfico (regra `ajuste_de_grafico`): a resposta não rodou
+        # consulta nenhuma; os números vêm da que desenhou o gráfico original.
+        anterior = Message.objects.filter(pk=origem).select_related("in_reply_to__ai_reply").first()
+        anterior_reply = getattr(getattr(anterior, "in_reply_to", None), "ai_reply", None)
+        consulta = (
+            anterior_reply.query_runs.filter(status=QueryRun.Status.SUCCESS).order_by("-attempt").first()
+            if anterior_reply
+            else None
+        )
+        amostra = (consulta.result_sample or {}) if consulta else {}
+        if amostra.get("rows"):
+            fonte["grafico"] = (reply.raw_response or {}).get("grafico")
+            fonte["dados"] = {"columns": amostra.get("columns", []), "rows": amostra["rows"]}
+
+    sugestoes = (reply.raw_response or {}).get("sugestoes")
+    if sugestoes:
+        fonte["sugestoes"] = sugestoes
     if mostrar_custo:
         fonte["custo_usd"] = float(reply.cost_estimate or 0)
         fonte["tokens"] = (reply.tokens_input or 0) + (reply.tokens_output or 0)
@@ -106,8 +126,21 @@ def _message_json(message, mostrar_custo: bool = False):
 
 class ConversationListCreateView(APIView):
     def get(self, request):
+        """Lista as conversas do usuário, ou só as que casam com `q`.
+
+        A busca olha o título e o texto das mensagens: quem procura "ruptura"
+        quase nunca lembra do título, lembra do que perguntou. O filtro é do
+        próprio usuário — conversa de outro nunca entra no resultado."""
         conversations = Conversation.objects.visiveis().filter(user=request.user)
-        return Response({"conversations": [_conversation_json(c) for c in conversations]})
+        busca = str(request.query_params.get("q") or "").strip()[:100]
+        if busca:
+            conversations = conversations.filter(
+                Q(title__icontains=busca) | Q(messages__content__icontains=busca)
+            ).distinct()
+        return Response({
+            "conversations": [_conversation_json(c) for c in conversations],
+            "busca": busca,
+        })
 
     def post(self, request):
         title = str(request.data.get("title") or "").strip()[:200]

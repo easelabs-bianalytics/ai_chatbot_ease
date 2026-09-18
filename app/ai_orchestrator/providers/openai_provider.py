@@ -93,6 +93,7 @@ class RespostaEstruturada(BaseModel):
     resolution: str = Field(default="answered", description="answered ou partial")
     caveats: list[str] = Field(default_factory=list, description="ressalvas feitas no texto")
     grafico: GraficoEstruturado = Field(default_factory=GraficoEstruturado)
+    sugestoes: list[str] = Field(default_factory=list, description="2 a 3 continuações curtas")
 
 
 def _historico(mensagens) -> str:
@@ -335,5 +336,6 @@ class OpenAIProvider(AIProvider):
             resolution=(conteudo.resolution or "answered").strip(),
             caveats=tuple(conteudo.caveats or ()),
             chart=grafico.model_dump() if grafico is not None else {},
+            followups=tuple(getattr(conteudo, "sugestoes", ()) or ()),
             usage=usage,
         )

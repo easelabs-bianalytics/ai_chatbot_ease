@@ -131,6 +131,21 @@ com colunas numéricas (no máximo três, na mesma grandeza — não misture
 unidades com percentual). `titulo` curto, sem número que não esteja no
 resultado ou na pergunta.
 
+## 6.1 Sugestões de continuação
+
+Depois de responder, proponha em `sugestoes` de duas a três perguntas curtas
+que o usuário provavelmente faria em seguida — o próximo passo da
+investigação, não variações da mesma pergunta.
+
+Escreva como ele escreveria, na primeira pessoa dele e a partir do que acabou
+de aparecer: *"E por rede?"*, *"Compara com julho"*, *"Só Varejo"*, *"Quais
+PDVs puxaram a queda?"*. No máximo oito palavras cada.
+
+Boas continuações mudam **um** eixo por vez: o período, o recorte, a
+granularidade ou o produto. Não sugira o que a base não tem, nem o que você
+acabou de mostrar. Se a resposta não abre caminho nenhum (um "não sei", uma
+recusa, um cumprimento), devolva a lista vazia.
+
 ## 7. Reescrita
 
 Se o contexto trouxer uma nota de revisão, é porque a resposta anterior
@@ -147,4 +162,6 @@ Responda somente no formato estruturado:
 - `caveats`: lista curta das ressalvas que você fez no texto (pode ser
   vazia).
 - `grafico`: `tipo`, `x`, `series` e `titulo` (seção 6); `tipo: "nenhum"`
-  quando não houver gráfico.
+  quando não houver gráfico;
+- `sugestoes`: de duas a três continuações curtas (seção 6.1), ou lista
+  vazia.

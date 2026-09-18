@@ -498,6 +498,45 @@ body.bg-gradiente {
   animation: fadeIn 0.35s ease-out;
 }
 .sidebar .section-label { padding: 0 6px; }
+
+/* Busca: com trinta conversas no mesmo dia, o título truncado não encontra
+   nada — quem procura lembra do que perguntou, não de como a conversa ficou
+   nomeada. Por isso a busca também olha o texto das mensagens. */
+.busca { position: relative; display: flex; align-items: center; }
+.busca-lupa {
+  position: absolute; left: 10px; width: 15px; height: 15px;
+  color: var(--gray-400); pointer-events: none;
+}
+.busca-campo {
+  width: 100%;
+  padding: 8px 30px 8px 32px;
+  font-family: var(--font-family); font-size: 13px;
+  color: var(--gray-800);
+  background: var(--bg-card);
+  border: 1px solid var(--border-light); border-radius: var(--radius-md);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.busca-campo::placeholder { color: var(--gray-400); }
+.busca-campo:focus {
+  outline: none;
+  border-color: var(--primary-300);
+  box-shadow: 0 0 0 3px var(--primary-50);
+}
+.busca-campo::-webkit-search-cancel-button { display: none; }
+.busca-limpar {
+  position: absolute; right: 6px;
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px;
+  border: none; background: none; cursor: pointer;
+  color: var(--gray-400); border-radius: var(--radius-sm);
+}
+.busca-limpar:hover { background: var(--gray-100); color: var(--gray-700); }
+.busca-limpar svg { width: 13px; height: 13px; }
+.chat-shell.recolhida .busca { display: none; }
+.busca-resumo {
+  font-size: 11.5px; color: var(--gray-500);
+  padding: 2px 8px 6px;
+}
 .conversa-lista {
   flex: 1 1 auto;
   display: flex; flex-direction: column; gap: 4px;
@@ -779,23 +818,17 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
-/* Ao passar o mouse, o Jarvis dá um pulinho com esticada e achatada — o
-   movimento clássico que faz um boneco parecer ter peso. É diferente do
-   aceno da marca e do flutuar da tela inicial de propósito: o mesmo gesto
-   em três lugares vira tique. */
-.ia-avatar .jarvis { transform-box: view-box; transform-origin: 50% 100%; }
-.ia-avatar:hover .jarvis { animation: jarvisPulo 0.6s cubic-bezier(0.3, 1.4, 0.5, 1); }
-.ia-avatar:hover .j-olho { animation: jarvisArregala 0.6s ease-out; }
-@keyframes jarvisPulo {
-  0%   { transform: translateY(0) scale(1, 1); }
-  22%  { transform: translateY(-4px) scale(0.94, 1.08); }
-  52%  { transform: translateY(1px) scale(1.08, 0.92); }
-  78%  { transform: translateY(0) scale(0.98, 1.02); }
-  100% { transform: translateY(0) scale(1, 1); }
-}
-@keyframes jarvisArregala {
-  0%, 100% { transform: scale(1); }
-  35%      { transform: scale(1.35); }
+/* Ao passar o mouse, ele vira o olhar para quem apontou: o olho sai da
+   ponta da viseira, vai ao centro, cresce um pouco, segura e volta. É o
+   único gesto do olho que não é piscada nem varredura — assim cada estado
+   continua com um movimento só dele. */
+.ia-avatar:hover .j-olho { animation: jarvisOlhaPraVoce 1s ease-out; }
+@keyframes jarvisOlhaPraVoce {
+  0%        { transform: translateX(0) scale(1); }
+  22%       { transform: translateX(-8px) scale(1.2); }
+  30%       { transform: translateX(-8px) scale(1.2, 0.15); }   /* uma piscada ao chegar */
+  38%, 72%  { transform: translateX(-8px) scale(1.2); }
+  100%      { transform: translateX(0) scale(1); }
 }
 
 .cartao-ia {
@@ -871,6 +904,25 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
 .md tbody tr:nth-child(even) > td { background: var(--gray-50); }
 .md tbody tr:last-child td { border-bottom: none; }
 @media (hover: hover) { .md tbody tr:hover > td { background: var(--primary-50); } }
+
+/* ── Continuações da conversa ── */
+.continuacoes {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin-top: 8px; padding-left: 2px;
+  animation: fadeInUp 0.4s ease-out both;
+}
+.continuacao {
+  font-family: var(--font-family); font-size: 12.5px; font-weight: 500;
+  color: var(--primary-700);
+  background: var(--bg-card);
+  border: 1px solid var(--border-default); border-radius: var(--radius-full);
+  padding: 6px 13px; cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+}
+.continuacao:hover {
+  background: var(--primary-50); border-color: var(--primary-200);
+  transform: translateY(-1px);
+}
 
 /* ── Gráfico da resposta ── */
 /* Desenhado no navegador com os números da consulta (ADR-0020). Altura fixa

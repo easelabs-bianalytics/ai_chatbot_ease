@@ -113,6 +113,9 @@ class Answer:
     # Sugestão de gráfico (ADR-0020): só o tipo e quais colunas usar. Quem
     # desenha é o navegador, com os números da consulta — nunca a IA.
     chart: dict = field(default_factory=dict)
+    # Continuações prováveis da investigação, para a tela oferecer em um
+    # clique. Texto de pergunta, não de resposta: não passa pela ancoragem.
+    followups: tuple = ()
     usage: AIUsage = field(default_factory=AIUsage)
 
 

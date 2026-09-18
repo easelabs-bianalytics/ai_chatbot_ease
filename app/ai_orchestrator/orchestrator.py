@@ -18,7 +18,7 @@ import os
 import re
 from dataclasses import dataclass, field
 
-from ai_orchestrator import budget, canned
+from ai_orchestrator import ajuste_grafico, budget, canned
 from ai_orchestrator.context import PEDIDO_DE_SECAO
 from ai_orchestrator.grounding import check_grounding
 from ai_orchestrator.models import AICall, AIReply, CatalogGap
@@ -282,6 +282,30 @@ def _verificar_o_vazio(message, provider, executor, catalog, auditoria, historic
     return (resultado if resultado.row_count else None), plano
 
 
+MAX_SUGESTOES = 3
+MAX_LETRAS_SUGESTAO = 70
+
+
+def _sugestoes(brutas, message) -> list:
+    """Limpa as continuações que a redação propôs.
+
+    Elas viram botão: frase longa quebra o layout, repetida confunde, e a
+    que repete a pergunta que acabou de ser feita faz o usuário achar que o
+    assistente não entendeu."""
+    pergunta = " ".join(message.content.lower().split())
+    limpas, vistas = [], set()
+    for bruta in brutas or ():
+        texto = " ".join(str(bruta or "").split())
+        chave = texto.lower().rstrip("?.! ")
+        if not texto or len(texto) > MAX_LETRAS_SUGESTAO or chave in vistas or chave in pergunta:
+            continue
+        vistas.add(chave)
+        limpas.append(texto)
+        if len(limpas) == MAX_SUGESTOES:
+            break
+    return limpas
+
+
 TIPOS_DE_GRAFICO = frozenset({"linha", "barras", "barras_horizontais"})
 MAX_SERIES = 3
 
@@ -346,6 +370,9 @@ def _redigir(plano, resultado, message, provider, catalog, auditoria, historico,
     auditoria.chamada(AICall.Stage.ANSWER, resposta.usage)
 
     extras = {"excel": plano.excel}
+    sugestoes = _sugestoes(resposta.followups, message)
+    if sugestoes:
+        extras["sugestoes"] = sugestoes
     # Verificação não vira gráfico: o resultado é cadastral, e desenhá-lo
     # daria ao diagnóstico a aparência da resposta que não existe.
     grafico = None if (plano.excel or verificacao) else _grafico(resposta.chart, resultado, message, plano)
@@ -464,12 +491,66 @@ def _mensagem_sem_dado(plano, message, padrao: str) -> str:
     return texto
 
 
+def _grafico_a_ajustar(message):
+    """A última resposta desta conversa que tem gráfico na tela.
+
+    Volta `(resposta, grafico, linhas)`. Sem gráfico à vista não há o que
+    ajustar, e a mensagem segue o caminho normal."""
+    anteriores = (
+        Message.objects.filter(
+            conversation_id=message.conversation_id,
+            direction=Message.Direction.OUTBOUND,
+            id__lt=message.pk,
+        )
+        .select_related("in_reply_to__ai_reply")
+        .order_by("-id")[:5]
+    )
+    for anterior in anteriores:
+        reply = getattr(getattr(anterior, "in_reply_to", None), "ai_reply", None)
+        if reply is None:
+            continue
+        grafico = (reply.raw_response or {}).get("grafico")
+        if not grafico:
+            continue
+        consulta = reply.query_runs.filter(status=QueryRun.Status.SUCCESS).order_by("-attempt").first()
+        linhas = (consulta.result_sample or {}).get("rows") if consulta else None
+        if linhas:
+            return anterior, grafico, len(linhas)
+    return None, None, 0
+
+
+def _ajustar_grafico(message) -> _Decisao | None:
+    """Troca o desenho sem consultar o banco nem chamar o modelo.
+
+    Os números já estão na tela: refazer a consulta para trocar um tipo de
+    gráfico gastaria duas chamadas de modelo e ainda poderia voltar um número
+    diferente do que a pessoa está olhando."""
+    ajuste = ajuste_grafico.ler_ajuste(message.content)
+    if not ajuste:
+        return None
+    origem, grafico, total = _grafico_a_ajustar(message)
+    if origem is None:
+        return None
+
+    novo = ajuste_grafico.aplicar(grafico, ajuste)
+    return _Decisao(
+        decision=AIReply.Decision.CONVERSATION,
+        reply=ajuste_grafico.descrever(ajuste, total),
+        rule="ajuste_de_grafico",
+        raw={"grafico": novo, "grafico_de": origem.pk},
+    )
+
+
 def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
     regra = apply_rules(message.content, catalog)
     if regra is not None:
         return _Decisao(
             decision=regra.decision, reply=regra.reply, rule=regra.rule
         )
+
+    ajustado = _ajustar_grafico(message)
+    if ajustado is not None:
+        return ajustado
 
     if budget.excedido():
         # Antes de qualquer chamada paga: o teto existe para o custo não

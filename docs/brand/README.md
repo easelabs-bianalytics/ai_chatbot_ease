@@ -46,10 +46,10 @@ cintura, não do rosto: no meio do corpo, o arco da frente cortava a viseira.
   as duas animações disputariam o mesmo `transform`. Na conversa ele não
   pisca: ao lado de uma tabela, um olho piscando a cada cinco segundos vira
   mosquito na tela.
-- Ao passar o mouse no avatar de uma resposta: um pulinho com esticada e
-  achatada (`jarvisPulo`) e o olho arregalando. É deliberadamente diferente
-  do aceno da marca e do flutuar da tela inicial — o mesmo gesto repetido em
-  três lugares vira tique.
+- Ao passar o mouse no avatar de uma resposta (`jarvisOlhaPraVoce`): o olho
+  sai da ponta da viseira, vai ao centro, cresce, pisca uma vez e volta — ele
+  vira o olhar para quem apontou. É o único gesto do olho que não é piscada
+  nem varredura, para cada estado continuar com um movimento só dele.
 - Sem classe — parado. É assim que ele fica no avatar de cada resposta, para
   não ter vinte mascotes se mexendo na mesma tela.
 

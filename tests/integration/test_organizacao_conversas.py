@@ -198,3 +198,54 @@ def test_organizar_nao_muda_a_data_da_conversa(cliente, ana):
 
     conversa.refresh_from_db()
     assert conversa.updated_at.isoformat().startswith("2026-01-10")
+
+
+# --- busca no histórico ------------------------------------------------------
+
+
+def test_busca_acha_pelo_titulo_e_pelo_texto_da_pergunta(cliente, ana):
+    """Quem procura "ruptura" lembra do que perguntou, não de como a conversa
+    ficou nomeada."""
+    pelo_titulo = Conversation.objects.create(user=ana, title="Ruptura nos CDs")
+    pela_mensagem = Conversation.objects.create(user=ana, title="Conversa de terça")
+    Message.objects.create(conversation=pela_mensagem, direction=Message.Direction.INBOUND,
+                           content="quais CDs estão em ruptura hoje?", client_message_id="c-1")
+    Conversation.objects.create(user=ana, title="Sell out de agosto")
+
+    achadas = cliente.get("/api/conversations/?q=ruptura").json()["conversations"]
+
+    assert {c["id"] for c in achadas} == {pelo_titulo.pk, pela_mensagem.pk}
+
+
+def test_busca_nao_repete_a_conversa_que_casa_em_varias_mensagens(cliente, ana):
+    conversa = Conversation.objects.create(user=ana, title="Estoque")
+    for n in range(3):
+        Message.objects.create(conversation=conversa, direction=Message.Direction.INBOUND,
+                               content="e a ruptura?", client_message_id=f"c-{n}")
+
+    achadas = cliente.get("/api/conversations/?q=ruptura").json()["conversations"]
+
+    assert len(achadas) == 1
+
+
+def test_busca_nao_alcanca_conversa_de_outro_usuario(cliente, ana, bruno):
+    Conversation.objects.create(user=bruno, title="Ruptura do Bruno")
+    minha = Conversation.objects.create(user=ana, title="Ruptura minha")
+
+    achadas = cliente.get("/api/conversations/?q=ruptura").json()["conversations"]
+
+    assert [c["id"] for c in achadas] == [minha.pk]
+
+
+def test_busca_vazia_devolve_tudo(cliente, ana):
+    Conversation.objects.create(user=ana, title="Uma")
+    Conversation.objects.create(user=ana, title="Outra")
+
+    assert len(cliente.get("/api/conversations/?q=   ").json()["conversations"]) == 2
+
+
+def test_conversa_excluida_nao_volta_na_busca(cliente, ana):
+    conversa = Conversation.objects.create(user=ana, title="Ruptura apagada")
+    cliente.delete(f"/api/conversations/{conversa.pk}/")
+
+    assert cliente.get("/api/conversations/?q=ruptura").json()["conversations"] == []

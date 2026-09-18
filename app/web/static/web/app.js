@@ -33,6 +33,8 @@
     falhasSeguidas: 0,
     tituloConversa: '',
     subtituloConversa: '',
+    busca: '',
+    buscaTimer: null,
   };
 
   // Perguntas de exemplo — variações das consultas de referência do time de BI.
@@ -352,6 +354,18 @@
         </div>`;
     }).join('');
 
+    if (state.busca) {
+      const achadas = state.conversas;
+      lista.innerHTML = `
+        <div class="lista-secao">
+          <div class="busca-resumo">${achadas.length
+            ? `${achadas.length} ${achadas.length === 1 ? 'conversa encontrada' : 'conversas encontradas'}`
+            : 'Nada encontrado. Tente outra palavra.'}</div>
+          ${achadas.map((c) => itemConversa(c, n++)).join('')}
+        </div>`;
+      return;
+    }
+
     lista.innerHTML = `
       <div class="lista-secao">
         <div class="secao-cabeca">
@@ -377,8 +391,9 @@
 
   const carregarConversas = async () => {
     try {
+      const filtro = state.busca ? `?q=${encodeURIComponent(state.busca)}` : '';
       const [{ conversations }, { projects }] = await Promise.all([
-        api('/api/conversations/'),
+        api(`/api/conversations/${filtro}`),
         api('/api/projects/'),
       ]);
       state.conversas = conversations;
@@ -807,9 +822,22 @@
           <div class="msg-erro-acao"><button class="btn btn-ghost" type="button" data-refazer="${m.in_reply_to}">Perguntar de novo</button></div>` : ''}
         ${blocoGrafico(fonte, m.id)}
         ${blocoFonte(fonte, m.id)}
-      </article>`;
+      </article>
+      ${blocoContinuacoes(fonte)}`;
     if (fonte.grafico && fonte.dados) GRAFICOS.set(String(m.id), { grafico: fonte.grafico, dados: fonte.dados });
     return el;
+  };
+
+  // Continuações: a investigação raramente termina na primeira pergunta, e
+  // digitar "e por rede?" de novo é atrito à toa.
+  const blocoContinuacoes = (fonte) => {
+    const itens = fonte.sugestoes || [];
+    if (!itens.length) return '';
+    return `
+      <div class="continuacoes">
+        ${itens.map((s) => `
+          <button class="continuacao" type="button" data-texto="${esc(s)}">${esc(s)}</button>`).join('')}
+      </div>`;
   };
 
   // ---------------------------------------------------------- gráfico
@@ -889,7 +917,9 @@
     // Trinta barras num cartão de conversa viram fiapos. Corta mantendo a
     // ordem que o SQL pediu — as primeiras são as que importam — e avisa.
     const total = linhas.length;
-    if (!linha && total > MAX_CATEGORIAS) linhas = linhas.slice(0, MAX_CATEGORIAS);
+    // O corte pedido na conversa ("só os cinco primeiros") vence o automático.
+    const corte = grafico.limite || (linha ? 0 : MAX_CATEGORIAS);
+    if (corte && total > corte) linhas = linhas.slice(0, corte);
     const deFora = total - linhas.length;
 
     const area = canvas.parentElement;
@@ -1112,7 +1142,7 @@
       return;
     }
 
-    const sugestao = ev.target.closest('.sugestao');
+    const sugestao = ev.target.closest('.sugestao, .continuacao');
     if (sugestao) enviar(sugestao.dataset.texto);
   });
 
@@ -1399,6 +1429,26 @@
   $('#btnNovaConversa').addEventListener('click', irParaNova);
   $('#btnNovaConversaMenu').addEventListener('click', irParaNova);
   $('#btnLogoHome').addEventListener('click', irParaNova);
+
+  // ---------------------------------------------------------- busca
+  // Espera a pessoa parar de digitar: uma consulta por tecla faria a lista
+  // piscar e o servidor trabalhar à toa.
+  const buscar = (termo) => {
+    state.busca = termo.trim();
+    $('#btnLimparBusca').hidden = !state.busca;
+    clearTimeout(state.buscaTimer);
+    state.buscaTimer = setTimeout(carregarConversas, 250);
+  };
+
+  $('#campoBusca').addEventListener('input', (ev) => buscar(ev.target.value));
+  $('#campoBusca').addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') { ev.target.value = ''; buscar(''); }
+  });
+  $('#btnLimparBusca').addEventListener('click', () => {
+    $('#campoBusca').value = '';
+    buscar('');
+    $('#campoBusca').focus();
+  });
 
   // ---------------------------------------------------------- tema
   const TEMA = 'jarvis:tema';
