@@ -157,7 +157,7 @@ Commit só quando pedido.
 - [x] 370 testes automatizados passando
 
 ## Fase 7 — Validação
-**Status: 🟡 suíte pronta; falta rodar com a IA real** (depende da Fase 5)
+**Status: ✅**
 
 - [x] `app/knowledge/casos_validacao.yaml`: 127 casos derivados do documento de referência — as 96 consultas cobertas, cada uma com período, recorte, produto, rede ou pessoa trocados em relação ao exemplo; mais esclarecimentos, seguimento de conversa, fora de escopo, dado indisponível e segurança
 - [x] Gabarito montado a partir da própria consulta do documento (parâmetros + trocas de texto): se o documento mudar, o caso quebra alto
@@ -165,13 +165,43 @@ Commit só quando pedido.
 - [x] Comparação por coluna com o gabarito (aceita outro nome, outra ordem e coluna a mais; não aceita número diferente nem resultado cortado)
 - [x] `run_synthetic_cases` pelo pipeline completo, com status aprovado / reprovado / revisão / bloqueador e `docs/validation-report.md` com modelo, prompt, hash do catálogo e dos casos
 - [x] `run_synthetic_cases --so-gabarito` contra o RDS: todos os gabaritos rodam e devolvem linhas (2026-09-16)
-- [ ] Rodar com a IA real e revisar os casos de revisão manual
-- [x] 210 testes automatizados passando
+- [x] **Rodado com a IA real** em 2026-09-17: 20 casos, 15 aprovados, 4
+      reprovados, 1 para revisão, nenhum bloqueador, US$ 0,59 e 346 mil
+      tokens (`docs/validation-report.md`)
+- [x] Os quatro reprovados foram revisados um a um e nenhum era erro da IA:
+      a pergunta do A03 pedia outro recorte, a comparação do B01 exigia
+      igualdade de colunas que o gabarito não tinha, e o gabarito do C34
+      ignorava a segunda raiz de CNPJ da rede. Os casos e o documento foram
+      corrigidos; o de revisão (C20) tinha duas respostas certas
+- [x] Decidido em 2026-09-18: **a suíte inteira não roda de rotina.** As 127
+      perguntas com a IA real custam por volta de US$ 5 e repetem o que os
+      testes automatizados já cobrem de graça. Ela fica para marcos —
+      troca de modelo, reescrita do documento de referência, mudança no
+      pipeline —, e no dia a dia usa-se o recorte: `--caso`, `--grupo` ou
+      `--so-gabarito`, que não chama a IA
+- [x] 394 testes automatizados passando
 
 ## Fase 8 — Relatório
-**Status: 🔲**
+**Status: ✅**
 
-- [ ] `reporting/services.py` + `bi_report` (terminal e `--csv`)
+- [x] `reporting/services.py`: agrega a auditoria que já existe (FR-15) —
+      nenhuma tabela nova e nenhum contador incrementado na hora da resposta,
+      que divergiria do registro na primeira falha de gravação
+- [x] `bi_report` no terminal, com `--dias`, `--desde/--ate` e `--csv`
+      (uma linha por dia, para abrir na planilha). Não chama a IA nem toca no
+      banco de negócio: roda a qualquer hora, sem custo
+- [x] Cobre o FR-16: uso (perguntas, pessoas, conversas, planilhas), como
+      cada pergunta terminou, consultas corrigidas e com erro, respostas
+      reescritas por ancoragem, tempo até a resposta (mediana, p95 e a pior)
+      e custo — total, por pergunta e projetado para 30 dias
+- [x] Lacunas do catálogo em aberto, com a pergunta e o motivo: é a lista de
+      trabalho do time de BI que sai pronta do relatório
+- [x] 13 testes fixam a aritmética: o que entra na janela, o que fica de
+      fora, como o p95 é contado e o agrupamento diário no fuso local
+- [ ] **Primeira leitura (2026-09-18) acusou p95 de 28,2 s, acima da meta de
+      20 s do SPEC** — mediana de 11,9 s e uma pergunta de 102 s. A suspeita
+      é a pergunta que cruza áreas, que leva duas seções do documento e uma
+      segunda chamada ao modelo. Investigar antes do deploy
 
 ## Fase 9 — Deploy
 **Status: 🔲** (⏳ D-02) · acesso ao console da AWS recebido em 2026-09-17 ·
@@ -319,6 +349,7 @@ colunas são `id`, `usuario`, `nome`, `email`, `role`).
 - [ ] `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS` e `SECURE_PROXY_SSL_HEADER` (já existem em `settings.py`, faltam os valores)
 - [ ] Segredos no Secrets Manager: chave da OpenAI, senha do `bi_chatbot_ro`, senha do `jarvis_app`, `SECRET_KEY`
 - [ ] Healthcheck do ALB em `/api/health/` sem redirect forçado para HTTPS (o `SECURE_SSL_REDIRECT` fica desligado por isso)
+- [ ] Investigar o p95 de 28,2 s medido em 2026-09-18 (`bi_report`), acima da meta de 20 s do SPEC: ver quanto é a chamada ao modelo e quanto é o banco antes de culpar o palpite
 - [ ] Conexão com o RDS validada de dentro da VPC com o usuário de leitura
 
 ### Terraform
