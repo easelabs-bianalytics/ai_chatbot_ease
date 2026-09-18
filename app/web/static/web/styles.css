@@ -49,8 +49,8 @@
   --shadow-xl: 0 20px 25px rgba(15,17,25,0.08), 0 8px 10px rgba(15,17,25,0.04);
 
   --topbar-h: 57px;
-  /* largura de leitura da conversa */
-  --coluna: 860px;
+  /* largura de leitura da conversa e o respiro lateral da área do chat */
+  --coluna: 860px; --pad-chat: 28px;
   --sidebar-w: 300px;
 
   --transition-fast: 150ms ease;
@@ -562,16 +562,30 @@ body.bg-gradiente {
 }
 /* A conversa vive numa coluna com largura de leitura, centralizada, em vez
    de esticar até a borda da tela. */
-.mensagens, .composer, .composer-dica { width: 100%; max-width: var(--coluna); margin-left: auto; margin-right: auto; }
+.composer, .composer-dica { width: 100%; max-width: var(--coluna); margin-left: auto; margin-right: auto; }
 
+/* A barra de rolagem mora na borda da janela, não na beirada da coluna de
+   leitura: por isso quem rola é a área inteira, e a largura de leitura fica
+   nas mensagens de dentro. As margens negativas desfazem o respiro lateral
+   do `.chat-main` só aqui, para o conteúdo continuar alinhado com o campo
+   de pergunta. */
 .mensagens {
   flex: 1 1 auto; min-height: 0;
-  overflow-y: auto;
+  overflow-y: auto; overflow-x: hidden;
   display: flex; flex-direction: column; gap: 18px;
-  padding: 6px 4px 12px;
+  padding: 6px var(--pad-chat) 12px;
+  margin: 0 calc(var(--pad-chat) * -1);
   scroll-behavior: smooth;
+  scrollbar-gutter: stable;
 }
+.mensagens > * { width: 100%; max-width: var(--coluna); margin-left: auto; margin-right: auto; }
 .mensagens > :first-child { margin-top: auto; }
+
+/* Fina e discreta, mas visível: com `scrollbar-width` definido o Chromium
+   ignora as regras `::-webkit-scrollbar`, então o desenho fica só nas
+   propriedades padrão — que o Firefox também entende. */
+.mensagens { scrollbar-width: thin; scrollbar-color: var(--gray-400) transparent; }
+.mensagens:hover { scrollbar-color: var(--gray-500) transparent; }
 /* conversa vazia: as sugestões ficam no centro, não coladas no campo */
 .mensagens > .boas-vindas { margin-bottom: auto; }
 
@@ -1118,6 +1132,7 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
     animation: fadeIn 0.2s ease-out;
   }
   .chat-main { padding: 10px 14px 10px; }
+  :root { --pad-chat: 14px; }
   .boas-vindas h1 { font-size: 25px; }
   .bolha-usuario { max-width: 88%; }
   .cartao-ia { max-width: 100%; }
