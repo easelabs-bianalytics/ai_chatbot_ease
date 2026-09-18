@@ -3,6 +3,7 @@
 import pytest
 from rest_framework.test import APIClient
 
+from ai_orchestrator.models import AIReply
 from conversations.models import Conversation
 from messaging.models import Message
 
@@ -58,8 +59,7 @@ def test_pergunta_e_aceita_e_fica_registrada(cliente):
 
     assert resposta.status_code == 202
     assert resposta.json()["created"] is True
-    mensagem = Message.objects.get()
-    assert mensagem.direction == Message.Direction.INBOUND
+    mensagem = Message.objects.get(direction=Message.Direction.INBOUND)
     assert mensagem.content == "unidades de Extrato em 2026"
     assert Conversation.objects.get(pk=conversa_id).title == "unidades de Extrato em 2026"
 
@@ -77,7 +77,9 @@ def test_pergunta_reenviada_nao_gera_segundo_processamento(cliente):
     assert segunda.status_code == 200
     assert segunda.json()["created"] is False
     assert segunda.json()["message_id"] == primeira.json()["message_id"]
-    assert Message.objects.count() == 1
+    assert Message.objects.filter(direction=Message.Direction.INBOUND).count() == 1
+    # E, principalmente, nenhuma segunda resposta foi produzida.
+    assert AIReply.objects.count() == 1
 
 
 @pytest.mark.parametrize(
@@ -117,9 +119,10 @@ def test_polling_traz_apenas_as_mensagens_novas(cliente):
     primeira = cliente.post(url, _pergunta(), format="json").json()["message_id"]
     cliente.post(url, _pergunta(client_message_id="c-2", text="e em agosto?"), format="json")
 
-    novas = cliente.get(f"{url}?after={primeira}").json()["messages"]
+    novas = [m["text"] for m in cliente.get(f"{url}?after={primeira}").json()["messages"]]
 
-    assert [m["text"] for m in novas] == ["e em agosto?"]
+    assert "e em agosto?" in novas
+    assert "unidades de Extrato em 2026" not in novas
 
 
 def test_after_invalido_e_recusado(cliente):
@@ -128,3 +131,18 @@ def test_after_invalido_e_recusado(cliente):
     resposta = cliente.get(f"/api/conversations/{conversa_id}/messages/?after=abc")
 
     assert resposta.status_code == 400
+
+
+def test_pergunta_enviada_recebe_resposta_no_polling(cliente):
+    """Caminho completo com a fila em modo eager: a API aceita, o orquestrador
+    responde e a resposta aparece para o navegador na próxima busca."""
+    conversa_id = _nova_conversa(cliente)
+    url = f"/api/conversations/{conversa_id}/messages/"
+
+    envio = cliente.post(url, _pergunta(text="o que você sabe responder?"), format="json")
+
+    assert envio.status_code == 202
+    mensagens = cliente.get(url).json()["messages"]
+    assert [m["direction"] for m in mensagens] == ["in", "out"]
+    assert mensagens[1]["text"]
+    assert Message.objects.get(pk=envio.json()["message_id"]).ai_reply

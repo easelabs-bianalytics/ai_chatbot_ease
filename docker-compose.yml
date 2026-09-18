@@ -35,7 +35,10 @@ services:
       POSTGRES_PASSWORD: ${ANALYTICS_DB_OWNER_PASSWORD:-analytics_owner_dev}
       ANALYTICS_READONLY_PASSWORD: ${ANALYTICS_READONLY_PASSWORD:-bi_readonly_dev}
     ports:
-      - "${ANALYTICS_DB_PORT:-5435}:5432"
+      # Variável própria, e não ANALYTICS_DB_PORT: essa o `.env` usa para o
+      # túnel do RDS (15432), e o compose lê o `.env` sozinho — o banco
+      # sintético subia na porta do banco de verdade e disputava com o túnel.
+      - "${ANALYTICS_DB_LOCAL_PORT:-5435}:5432"
     volumes:
       - bi_chatbot_analyticsdata:/var/lib/postgresql/data
       - ./infra/analytics_db/init:/docker-entrypoint-initdb.d:ro

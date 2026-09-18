@@ -36,8 +36,9 @@ humanização anti-robô ou atraso de resposta.
 ## Stack
 
 Django + DRF, PostgreSQL (banco da aplicação), Celery + Redis, uv (nunca
-pip/requirements.txt), Docker, deploy no Railway, OpenAI GPT-4o com saída
-estruturada (JSON schema). Banco de negócio: RDS PostgreSQL, acessado só
+pip/requirements.txt), Docker, deploy na AWS ECS (ADR-0012 a substituir),
+OpenAI GPT-5.6 Terra para planejar e Luna para redigir, com saída
+estruturada (JSON schema) (ADR-0016). Banco de negócio: RDS PostgreSQL, acessado só
 com usuário de leitura.
 
 ## Estrutura aprovada
@@ -54,11 +55,13 @@ bi/
 │   ├── messaging/         # Message (idempotente), channels/{base,fake,web}, services, API
 │   ├── catalog/           # loader e validação do catálogo, comando catalog_check
 │   ├── knowledge/catalog.yaml   # schemas/tabelas permitidos, colunas bloqueadas, dicionário
+│   ├── knowledge/casos_validacao.yaml  # casos da Fase 7, derivados das referências
 │   ├── datasource/        # executors/{base,fake,postgres_readonly}, sql_guard, QueryRun
 │   ├── ai_orchestrator/   # orchestrator, rules, grounding, canned, tasks,
 │   │                      # providers/{base,fake,openai_provider,retrying}, prompts/*.md,
 │   │                      # models (AIReply, AICall), management/commands/chat_local
-│   └── reporting/         # bi_report, run_synthetic_cases
+│   ├── reporting/         # bi_report, run_synthetic_cases
+│   └── web/               # página do chat (template, styles.css, app.js, logo) e login por sessão
 ├── tests/ conftest.py · unit/ · integration/ · fakes/
 └── docs/ adr/ · open-decisions.md · plan.md · catalog-checklist.md · validation-report.md
 ```
@@ -111,6 +114,10 @@ uv sync
 uv run python app/manage.py migrate
 uv run pytest
 uv run python app/manage.py chat_local            # provider real, terminal
+# chat web local: DEBUG=1 no processo + worker + servidor
+(cd app && DEBUG=1 uv run celery -A config worker -P solo)
+DEBUG=1 uv run python app/manage.py runserver     # http://127.0.0.1:8000
+uv run python app/manage.py run_synthetic_cases --so-gabarito   # só os gabaritos, sem IA
 uv run python app/manage.py run_synthetic_cases   # gera docs/validation-report.md
 uv run python app/manage.py bi_report
 uv run python app/manage.py catalog_check

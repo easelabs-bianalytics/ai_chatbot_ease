@@ -47,3 +47,38 @@ class QueryRun(models.Model):
 
     def __str__(self):
         return f"Consulta #{self.pk} (tentativa {self.attempt}, {self.status})"
+
+
+class DataExport(models.Model):
+    """Um download de planilha (ADR-0020).
+
+    A planilha roda a consulta de novo, com limite maior que o da conversa,
+    e pode levar milhares de linhas para fora da aplicação. Por isso cada
+    download fica registrado: quem, de qual resposta, qual consulta, quantas
+    linhas e quando."""
+
+    class Status(models.TextChoices):
+        OK = "ok", "Gerada"
+        ERROR = "error", "Falhou"
+
+    user = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL, null=True, related_name="data_exports"
+    )
+    message = models.ForeignKey(
+        "messaging.Message", on_delete=models.SET_NULL, null=True, related_name="exports"
+    )
+    sql = models.TextField()
+    status = models.CharField(max_length=10, choices=Status.choices)
+    row_count = models.PositiveIntegerField(null=True, blank=True)
+    truncated = models.BooleanField(default=False)
+    duration_ms = models.PositiveIntegerField(null=True, blank=True)
+    error = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-id"]
+        verbose_name = "planilha exportada"
+        verbose_name_plural = "planilhas exportadas"
+
+    def __str__(self):
+        return f"Exportação #{self.pk} ({self.status})"

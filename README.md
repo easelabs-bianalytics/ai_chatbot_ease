@@ -44,6 +44,11 @@ docker compose up -d db analytics_db
 uv run pytest -v
 ```
 
+Os testes do executor rodam contra o `analytics_db`, um Postgres local com
+schema e dados **sintéticos** que imitam o banco de negócio (`infra/analytics_db/init/`).
+Nenhum dado real, e o acesso é pelo usuário `bi_readonly` — o mesmo desenho
+que o RDS terá.
+
 A suíte usa `config.settings_test`: não carrega o `.env`, aponta sempre para
 o Postgres local e bloqueia qualquer cliente real da OpenAI. Nenhum teste
 acessa rede, OpenAI ou o RDS.
@@ -56,6 +61,24 @@ acessa rede, OpenAI ou o RDS.
 
 As portas são diferentes das do projeto de referência (5433/6380), que roda
 na mesma máquina.
+
+## Conferindo o catálogo
+
+```bash
+uv run python app/manage.py catalog_check
+```
+
+Valida `app/knowledge/catalog.yaml` e confere que toda consulta de
+`chatbot_bi_referencia_querys.md` passa pelo validador de SQL — uma
+referência que o próprio validador recusaria seria bug de catálogo.
+
+Com `--com-banco`, confirma também que as tabelas citadas existem no banco de
+`ANALYTICS_DATABASE_URL`. Contra o banco sintético local:
+
+```bash
+export ANALYTICS_DATABASE_URL=postgresql://bi_readonly:bi_readonly_dev@localhost:5435/analytics
+uv run python app/manage.py catalog_check --com-banco
+```
 
 ## Deploy (Railway)
 

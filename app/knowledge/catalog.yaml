@@ -1,0 +1,124 @@
+# Catálogo do banco de negócio (ADR-0006).
+#
+# Este arquivo é a parte lida por máquina: o sql_guard decide com ele o que
+# pode rodar. As consultas de referência e as regras de negócio ficam em
+# ../../chatbot_bi_referencia_querys.md, mantido pelo time de BI, e não são
+# copiadas para cá — um só lugar, sem cópia para divergir (O-10).
+#
+# A permissão é por SCHEMA: são os schemas que o documento de referência
+# declara. O que protege o dado sensível é a lista de colunas bloqueadas
+# abaixo e, no banco, o GRANT do usuário bi_chatbot_ro (D-01).
+
+versao: 2
+
+schemas_permitidos:
+  - audit
+  - cddd
+  - td
+  - tdd
+  - pbm
+  - estoque_redes
+
+# Previstos, mas ainda não criados no banco (2026-09-16). Ficam liberados no
+# validador para a consulta rodar e o banco responder que o objeto não existe
+# — o que vira "essa informação ainda não está disponível". O catalog_check
+# avisa sem falhar. Quando o schema for criado, mova para a lista de cima e
+# peça o GRANT (infra/rds/02_criar_usuario_leitura.sql).
+schemas_futuros:
+  - remuneracao_fv  # metas dos representantes
+
+tabelas_bloqueadas:
+  - objeto: pbm.fato_pbm_adesoes_stg
+    motivo: >-
+      Tabela de staging, com dado bruto do consumidor. Use pbm.fato_pbm_adesoes.
+  - objeto: pbm.fato_pbm_transacoes_stg
+    motivo: >-
+      Tabela de staging, com dado bruto do consumidor. Use pbm.fato_pbm_transacoes.
+
+# Conferido contra o banco real em 2026-09-16 (varredura de nomes de coluna
+# nos seis schemas). Regra: dado de pessoa física sai; dado da farmácia
+# (endereço e telefone do PDV) e e-mail corporativo do representante ficam.
+# Pacientes são contados por "ID_CONSUMIDOR", nunca identificados.
+colunas_consumidor: &consumidor
+  - CPF_CONS
+  - NOME_CONS
+  - DATA_NASC
+  - E_MAIL
+  - CELULAR
+  - TELEFONE
+  - CEP_CONS
+  - BAIRRO_CONS
+  - ENDERECO_CONS
+  - NR_ENDERECO_CONS
+  - COMPL_ENDERECO_CONS
+  - CARTAO_CONS
+  - OPT_E_MAIL
+  - OPT_SMS
+  - OPT_FONE
+  - OPT_CORREIO
+
+colunas_bloqueadas:
+  pbm.fato_pbm_transacoes:
+    colunas: *consumidor
+    motivo: dados pessoais do consumidor (O-02).
+  pbm.fato_pbm_adesoes:
+    colunas: *consumidor
+    motivo: dados pessoais do consumidor (O-02).
+  cddd.adesao:
+    colunas: *consumidor
+    motivo: dados pessoais do consumidor (O-02).
+  audit.rx_cadastro_mais_recente:
+    colunas: [cpf, email, celular, endereco]
+    motivo: >-
+      Documento e contato pessoal do médico. Nome, CRM, categoria e potencial
+      seguem liberados, como nas consultas de referência (O-02).
+  audit.rx_cadastro_pdv:
+    colunas: [email, telefone1, telefone2, telefone3]
+    motivo: contato de pessoa no cadastro do PDV (O-02).
+  audit.trade_cadastro_estabelecimento:
+    colunas: [email, telefone1, telefone2, telefone3]
+    motivo: contato de pessoa no cadastro do PDV (O-02).
+  audit.vw_fato_pbm_remota:
+    colunas: [Telefone]
+    motivo: telefone de pessoa (O-02).
+  audit.vw_fato_prescricao_remota:
+    colunas: [Telefone]
+    motivo: telefone de pessoa (O-02).
+  estoque_redes.fato_sell_in:
+    colunas: [CpfCnpj]
+    motivo: pode conter CPF de pessoa física (O-02).
+  estoque_redes.rx_cadastro_pdv:
+    colunas: [EMAIL]
+    motivo: e-mail de pessoa no cadastro do PDV (O-02).
+
+# Função administrativa não tem uso em pergunta de negócio, e algumas são
+# caminho para ler arquivo, abrir conexão ou segurar a sessão.
+funcoes_bloqueadas:
+  - pg_sleep
+  - pg_read_file
+  - pg_read_binary_file
+  - pg_ls_dir
+  - pg_stat_file
+  - pg_terminate_backend
+  - pg_cancel_backend
+  - pg_reload_conf
+  - set_config
+  - current_setting
+  - query_to_xml
+  - dblink
+  - dblink_exec
+
+prefixos_de_funcao_bloqueados:
+  - pg_
+  - dblink
+  - lo_
+
+limites:
+  # Padrões propostos em docs/open-decisions.md (O-06).
+  max_linhas: 500
+  timeout_ms: 15000
+  linhas_para_o_modelo: 50
+
+# As regras de negócio (unidades ×1000, filtros do Sell Out, grupos do TDD)
+# estão no documento de referência. Aqui só o que não está lá.
+dicionario: []

@@ -76,6 +76,9 @@ INSTALLED_APPS = [
     "messaging",
     "ai_orchestrator",
     "datasource",
+    "catalog",
+    "reporting",
+    "web",
 ]
 
 MIDDLEWARE = [

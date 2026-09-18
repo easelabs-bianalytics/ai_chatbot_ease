@@ -19,6 +19,7 @@ class AIReply(models.Model):
         CLARIFY = "clarify", "Pediu esclarecimento"
         UNKNOWN = "unknown", "Não sabe"
         OUT_OF_SCOPE = "out_of_scope", "Fora de escopo"
+        CONVERSATION = "conversation", "Conversa sem consulta"
         FAILED = "failed", "Falha da IA ou do banco"
 
     message = models.OneToOneField(Message, on_delete=models.CASCADE, related_name="ai_reply")

@@ -42,6 +42,16 @@ class Message(models.Model):
     client_message_id = models.CharField(max_length=100)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.RECEIVED)
     delivery_detail = models.TextField(blank=True)
+    # Resposta → pergunta que a gerou. É o que permite à interface mostrar a
+    # fonte embaixo da resposta (SQL, referência, momento): a auditoria mora
+    # no AIReply da pergunta, e sem este vínculo a resposta seria só texto.
+    in_reply_to = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="replies",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

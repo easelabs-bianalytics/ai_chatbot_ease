@@ -1,12 +1,23 @@
 """API do chat (ADR-0007). Tudo exige login (ADR-0011)."""
 
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
+from django.utils.text import slugify
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from conversations.models import Conversation
+from ai_orchestrator.tasks import process_message
+from conversations.models import Conversation, Project
+from catalog.loader import get_catalog
+from datasource.executors.base import QueryExecutionError
+from datasource.executors.factory import get_configured_executor
+from datasource.export import montar_planilha
+from datasource.models import DataExport, QueryRun
+from datasource.sql_guard import validate_sql
 from messaging.channels.web import WebChannel
+from messaging.models import Message
 from messaging.services import ingest_inbound_message
 
 _channel = WebChannel()
@@ -17,30 +28,183 @@ def _conversation_json(conversation):
         "id": conversation.pk,
         "title": conversation.title,
         "status": conversation.status,
+        "project": conversation.project_id,
         "created_at": conversation.created_at.isoformat(),
         "updated_at": conversation.updated_at.isoformat(),
     }
 
 
-def _message_json(message):
-    return {
+def _project_json(project):
+    return {"id": project.pk, "name": project.name, "created_at": project.created_at.isoformat()}
+
+
+def _nome_de_projeto(bruto):
+    nome = " ".join(str(bruto or "").split())[:80]
+    if not nome:
+        raise ValueError("dê um nome ao projeto")
+    return nome
+
+
+def _fonte(resposta, mostrar_custo: bool):
+    """De onde saiu a resposta: a consulta que rodou, a referência em que se
+    baseou, quando e com quantas linhas (FR da Fase 6).
+
+    É o que permite ao usuário confiar no número sem confiar na IA — e ao
+    time de BI conferir uma resposta estranha sem abrir o Admin."""
+    pergunta = resposta.in_reply_to
+    reply = getattr(pergunta, "ai_reply", None) if pergunta is not None else None
+    if reply is None:
+        return None
+
+    consultas = sorted(reply.query_runs.all(), key=lambda q: q.attempt)
+    executada = next(
+        (q for q in reversed(consultas) if q.status == QueryRun.Status.SUCCESS), None
+    )
+    fonte = {
+        "decisao": reply.decision,
+        "regra": reply.rule,
+        "respondida_em": reply.created_at.isoformat(),
+        "tentativas": len(consultas),
+        "consulta": None,
+    }
+    if executada is not None:
+        fonte["consulta"] = {
+            "sql": executada.sql,
+            "referencia": executada.reference_query_id,
+            "linhas": executada.row_count,
+            "cortada": executada.truncated,
+            "duracao_ms": executada.duration_ms,
+        }
+        fonte["excel"] = True
+        fonte["excel_pedido"] = bool((reply.raw_response or {}).get("excel"))
+        grafico = (reply.raw_response or {}).get("grafico")
+        amostra = executada.result_sample or {}
+        if grafico and amostra.get("rows"):
+            # O gráfico é desenhado no navegador com os números da consulta.
+            fonte["grafico"] = grafico
+            fonte["dados"] = {"columns": amostra.get("columns", []), "rows": amostra["rows"]}
+    if mostrar_custo:
+        fonte["custo_usd"] = float(reply.cost_estimate or 0)
+        fonte["tokens"] = (reply.tokens_input or 0) + (reply.tokens_output or 0)
+        fonte["tempo_ms"] = reply.latency_ms
+    return fonte
+
+
+def _message_json(message, mostrar_custo: bool = False):
+    dados = {
         "id": message.pk,
         "direction": message.direction,
         "text": message.content,
         "status": message.status,
         "created_at": message.created_at.isoformat(),
     }
+    if message.direction == message.Direction.OUTBOUND:
+        dados["in_reply_to"] = message.in_reply_to_id
+        dados["fonte"] = _fonte(message, mostrar_custo)
+    return dados
 
 
 class ConversationListCreateView(APIView):
     def get(self, request):
-        conversations = Conversation.objects.filter(user=request.user)
+        conversations = Conversation.objects.visiveis().filter(user=request.user)
         return Response({"conversations": [_conversation_json(c) for c in conversations]})
 
     def post(self, request):
         title = str(request.data.get("title") or "").strip()[:200]
         conversation = Conversation.objects.create(user=request.user, title=title)
         return Response(_conversation_json(conversation), status=status.HTTP_201_CREATED)
+
+
+class ConversationDetailView(APIView):
+    """Renomear, arquivar, mover para um projeto e excluir (ADR-0018).
+
+    Excluir é lógico: a conversa some da tela, mas a auditoria (pergunta,
+    consulta executada, custo) continua — apagar de verdade é assunto da
+    política de retenção (O-08), não de um clique."""
+
+    def _conversation(self, request, conversation_id):
+        return get_object_or_404(
+            Conversation.objects.visiveis(), pk=conversation_id, user=request.user
+        )
+
+    def patch(self, request, conversation_id):
+        conversation = self._conversation(request, conversation_id)
+        campos = []
+
+        if "title" in request.data:
+            titulo = " ".join(str(request.data.get("title") or "").split())[:200]
+            if not titulo:
+                return Response(
+                    {"error": "o título não pode ficar vazio"}, status=status.HTTP_400_BAD_REQUEST
+                )
+            conversation.title = titulo
+            campos.append("title")
+
+        if "status" in request.data:
+            novo_status = request.data.get("status")
+            if novo_status not in Conversation.Status.values:
+                return Response({"error": "situação inválida"}, status=status.HTTP_400_BAD_REQUEST)
+            conversation.status = novo_status
+            campos.append("status")
+
+        if "project" in request.data:
+            projeto_id = request.data.get("project")
+            if projeto_id in (None, ""):
+                conversation.project = None
+            else:
+                # Projeto de outra pessoa responde como inexistente, igual à
+                # conversa: não confirma que ele existe.
+                conversation.project = get_object_or_404(
+                    Project, pk=projeto_id, user=request.user
+                )
+            campos.append("project")
+
+        if campos:
+            # Sem `updated_at`: organizar não é conversar. A lista é ordenada
+            # pela última atividade, e mover para uma pasta não pode fazer a
+            # conversa parecer de hoje.
+            conversation.save(update_fields=campos)
+            conversation.refresh_from_db(fields=["updated_at"])
+        return Response(_conversation_json(conversation))
+
+    def delete(self, request, conversation_id):
+        conversation = self._conversation(request, conversation_id)
+        conversation.deleted_at = timezone.now()
+        conversation.save(update_fields=["deleted_at"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ProjectListCreateView(APIView):
+    def get(self, request):
+        projetos = Project.objects.filter(user=request.user)
+        return Response({"projects": [_project_json(p) for p in projetos]})
+
+    def post(self, request):
+        try:
+            nome = _nome_de_projeto(request.data.get("name"))
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        projeto = Project.objects.create(user=request.user, name=nome)
+        return Response(_project_json(projeto), status=status.HTTP_201_CREATED)
+
+
+class ProjectDetailView(APIView):
+    def _projeto(self, request, project_id):
+        return get_object_or_404(Project, pk=project_id, user=request.user)
+
+    def patch(self, request, project_id):
+        projeto = self._projeto(request, project_id)
+        try:
+            projeto.name = _nome_de_projeto(request.data.get("name"))
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        projeto.save(update_fields=["name", "updated_at"])
+        return Response(_project_json(projeto))
+
+    def delete(self, request, project_id):
+        # As conversas voltam para a lista geral (SET_NULL); nada é apagado.
+        self._projeto(request, project_id).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class MessageListCreateView(APIView):
@@ -51,11 +215,17 @@ class MessageListCreateView(APIView):
     """
 
     def _conversation(self, request, conversation_id):
-        return get_object_or_404(Conversation, pk=conversation_id, user=request.user)
+        return get_object_or_404(
+            Conversation.objects.visiveis(), pk=conversation_id, user=request.user
+        )
 
     def get(self, request, conversation_id):
         conversation = self._conversation(request, conversation_id)
-        messages = conversation.messages.all()
+        # A fonte de cada resposta vem da auditoria da pergunta; sem o
+        # prefetch seriam três consultas por mensagem a cada polling.
+        messages = conversation.messages.select_related(
+            "in_reply_to__ai_reply"
+        ).prefetch_related("in_reply_to__ai_reply__query_runs")
 
         # O navegador busca só o que chegou depois do que ele já tem.
         after = request.query_params.get("after")
@@ -67,7 +237,8 @@ class MessageListCreateView(APIView):
                     {"error": "parâmetro after inválido"}, status=status.HTTP_400_BAD_REQUEST
                 )
 
-        return Response({"messages": [_message_json(m) for m in messages]})
+        mostrar_custo = bool(request.user.is_staff)
+        return Response({"messages": [_message_json(m, mostrar_custo) for m in messages]})
 
     def post(self, request, conversation_id):
         conversation = self._conversation(request, conversation_id)
@@ -85,6 +256,12 @@ class MessageListCreateView(APIView):
 
         message, created = ingest_inbound_message(conversation, inbound)
 
+        # Perguntar numa conversa arquivada é voltar ao assunto: ela sai do
+        # arquivo, senão a resposta chegaria num lugar escondido da lista.
+        if created and conversation.status == Conversation.Status.ARCHIVED:
+            conversation.status = Conversation.Status.OPEN
+            conversation.save(update_fields=["status", "updated_at"])
+
         if not created:
             return Response(
                 {
@@ -95,9 +272,10 @@ class MessageListCreateView(APIView):
                 status=status.HTTP_200_OK,
             )
 
-        # Fase 4: aqui entra o enfileiramento da tarefa que planeja, consulta
-        # e responde (ADR-0003). Por ora a pergunta só fica registrada, e a
-        # resposta aparece no polling quando o orquestrador existir.
+        # A resposta é montada fora da requisição (ADR-0003) e aparece no
+        # polling quando ficar pronta.
+        process_message.delay(message.pk, _channel.name)
+
         return Response(
             {
                 "message_id": message.pk,
@@ -107,3 +285,89 @@ class MessageListCreateView(APIView):
             },
             status=status.HTTP_202_ACCEPTED,
         )
+
+
+# Limite da planilha: bem acima das 500 linhas da conversa, porque o arquivo
+# não passa pela IA (não custa token), mas finito, para uma lista gigante
+# não pesar no banco de negócio. O tempo máximo da consulta continua valendo.
+EXPORT_MAX_ROWS = 50_000
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+class MessageExcelView(APIView):
+    """Planilha Excel com o resultado da resposta (ADR-0020).
+
+    Roda de novo a consulta que a resposta usou — aprovada pelo validador de
+    novo, com o limite da planilha — e devolve o `.xlsx`. Não passa pela IA.
+    Cada download fica registrado em `DataExport`."""
+
+    def get(self, request, conversation_id, message_id):
+        conversation = get_object_or_404(
+            Conversation.objects.visiveis(), pk=conversation_id, user=request.user
+        )
+        resposta = get_object_or_404(
+            Message.objects.select_related("in_reply_to__ai_reply"),
+            pk=message_id,
+            conversation=conversation,
+            direction=Message.Direction.OUTBOUND,
+        )
+        pergunta = resposta.in_reply_to
+        reply = getattr(pergunta, "ai_reply", None) if pergunta is not None else None
+        consulta = (
+            reply.query_runs.filter(status=QueryRun.Status.SUCCESS).order_by("-attempt").first()
+            if reply is not None
+            else None
+        )
+        if consulta is None:
+            return Response(
+                {"error": "esta resposta não tem dados para exportar"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        registro = DataExport(user=request.user, message=resposta, sql=consulta.sql)
+        catalogo = get_catalog()
+        guard = validate_sql(consulta.sql, catalogo, max_rows=EXPORT_MAX_ROWS)
+        if not guard.approved:
+            registro.status, registro.error = DataExport.Status.ERROR, guard.reason
+            registro.save()
+            return Response({"error": "a consulta não passou no validador"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            resultado = get_configured_executor().run(guard.sql, max_rows=EXPORT_MAX_ROWS)
+        except QueryExecutionError as exc:
+            registro.status, registro.error = DataExport.Status.ERROR, str(exc)
+            registro.save()
+            return Response(
+                {"error": "não consegui gerar a planilha agora; tente de novo em instantes"},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        agora = timezone.localtime()
+        observacao = (
+            f"Lista cortada em {EXPORT_MAX_ROWS:,} linhas; refine o filtro para ter o restante.".replace(",", ".")
+            if resultado.truncated
+            else "Lista completa."
+        )
+        conteudo = montar_planilha(
+            resultado.columns,
+            resultado.rows,
+            {
+                "pergunta": pergunta.content,
+                "gerada_em": agora.strftime("%d/%m/%Y %H:%M"),
+                "linhas": resultado.row_count,
+                "observacao": observacao,
+                "referencia": consulta.reference_query_id,
+                "sql": consulta.sql,
+            },
+        )
+
+        registro.status = DataExport.Status.OK
+        registro.row_count = resultado.row_count
+        registro.truncated = resultado.truncated
+        registro.duration_ms = resultado.duration_ms
+        registro.save()
+
+        nome = slugify(conversation.title or pergunta.content)[:50] or "consulta"
+        http = HttpResponse(conteudo, content_type=XLSX)
+        http["Content-Disposition"] = f'attachment; filename="jarvis_{nome}_{agora:%Y%m%d-%H%M}.xlsx"'
+        return http

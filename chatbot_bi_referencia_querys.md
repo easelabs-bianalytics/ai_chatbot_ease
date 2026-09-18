@@ -2,47 +2,129 @@
 
 Banco: Amazon RDS for PostgreSQL 16.13. Colunas em maiúsculas exigem aspas (`"STATUS_TRN"`).
 
+**As queries abaixo são referência, não resposta pronta.** A IA deve interpretar o que o usuário
+pediu — período, recorte, granularidade, se é Ease ou mercado — e montar a melhor consulta para
+aquele pedido, usando estas como ponto de partida.
+
+**Se um schema, tabela ou coluna não existir no banco, não invente a resposta.** Não troque por
+outra tabela parecida nem estime o número. Diga ao usuário, de forma cordial, que essa informação
+ainda não está disponível na base e encerre o assunto. Exemplo: *"Ainda não tenho acesso à
+informação de meta dos representantes na base. Posso ajudar com o resultado de vendas?"*
+
+**As tabelas listadas são as principais de cada tema, não a lista completa.** Qualquer tabela ou
+view dos schemas `audit`, `cddd`, `td`, `tdd`, `pbm` e `estoque_redes` pode ser usada
+quando a pergunta exigir. Consulte `information_schema.columns` antes de usar uma tabela que não
+esteja aqui.
+
+**Resolva o nome antes de medir.** Nome próprio — pessoa, rede, cidade, produto, laboratório —
+nunca entra na consulta inteiro. Busque por **um pedaço**: só o primeiro nome, ou só o sobrenome,
+com `ILIKE '%pedaço%'`. As grafias divergem entre as fontes, e às vezes entre duas tabelas do
+mesmo tema: o mesmo representante é `HERMES BIZZOTO` em `cddd.forca_vendas.desc_territorio` e
+`Hermes Bizzotto` em `cddd.dim_ct.nome_abreviado_ct`. `ILIKE '%HERMES BIZOTTO%'`, do jeito que o
+usuário escreveu, não acha nenhum dos dois. O mesmo vale para rede (`PAGUE MENOS` × `PAGUEMENOS`),
+cidade (`cddd.utc.cidade` é sem acento) e produto. Se o pedaço trouxer mais de um, **mostre os que
+encontrou e pergunte qual**; não escolha por conta própria.
+
+**Nenhuma linha não é zero.** Consulta que volta vazia quase nunca significa "não houve venda":
+na maioria das vezes o nome não casou, a pessoa não estava ativa no período, ou o período não tem
+carga. Antes de concluir qualquer coisa, verifique — numa consulta de checagem, não no chute:
+
+1. **o nome existe?** Refaça a busca com um pedaço menor, sem filtro de período, e veja o que
+   existe de parecido.
+2. **estava ativo no período?** `cddd.dim_ct.data_demissao` (desligamento) e
+   `cddd.scd_ct_territorio.data_saida_territorio` (saída do território) dizem até quando. Atenção:
+   `cddd.forca_vendas` é a **foto de hoje** — quem saiu não aparece nela de jeito nenhum, mesmo
+   tendo vendido no passado.
+3. **o período tem dado?** Veja qual foi o último mês com movimento para aquele recorte.
+
+A resposta precisa dizer **o que aconteceu**: *"não encontrei esse representante; você quis dizer
+Ricardo Bastos?"*, *"o Ricardo Reis foi desligado em 18/05/2026, então não há ago/26 para
+comparar"*, *"esse mês ainda não tem carga"*. Nunca "a consulta não retornou nada".
+
 ---
 
 ## 1. Auditoria e Prescrição Médica
 
+**Toda pergunta sobre prescrição médica é respondida no schema `audit`.**
+
+**Para qualquer output quantitativo, pergunte antes o período da análise** (mês, trimestre, ano,
+intervalo). Só siga sem perguntar se o usuário já tiver dito o período.
+
 | Tabela | Conteúdo | Colunas-chave |
 |---|---|---|
-| `audit.medico` | Cadastro de médicos do mercado | `cdgmedico`, `crm` (`MG0039273`), `nome`, `espec1`, `cidade`, `utc_codigo` (brick), `cep` |
-| `audit.prescricao` | PX mensal por médico × produto × laboratório | `cdgmedico`, `cdglaboratorio` (Ease = `'EAS'`), `px1` (volume), `data` (competência, dia 1) |
+| `audit.medico` | Cadastro de médicos do mercado | `cdgmedico`, `crm` (`MG0039273`), `nome`, `espec1`, `cidade`, `utc_codigo` (brick) |
+| `audit.prescricao` | PX mensal por médico × produto × laboratório | `cdgmedico`, `cdglaboratorio`, `px1`, `data` (competência, dia 1), `cdgespecialidade` |
+| `audit.laboratorio` | Código → nome do laboratório (`EAS` = EASE LABS) | `codigo`, `nome` |
+| `audit.produto` | Produtos do mercado | `cdgmarca`, `cdgconcentracao`, `cdgapresentacao`, `cdgforma`, `nome`, `cdglaboratorio` |
+| `audit.especialidade` | Código → nome da especialidade | `codigo`, `nome` |
 | `audit.molecula_produto_relacao` | Produto → molécula | `descmole`: `'EXTRATO CANNABIS SATIVA'` ou `'CANABIDIOL'` |
+| `audit.rx_cadastro_mais_recente` | Painel atual: médicos visitados por setor | `crm_link`, `nome`, `setor`, `setor_cliente` (território), `frequencia`, `dias_sem_visita`, `categoria`, `potencial` |
+| `audit.rx_visitas` | Histórico de visitas | `crm_norm`, `setor`, `data_da_visita`, `visita_efetiva` (`'S'`), `tipo_visita`, `comentarios` |
 
+- `audit.prescricao` liga com `audit.produto` e com `audit.molecula_produto_relacao` por **chave
+  composta**: `cdgmarca` + `cdgconcentracao` + `cdgapresentacao` + `cdgforma` (+ `cdglaboratorio`).
+  `cdgforma` é bigint na prescrição e texto nas outras duas: use `p.cdgforma::text`.
 - UF do médico = `left(crm, 2)`. `cdgregiao` não é UF.
-- Prescrição separa só Extrato × Canabidiol, não por SKU.
+
+### Prescrição — volume
+
+*"Quantas prescrições o mercado teve por mês?" / "E só a Ease?"*
 
 ```sql
--- Q01 · PX Ease de um médico por mês e molécula
-SELECT p.data AS competencia, r.descmole, SUM(p.px1) AS px
+-- A01 · Prescrição do mercado por mês
+SELECT
+  p.data,
+  SUM(p.px1) AS px
 FROM audit.prescricao p
-JOIN audit.medico m ON m.cdgmedico = p.cdgmedico
-JOIN audit.molecula_produto_relacao r
-  ON r.cdgmarca = p.cdgmarca AND r.codigoconcentracao = p.cdgconcentracao
- AND r.codigoapresentacao = p.cdgapresentacao AND r.codigoforma = p.cdgforma::text
- AND r.cdglaboratorio = p.cdglaboratorio
-WHERE m.crm = :crm AND p.cdglaboratorio = 'EAS' AND p.px1 > 0
-GROUP BY 1, 2
+-- WHERE p.cdglaboratorio = 'EAS'      -- descomente para só Ease
+GROUP BY 1
 ORDER BY 1 DESC;
 ```
 
-```sql
--- Q02 · Top prescritores Ease no período
-SELECT m.crm, m.nome, m.espec1, m.cidade, left(m.crm, 2) AS uf, SUM(p.px1) AS px
-FROM audit.prescricao p
-JOIN audit.medico m ON m.cdgmedico = p.cdgmedico
-WHERE p.cdglaboratorio = 'EAS' AND p.px1 > 0
-  AND p.data BETWEEN :data_ini AND :data_fim
-GROUP BY 1, 2, 3, 4, 5
-ORDER BY px DESC
-LIMIT 50;
-```
+*"Como está a prescrição de cada produto Ease mês a mês?"*
 
 ```sql
--- Q03 · Share Ease no mercado de cannabis por mês
+-- A02 · Prescrição por produto, mês a mês
+SELECT
+  p.data,
+  pr.nome AS produto,
+  SUM(p.px1) AS px
+FROM audit.prescricao p
+JOIN audit.produto pr
+  ON  pr.cdgmarca        = p.cdgmarca
+  AND pr.cdgconcentracao = p.cdgconcentracao
+  AND pr.cdgapresentacao = p.cdgapresentacao
+  AND pr.cdgforma        = p.cdgforma::text
+  AND pr.cdglaboratorio  = p.cdglaboratorio
+WHERE p.cdglaboratorio = 'EAS'         -- troque o laboratório aqui
+GROUP BY 1, 2
+ORDER BY 1 DESC, 3 DESC;
+```
+
+*"Quantas prescrições de Extrato tivemos nos últimos meses?"*
+
+```sql
+-- A03 · Prescrição só do Extrato (troque para 'CANABIDIOL' se for Isolado)
+SELECT
+  p.data,
+  SUM(p.px1) AS px
+FROM audit.prescricao p
+JOIN audit.molecula_produto_relacao r
+  ON  r.cdgmarca           = p.cdgmarca
+  AND r.codigoconcentracao = p.cdgconcentracao
+  AND r.codigoapresentacao = p.cdgapresentacao
+  AND r.codigoforma        = p.cdgforma::text
+  AND r.cdglaboratorio     = p.cdglaboratorio
+WHERE p.cdglaboratorio = 'EAS'
+  AND r.descmole = 'EXTRATO CANNABIS SATIVA'
+GROUP BY 1
+ORDER BY 1 DESC;
+```
+
+*"Qual o share da Ease no mercado?"*
+
+```sql
+-- A04 · Share Ease no mercado de cannabis por mês
 SELECT p.data AS competencia,
        SUM(p.px1) FILTER (WHERE p.cdglaboratorio = 'EAS') AS px_ease,
        SUM(p.px1) AS px_mercado,
@@ -53,8 +135,10 @@ GROUP BY 1
 ORDER BY 1;
 ```
 
+*"Quais médicos prescrevem Ease no brick X?"*
+
 ```sql
--- Q04 · Prescritores Ease de um brick
+-- A05 · Prescritores Ease de um brick
 SELECT m.crm, m.nome, m.espec1, SUM(p.px1) AS px
 FROM audit.prescricao p
 JOIN audit.medico m ON m.cdgmedico = p.cdgmedico
@@ -65,159 +149,1536 @@ GROUP BY 1, 2, 3
 ORDER BY px DESC;
 ```
 
+*"Quais as prescrições da neurologia?"*
+
+```sql
+-- A06 · Prescrição por especialidade
+SELECT p.data, SUM(p.px1) AS px
+FROM audit.prescricao p
+JOIN audit.especialidade e ON e.codigo = p.cdgespecialidade
+WHERE e.nome = :especialidade          -- ex.: 'NEUROLOGIA', 'PSIQUIATRIA'
+  AND p.cdglaboratorio = 'EAS'
+GROUP BY 1
+ORDER BY 1 DESC;
+```
+
+*"Quantos médicos prescrevem Ease?"*
+
+```sql
+-- A07 · Médicos prescritores por mês (troque o laboratório para comparar com concorrente)
+SELECT p.data, COUNT(DISTINCT p.cdgmedico) AS medicos_prescritores
+FROM audit.prescricao p
+WHERE p.cdglaboratorio = 'EAS'         -- troque o laboratório aqui
+  AND p.px1 > 0
+GROUP BY 1
+ORDER BY 1 DESC;
+```
+
+*"Qual o RX per capita?"*
+
+```sql
+-- A08 · RX per capita (PX ÷ médicos prescritores)
+SELECT p.data,
+       SUM(p.px1) AS px,
+       COUNT(DISTINCT p.cdgmedico) AS medicos,
+       ROUND((SUM(p.px1) / NULLIF(COUNT(DISTINCT p.cdgmedico), 0))::numeric, 1) AS rx_per_capita
+FROM audit.prescricao p
+WHERE p.cdglaboratorio = 'EAS' AND p.px1 > 0
+GROUP BY 1
+ORDER BY 1 DESC;
+```
+
+### Categoria do médico
+
+**Sempre pergunte de qual período é a categoria.** Se o usuário não disser, ofereça os períodos
+já calculados no banco:
+
+| View | Período | Base |
+|---|---|---|
+| `audit.vw_cat_ult_trim_movel` | Último trimestre móvel | Mercado |
+| `audit.vw_cat_ult_quad_movel` | Último quadrimestre móvel (já traz `crm`) | Mercado |
+| `audit.vw_cat_ult_quad_movel_ease` | Último quadrimestre móvel | **Só Ease** |
+| `audit.vw_cat_ult_sem_movel` | Último semestre móvel | Mercado |
+| `audit.vw_cat_ult_sem_movel_ease` | Último semestre móvel | **Só Ease** |
+| `audit.vw_cat_ytd`, `vw_cat_anual`, `vw_cat_mat_2023/2024/2025`, `vw_cat_s1_2025`, `vw_cat_s2_2025`, `vw_cat_trim_movel_hist`, `vw_cat_ult_quad_movel_hist` | YTD, ano fechado, MAT e históricos mês a mês | Mercado |
+
+Todas têm `cdgmedico`, `categoria` (1 = maior prescritor, 5 = menor) e o volume de PX do período.
+**Se o usuário pedir um período que não existe nessas views, monte a query de categoria direto na
+`audit.prescricao`.**
+
+**SEM CAT:** médico que não aparece na view de categoria do período é **SEM CAT**. Parta sempre do
+cadastro (`audit.medico` ou do painel) com `LEFT JOIN` na view e use
+`COALESCE(categoria::text, 'SEM CAT')`. Nunca descarte esses médicos das contagens.
+
+*"Qual a categoria do médico X no último trimestre?"*
+
+```sql
+-- A09 · Categoria de um médico (troque a view conforme o período pedido)
+SELECT m.crm,
+       m.nome,
+       COALESCE(c.categoria::text, 'SEM CAT') AS categoria,
+       c.px_3m
+FROM audit.medico m
+LEFT JOIN audit.vw_cat_ult_trim_movel c ON c.cdgmedico = m.cdgmedico
+WHERE m.crm = :crm;
+-- Sem linha = CRM não encontrado no cadastro. Com linha e 'SEM CAT' = médico sem categoria no período.
+```
+
+*"Como evoluiu a prescrição mensal dos médicos categoria 1 a 3 do último trimestre móvel?"*
+
+```sql
+-- A10 · Evolução mensal de PX dos médicos categoria 1 a 3
+SELECT p.data,
+       COUNT(DISTINCT p.cdgmedico) AS medicos,
+       SUM(p.px1) AS px
+FROM audit.prescricao p
+JOIN audit.vw_cat_ult_trim_movel c ON c.cdgmedico = p.cdgmedico
+WHERE c.categoria BETWEEN 1 AND 3
+  AND p.cdglaboratorio = 'EAS'
+  AND p.data BETWEEN :data_ini AND :data_fim
+GROUP BY 1
+ORDER BY 1 DESC;
+```
+
+### Médico, painel e representante
+
+O representante do médico sai de `audit.rx_cadastro_mais_recente.setor_cliente` →
+`cddd.forca_vendas.cod_territorio`; o nome está em `desc_territorio`. O usuário escreve o nome de
+várias formas ("Hermes", "Hermes Amorim", "Hermes Bizotto") e todas apontam para o mesmo
+`desc_territorio`. Busque por `ILIKE '%primeiro nome%'` e, se voltar mais de um, pergunte qual.
+
+*"O médico X está sendo visitado?"*
+
+```sql
+-- A11 · Médico está no painel hoje, com qual frequência e há quanto tempo sem visita
+SELECT r.crm_link, r.nome, r.setor, r.setor_cliente, r.frequencia, r.freq_numerica,
+       r.dias_sem_visita, r.categoria, r.potencial, r.classificacao
+FROM audit.rx_cadastro_mais_recente r
+WHERE r.crm_link = :crm;
+-- Sem linha = não está em nenhum painel atual.
+```
+
+*"Quais as últimas visitas do painel do setor 1111?"*
+
+```sql
+-- A12 · Últimas visitas efetivas do painel de um setor
+SELECT v.crm_norm, v.nome, MAX(v.data_da_visita)::date AS ultima_visita, COUNT(*) AS visitas
+FROM audit.rx_visitas v
+WHERE v.setor = 1111                   -- troque o setor conforme o representante
+  AND v.visita_efetiva = 'S'
+GROUP BY 1, 2
+ORDER BY ultima_visita DESC
+LIMIT 100;
+```
+
+*"Qual o setor do Hermes?"*
+
+```sql
+-- A13 · Território e código do representante pelo nome
+SELECT DISTINCT f.cod_territorio, f.desc_territorio
+FROM cddd.forca_vendas f
+WHERE f.desc_territorio ILIKE '%' || :rep || '%';
+```
+
+**Quando pedirem "as prescrições do representante", confirme o que ele quer:** as prescrições do
+**painel** dele (médicos que ele visita, via `rx_cadastro_mais_recente`) ou as do **território**
+dele (todos os médicos dos bricks dele, via `cddd.forca_vendas.cod_utc` → `audit.medico.utc_codigo`).
+São números diferentes.
+
+```sql
+-- A14 · PX do PAINEL do representante
+SELECT p.data, SUM(p.px1) AS px
+FROM audit.prescricao p
+JOIN audit.medico m ON m.cdgmedico = p.cdgmedico
+WHERE m.crm IN (
+        SELECT r.crm_link FROM audit.rx_cadastro_mais_recente r
+        WHERE r.setor_cliente IN (SELECT DISTINCT cod_territorio FROM cddd.forca_vendas
+                                  WHERE desc_territorio ILIKE '%' || :rep || '%'))
+  AND p.cdglaboratorio = 'EAS'
+GROUP BY 1
+ORDER BY 1 DESC;
+```
+
+```sql
+-- A15 · PX do TERRITÓRIO do representante (todos os bricks dele)
+SELECT p.data, SUM(p.px1) AS px
+FROM audit.prescricao p
+JOIN audit.medico m ON m.cdgmedico = p.cdgmedico
+WHERE m.utc_codigo IN (SELECT cod_utc FROM cddd.forca_vendas
+                       WHERE desc_territorio ILIKE '%' || :rep || '%')
+  AND p.cdglaboratorio = 'EAS'
+GROUP BY 1
+ORDER BY 1 DESC;
+```
+
+### Gerente regional (GR)
+
+GR é o líder dos representantes. Hierarquia: `cddd.fv_distrito` (`desc_distrito` = nome do GR) →
+`cddd.fv_territorio` (por `cod_distrito`) → `cddd.forca_vendas` (por `cod_territorio`).
+
+*"Como evoluiu a prescrição mensal dos médicos categoria 1 a 3 do painel do Gabriel Bastos?"*
+
+```sql
+-- A16 · PX mensal dos médicos categoria 1 a 3 do painel de um GR
+WITH territorios AS (
+  SELECT t.cod_territorio
+  FROM cddd.fv_territorio t
+  JOIN cddd.fv_distrito d ON d.cod_distrito = t.cod_distrito
+  WHERE d.desc_distrito ILIKE '%' || :gr || '%'
+),
+painel AS (
+  SELECT DISTINCT r.crm_link
+  FROM audit.rx_cadastro_mais_recente r
+  WHERE r.setor_cliente IN (SELECT cod_territorio FROM territorios)
+)
+SELECT p.data, COUNT(DISTINCT p.cdgmedico) AS medicos, SUM(p.px1) AS px
+FROM audit.prescricao p
+JOIN audit.medico m ON m.cdgmedico = p.cdgmedico
+JOIN audit.vw_cat_ult_trim_movel c ON c.cdgmedico = m.cdgmedico
+WHERE m.crm IN (SELECT crm_link FROM painel)
+  AND c.categoria BETWEEN 1 AND 3
+  AND p.cdglaboratorio = 'EAS'
+  AND p.data BETWEEN :data_ini AND :data_fim
+GROUP BY 1
+ORDER BY 1 DESC;
+```
+
+### Geolocalização da prescrição
+
+`cddd.utc` traz cidade, UF e região de cada brick (`cod_utc`, `desc_utc`, `cidade`, `uf`, `regiao`).
+Ligue com o médico (`audit.medico.utc_codigo`) ou com o representante (`cddd.forca_vendas.cod_utc`).
+
+*"Em quais cidades estão as prescrições?"*
+
+```sql
+-- A17 · PX por brick, cidade e UF
+SELECT u.cod_utc, u.desc_utc, u.cidade, u.uf, u.regiao, SUM(p.px1) AS px
+FROM audit.prescricao p
+JOIN audit.medico m ON m.cdgmedico = p.cdgmedico
+JOIN cddd.utc u ON u.cod_utc = m.utc_codigo
+WHERE p.cdglaboratorio = 'EAS'
+  AND p.data BETWEEN :data_ini AND :data_fim
+GROUP BY 1, 2, 3, 4, 5
+ORDER BY px DESC
+LIMIT 50;
+```
+
+*"Quais as 10 cidades com mais PX Ease no território do Hermes no último trimestre?"*
+
+```sql
+-- A18 · Top 10 cidades em PX Ease no território de um representante, último trimestre
+SELECT u.cidade, u.uf, SUM(p.px1) AS px
+FROM audit.prescricao p
+JOIN audit.medico m ON m.cdgmedico = p.cdgmedico
+JOIN cddd.utc u     ON u.cod_utc = m.utc_codigo
+WHERE p.cdglaboratorio = 'EAS'
+  AND m.utc_codigo IN (SELECT cod_utc FROM cddd.forca_vendas
+                       WHERE desc_territorio ILIKE '%HERMES%')      -- troque o representante aqui
+  AND p.data > (SELECT MAX(data) - INTERVAL '3 months' FROM audit.prescricao)   -- 3 últimas competências
+GROUP BY 1, 2
+ORDER BY px DESC
+LIMIT 10;
+```
+
+"Último trimestre" = as 3 competências mais recentes da base. A query usa o **território** do
+representante (bricks dele); para o **painel**, troque o filtro pelo da A14.
+
 ---
 
 ## 2. Sell Out e Dispensação de Unidades
 
+O Sell Out tem três cenários. **Identifique qual deles o usuário quer antes de montar a query.**
+
+| Cenário | Pergunta típica | Fonte principal |
+|---|---|---|
+| **2.1 Sell Out Ease Total** | "Quantas unidades a Ease vendeu no mês?", "Quanto vendeu o representante X?", "Bateu a meta?" | `cddd.vw_sell_out` |
+| **2.2 Sell Out Ease PDVs (CDD)** | "Quantas unidades a Raia dispensou?", "Quanto vendeu o PDV X?" | `cddd.fato_cdd` |
+| **2.3 Sell Out Mercado (TD)** | "Qual o faturamento do mercado?", "Qual o market share por laboratório?" | `td.fato_td` |
+
 | Tabela | Conteúdo | Colunas-chave |
 |---|---|---|
-| `cddd.vendas_consolidado` | Sell-out Ease por dia × PDV × SKU, já tratado | `cod_anomes` (dia), `cod_pdv`, `cod_apresentacao`, `desc_apresentacao`, `und`, `valor`, `cod_utc`, `cod_territorio`, `cod_ct`, `cod_gr` |
-| `cddd.vw_sellout_mensal` | Sell-out total mensal por SKU (CDD + extras + MP + SS − PBM) | `ano_mes`, `cod_apresentacao`, `qtd`, `"QTD_LM"`, `"Cresc_%"` (razão) |
-| `cddd.pdvs` | Cadastro de PDV | `cod_pdv` (bigint), `cnpj_pdv`, `desc_pdv`, `cidade`, `uf`, `cod_utc` |
+| `cddd.vw_sell_out` | Unidades Ease totais por dia × CT × SKU | `date`, `cod_ct`, `nome_abreviado_ct`, `cod_gr`, `cod_territorio`, `cod_apres`, `cdd`, `extras`, `mp`, `ss`, `pbm` (Voucher) |
+| `cddd.fato_cdd` | Dispensação Ease por dia × PDV × SKU × informante | `cod_anomes` (date), `cod_pdv` (texto), `cod_apresentacao` (texto), `cod_informante`, `cod_tipo_transacao`, `und` (×1000) |
+| `td.fato_td` | Mercado de cannabis por mês × brick × SKU × subcanal | `cod_anomes` (texto `'YYYYMM'`), `cod_apresentacao`, `cod_subcanal`, `cod_utc`, `und` (×1000), `valor_` (×1000) |
+| `cddd.apres` | SKU → marca | `cod_apresentacao`, `desc_apresentacao`, `cod_marca`, `ean` |
+| `cddd.prod` / `cddd.fab` | Marca → laboratório | `prod.cod_marca`, `prod.cod_fab` → `fab.cod_fab`, `fab.desc_fab`, `fab.desc_sigla_fab` (`'EAS'`) |
+| `cddd.pdvs` | Cadastro de PDV | `cod_pdv` (bigint), `cnpj_pdv`, `desc_pdv`, `cidade`, `uf`, `cod_utc`, `cod_subcanal` |
+| `cddd.informantes` | Origem do dado de dispensação e rede | `cod_informante`, `desc_informante`, `desc_grupo_informante` (rede) |
+| `cddd.canal` | Subcanal → canal | `cod_subcanal`, `desc_canal` (`FARMACIAS`, `HOSPITALAR`, `OUTROS`) |
+| `cddd.dim_ct` / `cddd.dim_gr` | Nome do representante (CT) e do gerente regional (GR) | `cod_ct`, `nome_abreviado_ct`, `data_demissao` (desligamento) / `cod_gr`, `nome_gr` |
+| `cddd.forca_vendas` / `cddd.fv_territorio` / `cddd.fv_distrito` | Brick → território → GR | `cod_utc`, `cod_territorio`, `desc_territorio`, `cod_distrito`, `desc_distrito` |
+| `cddd.vendas_extras` | Fonte das vendas extras | `data_venda`, `cod_territorio`, `produto`, `cod_produto`, `qtd`, `deleted_at` |
+| `cddd.venda_mercado_publico` | Fonte de Mercado Público e Saúde Suplementar | `data_venda`, `modalidade`, `produto`, `frascos`, `total_sell_out`, `ct`, `uf`, `orgao`, `deleted_at` |
+| `remuneracao_fv.fato_remuneracao` ⚠️ | Meta mensal de cada representante (**ainda não disponível no banco AWS**) | `mes`, `cod_ct`, `nome_representante`, `setor`, `nivel`, `fat_base`, `fat_alvo_bonus` (meta), `cod_gr` |
 
-- Use a `vendas_consolidado`, não a `cddd.fato_cdd` (ela já divide por 1000, exclui hospitalar, devolução e informantes duplicados).
-- SKUs: `259434` Extrato · `234194` Isolado 30 mL · `254655` Isolado 10 mL · `309653` Isolado 20 mg.
-- "Últimos N dias" conta a partir de `MAX(cod_anomes)`.
+- `und` da `cddd.fato_cdd` e `und`/`valor_` da `td.fato_td` vêm multiplicados por 1000: divida por 1000.
+- Ticket médio para converter unidades Ease em faturamento: `259434` Extrato **R$ 302,00** · `234194` Isolado 30 mL **R$ 799,30** · `309653` Isolado 20 mg **R$ 174,30** · `254655` Isolado 10 mL **R$ 286,00**.
+
+### 2.1 Sell Out Ease Total
+
+Unidades Ease vendidas pela companhia, somando todos os canais. É o número da força de vendas.
+
+**Total = `cdd + extras + mp + ss − pbm`** (CDD + vendas extras + Mercado Público + Saúde
+Suplementar − Voucher). Arredondamento: se a parte decimal for **maior que 0,89**, arredonda para
+cima; senão, para baixo.
+
+*"Quantas unidades Ease foram dispensadas mês a mês?"*
 
 ```sql
--- Q10 · Sell-out total mensal por SKU
-SELECT ano_mes, cod_apresentacao, desc_apresentacao, qtd, "QTD_LM"
-FROM cddd.vw_sellout_mensal
-WHERE ano_mes BETWEEN :data_ini AND :data_fim
-ORDER BY ano_mes DESC, cod_apresentacao;
+-- B01 · Sell Out Ease Total mês a mês, com cada componente
+WITH mes AS (
+  SELECT date_trunc('month', s.date)::date AS mes,
+         SUM(s.cdd)    AS cdd,
+         SUM(s.extras) AS extras,
+         SUM(s.mp)     AS mercado_publico,
+         SUM(s.ss)     AS saude_suplementar,
+         SUM(s.pbm)    AS voucher,
+         SUM(s.cdd + s.extras + s.mp + s.ss - s.pbm) AS total_bruto
+  FROM cddd.vw_sell_out s
+  GROUP BY 1
+)
+SELECT mes, cdd, extras, mercado_publico, saude_suplementar, voucher,
+       CASE WHEN total_bruto - FLOOR(total_bruto) > 0.89
+            THEN CEIL(total_bruto) ELSE FLOOR(total_bruto) END AS total
+FROM mes
+ORDER BY mes DESC;
 ```
 
+*"Quantas unidades vendeu cada representante em julho?"*
+
 ```sql
--- Q11 · Sell-out de um PDV (CNPJ) por mês e SKU
-SELECT date_trunc('month', v.cod_anomes)::date AS mes, v.desc_apresentacao, SUM(v.und) AS unidades
-FROM cddd.vendas_consolidado v
-JOIN cddd.pdvs p ON p.cod_pdv = v.cod_pdv::bigint
-WHERE lpad(regexp_replace(p.cnpj_pdv, '\D', '', 'g'), 14, '0') = :cnpj
-  AND v.cod_anomes BETWEEN :data_ini AND :data_fim
+-- B02 · Sell Out Ease Total por representante
+WITH rep AS (
+  SELECT s.nome_abreviado_ct AS representante,
+         SUM(s.cdd + s.extras + s.mp + s.ss - s.pbm) AS total_bruto
+  FROM cddd.vw_sell_out s
+  WHERE s.date >= :data_ini AND s.date < :data_fim    -- data_fim = 1º dia do mês seguinte
+  -- AND s.nome_abreviado_ct ILIKE '%' || :rep || '%' -- um representante específico
+  GROUP BY 1
+)
+SELECT representante,
+       CASE WHEN total_bruto - FLOOR(total_bruto) > 0.89
+            THEN CEIL(total_bruto) ELSE FLOOR(total_bruto) END AS unidades
+FROM rep
+ORDER BY unidades DESC;
+```
+
+*"Quantas unidades vendeu a equipe de cada GR?"*
+
+```sql
+-- B03 · Sell Out Ease Total por GR (cod_gr dos CTs que venderam no mês)
+WITH gr AS (
+  SELECT g.nome_gr AS gr,
+         SUM(s.cdd + s.extras + s.mp + s.ss - s.pbm) AS total_bruto
+  FROM cddd.vw_sell_out s
+  LEFT JOIN cddd.dim_gr g ON g.cod_gr = s.cod_gr
+  WHERE s.date >= :data_ini AND s.date < :data_fim
+  GROUP BY 1
+)
+SELECT gr,
+       CASE WHEN total_bruto - FLOOR(total_bruto) > 0.89
+            THEN CEIL(total_bruto) ELSE FLOOR(total_bruto) END AS unidades
+FROM gr
+ORDER BY unidades DESC;
+```
+
+`cddd.dim_gr.nome_gr` traz só o primeiro nome (`Gabriel`); o nome completo está em
+`cddd.fv_distrito.desc_distrito` (`GABRIEL BASTOS`).
+
+*"Quanto a Ease faturou por produto mês a mês?"*
+
+```sql
+-- B04 · Faturamento Ease Total por SKU (unidades × ticket médio)
+SELECT date_trunc('month', s.date)::date AS mes,
+       s.cod_apres,
+       SUM(s.cdd + s.extras + s.mp + s.ss - s.pbm) AS unidades,
+       ROUND((SUM(s.cdd + s.extras + s.mp + s.ss - s.pbm) *
+             CASE s.cod_apres WHEN 259434 THEN 302.00
+                              WHEN 234194 THEN 799.30
+                              WHEN 309653 THEN 174.30
+                              WHEN 254655 THEN 286.00 END)::numeric, 2) AS faturamento
+FROM cddd.vw_sell_out s
+WHERE s.date >= :data_ini AND s.date < :data_fim
 GROUP BY 1, 2
-ORDER BY 1 DESC;
+ORDER BY 1 DESC, 2;
 ```
 
+#### Meta × resultado
+
+> ⚠️ **O schema `remuneracao_fv` ainda não existe no banco AWS.** Se a consulta falhar, responda que
+> a informação de meta não está disponível no momento — não estime a meta.
+
+A meta mensal de cada representante está em `remuneracao_fv.fato_remuneracao`: **`fat_alvo_bonus`**
+é a meta e **`fat_base`** é o faturamento base. O realizado é o faturamento da `vw_sell_out`
+(unidades × ticket médio) do mesmo `cod_ct` no mesmo mês.
+
+*"Os representantes bateram a meta em agosto?"*
+
 ```sql
--- Q12 · Ranking de PDVs por sell-out
-SELECT p.cnpj_pdv, p.desc_pdv, p.cidade, p.uf, SUM(v.und) AS unidades
-FROM cddd.vendas_consolidado v
-JOIN cddd.pdvs p ON p.cod_pdv = v.cod_pdv::bigint
-WHERE v.cod_anomes BETWEEN :data_ini AND :data_fim
-  AND v.cod_apresentacao = '259434'
+-- B05 · Meta × resultado por representante no mês
+WITH realizado AS (
+  SELECT s.cod_ct,
+         date_trunc('month', s.date)::date AS mes,
+         SUM((s.cdd + s.extras + s.mp + s.ss - s.pbm) *
+             CASE s.cod_apres WHEN 259434 THEN 302.00
+                              WHEN 234194 THEN 799.30
+                              WHEN 309653 THEN 174.30
+                              WHEN 254655 THEN 286.00 END) AS faturamento
+  FROM cddd.vw_sell_out s
+  GROUP BY 1, 2
+)
+SELECT r.mes, r.nome_representante, r.setor, r.nivel,
+       r.fat_base,
+       r.fat_alvo_bonus                                                     AS meta,
+       ROUND(re.faturamento::numeric, 2)                                    AS faturamento_realizado,
+       ROUND((100 * re.faturamento / NULLIF(r.fat_alvo_bonus, 0))::numeric, 1) AS pct_meta,
+       ROUND((100 * re.faturamento / NULLIF(r.fat_base, 0))::numeric, 1)       AS pct_fat_base
+FROM remuneracao_fv.fato_remuneracao r
+LEFT JOIN realizado re ON re.cod_ct = r.cod_ct AND re.mes = r.mes
+WHERE r.mes = :mes                    -- 1º dia do mês, ex.: '2026-08-01'
+ORDER BY pct_meta DESC NULLS LAST;
+```
+
+*"Como está a equipe do Gabriel contra a meta?"*
+
+```sql
+-- B06 · Meta × resultado por GR no mês
+WITH realizado AS (
+  SELECT s.cod_ct,
+         date_trunc('month', s.date)::date AS mes,
+         SUM((s.cdd + s.extras + s.mp + s.ss - s.pbm) *
+             CASE s.cod_apres WHEN 259434 THEN 302.00
+                              WHEN 234194 THEN 799.30
+                              WHEN 309653 THEN 174.30
+                              WHEN 254655 THEN 286.00 END) AS faturamento
+  FROM cddd.vw_sell_out s
+  GROUP BY 1, 2
+)
+SELECT g.nome_gr AS gr,
+       SUM(r.fat_base)       AS fat_base,
+       SUM(r.fat_alvo_bonus) AS meta,
+       ROUND(SUM(re.faturamento)::numeric, 2) AS faturamento_realizado,
+       ROUND((100 * SUM(re.faturamento) / NULLIF(SUM(r.fat_alvo_bonus), 0))::numeric, 1) AS pct_meta
+FROM remuneracao_fv.fato_remuneracao r
+LEFT JOIN realizado re ON re.cod_ct = r.cod_ct AND re.mes = r.mes
+LEFT JOIN cddd.dim_gr g ON g.cod_gr = r.cod_gr
+WHERE r.mes = :mes
+GROUP BY 1
+ORDER BY pct_meta DESC NULLS LAST;
+```
+
+#### Fontes de vendas extras e Mercado Público
+
+Quando o usuário pedir o detalhe de vendas extras, Mercado Público ou Saúde Suplementar, consulte a
+tabela fonte. Ignore linhas com `deleted_at` preenchido (exclusão lógica).
+
+*"Quais foram as vendas extras do mês, por produto?"*
+
+```sql
+-- B07 · Vendas extras por mês e produto
+SELECT date_trunc('month', e.data_venda)::date AS mes,
+       e.produto,
+       SUM(e.qtd) AS unidades
+FROM cddd.vendas_extras e
+WHERE e.deleted_at IS NULL
+  AND e.data_venda >= :data_ini AND e.data_venda < :data_fim
+GROUP BY 1, 2
+ORDER BY 1 DESC, 3 DESC;
+```
+
+*"Quais representantes lançaram vendas extras?"*
+
+```sql
+-- B08 · Vendas extras por representante (território)
+SELECT fv.desc_territorio AS representante,
+       SUM(e.qtd) AS unidades
+FROM cddd.vendas_extras e
+LEFT JOIN (SELECT DISTINCT cod_territorio, desc_territorio FROM cddd.forca_vendas) fv
+       ON fv.cod_territorio = e.cod_territorio
+WHERE e.deleted_at IS NULL
+  AND e.data_venda >= :data_ini AND e.data_venda < :data_fim
+GROUP BY 1
+ORDER BY unidades DESC;
+```
+
+*"Quanto vendemos para Mercado Público?" / "E para Saúde Suplementar?"*
+
+```sql
+-- B09 · Mercado Público e Saúde Suplementar por mês, modalidade e produto
+SELECT date_trunc('month', v.data_venda)::date AS mes,
+       v.modalidade,                  -- 'Mercado Público' ou 'Saúde Suplementar'
+       v.produto,
+       SUM(v.frascos)        AS unidades,
+       SUM(v.total_sell_out) AS valor
+FROM cddd.venda_mercado_publico v
+WHERE v.deleted_at IS NULL
+  AND v.data_venda >= :data_ini AND v.data_venda < :data_fim
+GROUP BY 1, 2, 3
+ORDER BY 1 DESC, 4 DESC;
+```
+
+### 2.2 Sell Out Ease PDVs (CDD)
+
+Dispensação de unidades Ease nos PDVs. **PDV só tem unidade CDD** — extras, Mercado Público e
+Saúde Suplementar não existem por PDV.
+
+A query abaixo é a referência: ela já aplica os filtros padrão do Sell Out Ease (tipo de
+transação, informantes que duplicam venda e canal hospitalar). **Mantenha esses filtros em toda
+consulta derivada.**
+
+*"Quantas unidades CDD a Ease dispensou mês a mês?"*
+
+```sql
+-- B10 · Unidades CDD Ease mês a mês (query de referência)
+SELECT
+    TO_CHAR(fc.cod_anomes, 'YYYYMM') AS anomes,
+    SUM(fc.und / 1000.0) AS total_und
+FROM cddd.fato_cdd fc
+LEFT JOIN cddd.pdvs pdvs ON pdvs.cod_pdv = fc.cod_pdv::bigint
+LEFT JOIN cddd.dim_utc_setor_hist fv
+       ON fv.utc = pdvs.cod_utc::text
+      AND fc.cod_anomes >= fv.dt_inicio
+      AND is_current
+LEFT JOIN cddd.apres a ON a.cod_apresentacao = fc.cod_apresentacao::bigint
+LEFT JOIN cddd.canal dc_1 ON dc_1.cod_subcanal = pdvs.cod_subcanal
+LEFT JOIN cddd.informantes di ON di.cod_informante = fc.cod_informante::integer
+WHERE ((fc.cod_anomes >= '2025-07-01' AND fc.cod_tipo_transacao = '1')
+       OR fc.cod_anomes < '2025-07-01')
+  AND ((fc.cod_anomes <= '2024-10-01' AND di.desc_informante NOT IN ('DIMED DISTR', 'PORTAL'))
+       OR (fc.cod_anomes > '2024-10-01' AND di.desc_informante NOT SIMILAR TO '%(DIMED|LS|PORTAL|FARMACIAS ASSOCIADAS)%'))
+  AND dc_1.desc_canal <> 'HOSPITALAR'
+GROUP BY TO_CHAR(fc.cod_anomes, 'YYYYMM')
+ORDER BY anomes DESC;
+```
+
+*"Quantas unidades a Raia dispensou por mês?"*
+
+```sql
+-- B11 · Unidades CDD de uma rede (rede = desc_grupo_informante)
+SELECT
+    TO_CHAR(fc.cod_anomes, 'YYYYMM') AS anomes,
+    di.desc_grupo_informante AS rede,
+    SUM(fc.und / 1000.0) AS total_und
+FROM cddd.fato_cdd fc
+LEFT JOIN cddd.pdvs pdvs ON pdvs.cod_pdv = fc.cod_pdv::bigint
+LEFT JOIN cddd.canal dc_1 ON dc_1.cod_subcanal = pdvs.cod_subcanal
+LEFT JOIN cddd.informantes di ON di.cod_informante = fc.cod_informante::integer
+WHERE ((fc.cod_anomes >= '2025-07-01' AND fc.cod_tipo_transacao = '1')
+       OR fc.cod_anomes < '2025-07-01')
+  AND ((fc.cod_anomes <= '2024-10-01' AND di.desc_informante NOT IN ('DIMED DISTR', 'PORTAL'))
+       OR (fc.cod_anomes > '2024-10-01' AND di.desc_informante NOT SIMILAR TO '%(DIMED|LS|PORTAL|FARMACIAS ASSOCIADAS)%'))
+  AND dc_1.desc_canal <> 'HOSPITALAR'
+  AND di.desc_grupo_informante ILIKE '%' || :rede || '%'   -- remova para ver todas as redes
+GROUP BY 1, 2
+ORDER BY 1 DESC, 3 DESC;
+```
+
+*"Quanto o PDV de CNPJ X vendeu por mês e produto?"*
+
+```sql
+-- B12 · Unidades CDD de um PDV (CNPJ) por mês e SKU
+SELECT
+    TO_CHAR(fc.cod_anomes, 'YYYYMM') AS anomes,
+    a.desc_apresentacao,
+    SUM(fc.und / 1000.0) AS total_und
+FROM cddd.fato_cdd fc
+LEFT JOIN cddd.pdvs pdvs ON pdvs.cod_pdv = fc.cod_pdv::bigint
+LEFT JOIN cddd.apres a ON a.cod_apresentacao = fc.cod_apresentacao::bigint
+LEFT JOIN cddd.canal dc_1 ON dc_1.cod_subcanal = pdvs.cod_subcanal
+LEFT JOIN cddd.informantes di ON di.cod_informante = fc.cod_informante::integer
+WHERE ((fc.cod_anomes >= '2025-07-01' AND fc.cod_tipo_transacao = '1')
+       OR fc.cod_anomes < '2025-07-01')
+  AND ((fc.cod_anomes <= '2024-10-01' AND di.desc_informante NOT IN ('DIMED DISTR', 'PORTAL'))
+       OR (fc.cod_anomes > '2024-10-01' AND di.desc_informante NOT SIMILAR TO '%(DIMED|LS|PORTAL|FARMACIAS ASSOCIADAS)%'))
+  AND dc_1.desc_canal <> 'HOSPITALAR'
+  AND lpad(regexp_replace(pdvs.cnpj_pdv, '\D', '', 'g'), 14, '0') = :cnpj
+GROUP BY 1, 2
+ORDER BY 1 DESC, 3 DESC;
+```
+
+*"Quais PDVs mais venderam Extrato em São Paulo?"*
+
+```sql
+-- B13 · Ranking de PDVs por unidades CDD
+SELECT
+    pdvs.cnpj_pdv, pdvs.desc_pdv, pdvs.cidade, pdvs.uf,
+    SUM(fc.und / 1000.0) AS total_und
+FROM cddd.fato_cdd fc
+LEFT JOIN cddd.pdvs pdvs ON pdvs.cod_pdv = fc.cod_pdv::bigint
+LEFT JOIN cddd.canal dc_1 ON dc_1.cod_subcanal = pdvs.cod_subcanal
+LEFT JOIN cddd.informantes di ON di.cod_informante = fc.cod_informante::integer
+WHERE ((fc.cod_anomes >= '2025-07-01' AND fc.cod_tipo_transacao = '1')
+       OR fc.cod_anomes < '2025-07-01')
+  AND ((fc.cod_anomes <= '2024-10-01' AND di.desc_informante NOT IN ('DIMED DISTR', 'PORTAL'))
+       OR (fc.cod_anomes > '2024-10-01' AND di.desc_informante NOT SIMILAR TO '%(DIMED|LS|PORTAL|FARMACIAS ASSOCIADAS)%'))
+  AND dc_1.desc_canal <> 'HOSPITALAR'
+  AND fc.cod_anomes >= :data_ini AND fc.cod_anomes < :data_fim
+  AND fc.cod_apresentacao = '259434'   -- Extrato; remova para todos os SKUs
+  AND pdvs.uf = :uf                    -- ou pdvs.cidade, ou pdvs.cod_utc
 GROUP BY 1, 2, 3, 4
-ORDER BY unidades DESC
+ORDER BY total_und DESC
 LIMIT 50;
 ```
 
-```sql
--- Q13 · Sell-out por território, CT e GR
-SELECT v.cod_territorio, fv.desc_territorio, ct.nome_abreviado_ct AS ct, gr.nome_gr AS gr, SUM(v.und) AS unidades
-FROM cddd.vendas_consolidado v
-LEFT JOIN (SELECT DISTINCT cod_territorio, desc_territorio FROM cddd.forca_vendas) fv
-       ON fv.cod_territorio = v.cod_territorio::text
-LEFT JOIN cddd.dim_ct ct ON ct.cod_ct = v.cod_ct
-LEFT JOIN cddd.dim_gr gr ON gr.cod_gr = v.cod_gr
-WHERE v.cod_anomes BETWEEN :data_ini AND :data_fim
-GROUP BY 1, 2, 3, 4
-ORDER BY unidades DESC;
-```
+*"Quantas unidades de cada produto foram dispensadas nos PDVs?"*
 
 ```sql
--- Q14 · Sell-out dos últimos 90 dias de um brick
-SELECT p.desc_pdv, v.desc_apresentacao, SUM(v.und) AS unidades
-FROM cddd.vendas_consolidado v
-JOIN cddd.pdvs p ON p.cod_pdv = v.cod_pdv::bigint
-WHERE v.cod_utc = :cod_utc
-  AND v.cod_anomes >= (SELECT MAX(cod_anomes) FROM cddd.vendas_consolidado) - INTERVAL '90 days'
+-- B14 · Unidades CDD por SKU, mês a mês
+SELECT
+    TO_CHAR(fc.cod_anomes, 'YYYYMM') AS anomes,
+    a.desc_apresentacao,
+    SUM(fc.und / 1000.0) AS total_und
+FROM cddd.fato_cdd fc
+LEFT JOIN cddd.pdvs pdvs ON pdvs.cod_pdv = fc.cod_pdv::bigint
+LEFT JOIN cddd.apres a ON a.cod_apresentacao = fc.cod_apresentacao::bigint
+LEFT JOIN cddd.canal dc_1 ON dc_1.cod_subcanal = pdvs.cod_subcanal
+LEFT JOIN cddd.informantes di ON di.cod_informante = fc.cod_informante::integer
+WHERE ((fc.cod_anomes >= '2025-07-01' AND fc.cod_tipo_transacao = '1')
+       OR fc.cod_anomes < '2025-07-01')
+  AND ((fc.cod_anomes <= '2024-10-01' AND di.desc_informante NOT IN ('DIMED DISTR', 'PORTAL'))
+       OR (fc.cod_anomes > '2024-10-01' AND di.desc_informante NOT SIMILAR TO '%(DIMED|LS|PORTAL|FARMACIAS ASSOCIADAS)%'))
+  AND dc_1.desc_canal <> 'HOSPITALAR'
 GROUP BY 1, 2
-ORDER BY unidades DESC;
+ORDER BY 1 DESC, 3 DESC;
+```
+
+*"Quanto o brick X vendeu nos últimos 90 dias?"* — conte a partir da data máxima da base, não de hoje.
+
+```sql
+-- B15 · Unidades CDD de um brick nos últimos 90 dias, por PDV
+SELECT
+    pdvs.desc_pdv,
+    SUM(fc.und / 1000.0) AS total_und
+FROM cddd.fato_cdd fc
+LEFT JOIN cddd.pdvs pdvs ON pdvs.cod_pdv = fc.cod_pdv::bigint
+LEFT JOIN cddd.canal dc_1 ON dc_1.cod_subcanal = pdvs.cod_subcanal
+LEFT JOIN cddd.informantes di ON di.cod_informante = fc.cod_informante::integer
+WHERE fc.cod_tipo_transacao = '1'
+  AND di.desc_informante NOT SIMILAR TO '%(DIMED|LS|PORTAL|FARMACIAS ASSOCIADAS)%'
+  AND dc_1.desc_canal <> 'HOSPITALAR'
+  AND pdvs.cod_utc = :cod_utc
+  AND fc.cod_anomes >= (SELECT MAX(cod_anomes) FROM cddd.fato_cdd) - INTERVAL '90 days'
+GROUP BY 1
+ORDER BY total_und DESC;
+```
+
+*"Quais as 10 cidades com mais unidades Ease dispensadas no território do Hermes no último trimestre?"*
+
+```sql
+-- B16 · Top 10 cidades em unidades CDD Ease no território de um representante, último trimestre
+SELECT
+    pdvs.cidade,
+    pdvs.uf,
+    SUM(fc.und / 1000.0) AS total_und
+FROM cddd.fato_cdd fc
+LEFT JOIN cddd.pdvs pdvs ON pdvs.cod_pdv = fc.cod_pdv::bigint
+LEFT JOIN cddd.canal dc_1 ON dc_1.cod_subcanal = pdvs.cod_subcanal
+LEFT JOIN cddd.informantes di ON di.cod_informante = fc.cod_informante::integer
+WHERE ((fc.cod_anomes >= '2025-07-01' AND fc.cod_tipo_transacao = '1')
+       OR fc.cod_anomes < '2025-07-01')
+  AND ((fc.cod_anomes <= '2024-10-01' AND di.desc_informante NOT IN ('DIMED DISTR', 'PORTAL'))
+       OR (fc.cod_anomes > '2024-10-01' AND di.desc_informante NOT SIMILAR TO '%(DIMED|LS|PORTAL|FARMACIAS ASSOCIADAS)%'))
+  AND dc_1.desc_canal <> 'HOSPITALAR'
+  AND pdvs.cod_utc IN (SELECT cod_utc FROM cddd.forca_vendas
+                       WHERE desc_territorio ILIKE '%HERMES%')      -- troque o representante aqui
+  -- último trimestre = os 3 últimos meses fechados da base
+  AND fc.cod_anomes >= (SELECT date_trunc('month', MAX(cod_anomes)) - INTERVAL '3 months' FROM cddd.fato_cdd)
+  AND fc.cod_anomes <  (SELECT date_trunc('month', MAX(cod_anomes)) FROM cddd.fato_cdd)
+GROUP BY 1, 2
+ORDER BY total_und DESC
+LIMIT 10;
+```
+
+Por cidade só existe unidade **CDD**: extras, Mercado Público e Saúde Suplementar não têm PDV.
+
+### 2.3 Sell Out Mercado (TD)
+
+Mercado de cannabis inteiro (todos os laboratórios). Fonte: `td.fato_td`.
+
+**Sempre que pedirem faturamento ou unidades de mercado, pergunte se é Varejo, Mercado Público
+ou Total:**
+
+| Resposta | Filtro |
+|---|---|
+| Varejo | `dc_1.desc_canal <> 'HOSPITALAR'` |
+| Mercado Público | `dc_1.desc_canal = 'HOSPITALAR'` |
+| Total | sem filtro de canal |
+
+- `cod_anomes` é texto `'YYYYMM'` (ex.: `'202608'`).
+- `und` e `valor_` vêm ×1000: divida por 1000.
+- Laboratório: `td.fato_td.cod_apresentacao` → `cddd.apres.cod_marca` → `cddd.prod.cod_fab` →
+  `cddd.fab.desc_fab` (nome) / `desc_sigla_fab` (`'EAS'` = Ease).
+- Representante: `td.fato_td.cod_utc` → `cddd.forca_vendas.cod_utc`.
+
+*"Qual o faturamento do mercado varejo por mês?"*
+
+```sql
+-- B20 · Faturamento mercado VAREJO por mês
+SELECT
+  f.cod_anomes,
+  SUM(f.valor_) / 1000 AS faturamento_varejo
+FROM td.fato_td f
+LEFT JOIN cddd.canal dc_1 ON dc_1.cod_subcanal = f.cod_subcanal
+WHERE dc_1.desc_canal <> 'HOSPITALAR'
+GROUP BY 1
+ORDER BY 1 DESC;
+```
+
+*"Qual o faturamento do Mercado Público?"*
+
+```sql
+-- B21 · Faturamento MERCADO PÚBLICO por mês (para o Total, remova o filtro de canal)
+SELECT
+  f.cod_anomes,
+  SUM(f.valor_) / 1000 AS faturamento_mercado_publico
+FROM td.fato_td f
+LEFT JOIN cddd.canal dc_1 ON dc_1.cod_subcanal = f.cod_subcanal
+WHERE dc_1.desc_canal = 'HOSPITALAR'
+GROUP BY 1
+ORDER BY 1 DESC;
+```
+
+*"Quantas unidades o mercado varejo vendeu por mês?"*
+
+```sql
+-- B22 · Unidades mercado VAREJO por mês
+SELECT
+  f.cod_anomes,
+  SUM(f.und) / 1000 AS unidades_varejo
+FROM td.fato_td f
+LEFT JOIN cddd.canal dc_1 ON dc_1.cod_subcanal = f.cod_subcanal
+WHERE dc_1.desc_canal <> 'HOSPITALAR'
+GROUP BY 1
+ORDER BY 1 DESC;
+```
+
+*"Quais SKUs mais faturam no varejo?"*
+
+```sql
+-- B23 · Faturamento mercado VAREJO por SKU
+SELECT
+  a.cod_apresentacao,
+  a.desc_apresentacao,
+  SUM(f.valor_) / 1000 AS faturamento_varejo,
+  SUM(f.und) / 1000    AS unidades_varejo
+FROM td.fato_td f
+LEFT JOIN cddd.canal dc_1 ON dc_1.cod_subcanal = f.cod_subcanal
+LEFT JOIN cddd.apres a ON a.cod_apresentacao = f.cod_apresentacao
+WHERE dc_1.desc_canal <> 'HOSPITALAR'
+  AND f.cod_anomes BETWEEN :anomes_ini AND :anomes_fim
+GROUP BY 1, 2
+ORDER BY faturamento_varejo DESC
+LIMIT 50;
+```
+
+#### ⭐ Market share de faturamento varejo por laboratório
+
+**É a pergunta mais comum desta seção.**
+
+*"Qual o market share de faturamento por laboratório no varejo?"*
+
+```sql
+-- B24 · Market share de faturamento VAREJO por laboratório
+WITH base AS (
+  SELECT
+    COALESCE(fb.desc_fab, 'NÃO IDENTIFICADO') AS laboratorio,
+    SUM(f.valor_) / 1000 AS faturamento
+  FROM td.fato_td f
+  LEFT JOIN cddd.canal dc_1 ON dc_1.cod_subcanal = f.cod_subcanal
+  LEFT JOIN cddd.apres a    ON a.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN cddd.prod pr    ON pr.cod_marca = a.cod_marca
+  LEFT JOIN cddd.fab fb     ON fb.cod_fab = pr.cod_fab
+  WHERE dc_1.desc_canal <> 'HOSPITALAR'
+    AND f.cod_anomes BETWEEN :anomes_ini AND :anomes_fim
+  GROUP BY 1
+)
+SELECT laboratorio,
+       ROUND(faturamento, 2) AS faturamento,
+       ROUND(100 * faturamento / SUM(faturamento) OVER (), 2) AS share_pct
+FROM base
+ORDER BY faturamento DESC;
+```
+
+*"Quais os top 10 laboratórios em faturamento no varejo no último trimestre?"*
+
+```sql
+-- B25 · Top 10 laboratórios em faturamento VAREJO nos últimos 3 meses da base
+WITH base AS (
+  SELECT
+    COALESCE(fb.desc_fab, 'NÃO IDENTIFICADO') AS laboratorio,
+    SUM(f.valor_) / 1000 AS faturamento
+  FROM td.fato_td f
+  LEFT JOIN cddd.canal dc_1 ON dc_1.cod_subcanal = f.cod_subcanal
+  LEFT JOIN cddd.apres a    ON a.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN cddd.prod pr    ON pr.cod_marca = a.cod_marca
+  LEFT JOIN cddd.fab fb     ON fb.cod_fab = pr.cod_fab
+  WHERE dc_1.desc_canal <> 'HOSPITALAR'
+    AND f.cod_anomes > (SELECT TO_CHAR(TO_DATE(MAX(cod_anomes), 'YYYYMM') - INTERVAL '3 months', 'YYYYMM')
+                        FROM td.fato_td)
+  GROUP BY 1
+)
+SELECT laboratorio,
+       ROUND(faturamento, 2) AS faturamento,
+       ROUND(100 * faturamento / SUM(faturamento) OVER (), 2) AS share_pct
+FROM base
+ORDER BY faturamento DESC
+LIMIT 10;
+```
+
+*"Como evoluiu o market share da Ease no varejo mês a mês?"*
+
+```sql
+-- B26 · Market share Ease no faturamento VAREJO, mês a mês
+SELECT
+  f.cod_anomes,
+  SUM(f.valor_) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / 1000 AS faturamento_ease,
+  SUM(f.valor_) / 1000                                          AS faturamento_mercado,
+  ROUND(100 * SUM(f.valor_) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / NULLIF(SUM(f.valor_), 0), 2) AS share_ease_pct
+FROM td.fato_td f
+LEFT JOIN cddd.canal dc_1 ON dc_1.cod_subcanal = f.cod_subcanal
+LEFT JOIN cddd.apres a    ON a.cod_apresentacao = f.cod_apresentacao
+LEFT JOIN cddd.prod pr    ON pr.cod_marca = a.cod_marca
+LEFT JOIN cddd.fab fb     ON fb.cod_fab = pr.cod_fab
+WHERE dc_1.desc_canal <> 'HOSPITALAR'
+GROUP BY 1
+ORDER BY 1 DESC;
+```
+
+*"Qual o market share da Ease no território de cada representante?"*
+
+```sql
+-- B27 · Market share Ease no faturamento VAREJO por representante
+SELECT
+  fv.desc_territorio AS representante,
+  SUM(f.valor_) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / 1000 AS faturamento_ease,
+  SUM(f.valor_) / 1000                                          AS faturamento_mercado,
+  ROUND(100 * SUM(f.valor_) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / NULLIF(SUM(f.valor_), 0), 2) AS share_ease_pct
+FROM td.fato_td f
+LEFT JOIN cddd.canal dc_1        ON dc_1.cod_subcanal = f.cod_subcanal
+LEFT JOIN cddd.apres a           ON a.cod_apresentacao = f.cod_apresentacao
+LEFT JOIN cddd.prod pr           ON pr.cod_marca = a.cod_marca
+LEFT JOIN cddd.fab fb            ON fb.cod_fab = pr.cod_fab
+LEFT JOIN cddd.forca_vendas fv   ON fv.cod_utc = f.cod_utc
+WHERE dc_1.desc_canal <> 'HOSPITALAR'
+  AND f.cod_anomes BETWEEN :anomes_ini AND :anomes_fim
+GROUP BY 1
+ORDER BY share_ease_pct DESC NULLS LAST;
+```
+
+*"Qual o market share da Ease por GR?"*
+
+```sql
+-- B28 · Market share Ease no faturamento VAREJO por GR
+SELECT
+  COALESCE(d.desc_distrito, 'SEM GR') AS gr,
+  SUM(f.valor_) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / 1000 AS faturamento_ease,
+  SUM(f.valor_) / 1000                                          AS faturamento_mercado,
+  ROUND(100 * SUM(f.valor_) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / NULLIF(SUM(f.valor_), 0), 2) AS share_ease_pct
+FROM td.fato_td f
+LEFT JOIN cddd.canal dc_1        ON dc_1.cod_subcanal = f.cod_subcanal
+LEFT JOIN cddd.apres a           ON a.cod_apresentacao = f.cod_apresentacao
+LEFT JOIN cddd.prod pr           ON pr.cod_marca = a.cod_marca
+LEFT JOIN cddd.fab fb            ON fb.cod_fab = pr.cod_fab
+LEFT JOIN cddd.forca_vendas fv   ON fv.cod_utc = f.cod_utc
+LEFT JOIN cddd.fv_territorio t   ON t.cod_territorio = fv.cod_territorio
+LEFT JOIN cddd.fv_distrito d     ON d.cod_distrito = t.cod_distrito
+WHERE dc_1.desc_canal <> 'HOSPITALAR'
+  AND f.cod_anomes BETWEEN :anomes_ini AND :anomes_fim
+GROUP BY 1
+ORDER BY share_ease_pct DESC NULLS LAST;
+```
+
+*"Em quais estados a Ease tem maior market share?"*
+
+```sql
+-- B29 · Market share Ease no faturamento VAREJO por UF
+SELECT
+  u.uf,
+  SUM(f.valor_) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / 1000 AS faturamento_ease,
+  SUM(f.valor_) / 1000                                          AS faturamento_mercado,
+  ROUND(100 * SUM(f.valor_) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / NULLIF(SUM(f.valor_), 0), 2) AS share_ease_pct
+FROM td.fato_td f
+LEFT JOIN cddd.canal dc_1 ON dc_1.cod_subcanal = f.cod_subcanal
+LEFT JOIN cddd.apres a    ON a.cod_apresentacao = f.cod_apresentacao
+LEFT JOIN cddd.prod pr    ON pr.cod_marca = a.cod_marca
+LEFT JOIN cddd.fab fb     ON fb.cod_fab = pr.cod_fab
+LEFT JOIN cddd.utc u      ON u.cod_utc = f.cod_utc
+WHERE dc_1.desc_canal <> 'HOSPITALAR'
+  AND f.cod_anomes BETWEEN :anomes_ini AND :anomes_fim
+GROUP BY 1
+ORDER BY share_ease_pct DESC NULLS LAST;
+```
+
+*"Quais as 10 cidades com mais unidades Prati-Donaduzzi no varejo, no território do Hermes, no último trimestre?"*
+
+```sql
+-- B30 · Top 10 cidades em unidades VAREJO de um laboratório no território de um representante, último trimestre
+SELECT
+  u.cidade,
+  u.uf,
+  SUM(f.und) / 1000 AS unidades_varejo
+FROM td.fato_td f
+LEFT JOIN cddd.canal dc_1 ON dc_1.cod_subcanal = f.cod_subcanal
+LEFT JOIN cddd.apres a    ON a.cod_apresentacao = f.cod_apresentacao
+LEFT JOIN cddd.prod pr    ON pr.cod_marca = a.cod_marca
+LEFT JOIN cddd.fab fb     ON fb.cod_fab = pr.cod_fab
+LEFT JOIN cddd.utc u      ON u.cod_utc = f.cod_utc
+WHERE dc_1.desc_canal <> 'HOSPITALAR'                 -- varejo
+  AND fb.desc_sigla_fab = 'P.D'                       -- PRATI-DONADUZZI; troque o laboratório aqui ('EAS' = Ease)
+  AND f.cod_utc IN (SELECT cod_utc FROM cddd.forca_vendas
+                    WHERE desc_territorio ILIKE '%HERMES%')   -- troque o representante aqui
+  -- último trimestre = os 3 últimos meses da base
+  AND f.cod_anomes > (SELECT TO_CHAR(TO_DATE(MAX(cod_anomes), 'YYYYMM') - INTERVAL '3 months', 'YYYYMM')
+                      FROM td.fato_td)
+GROUP BY 1, 2
+ORDER BY unidades_varejo DESC
+LIMIT 10;
 ```
 
 ---
 
-## 3. Estoque nas Redes
+## 3. Estoque nas Redes e Categoria de PDVs
+
+> **Forecast e projeções de Sell In ou Sell Out:** oriente o usuário a acessar o **app de Forecast
+> de Reposição**, que concentra essas informações. A única exceção é o status de ruptura de hoje
+> (dia 0) de um CD, que pode ser consultado na seção 3.3.
 
 | Tabela | Conteúdo | Colunas-chave |
 |---|---|---|
-| `estoque_redes.vw_estoque_cd_recente` | Snapshot mais recente de estoque de cada rede (10 redes) | `rede`, `cnpj`, `desc_loja`, `tipo` (`'PDV'`/`'CD'`), `cod_ean`, `estoque_qtde`, `data_recebimento` |
-| `estoque_redes.vw_forecast_projecao_cd_extrato` | Projeção de ruptura de Extrato nos CDs | `rede`, `cd`, `estoque`, `dde_base`, `compra_arredondada`, `em_ruptura`, `dia` (0 = hoje) |
-| `ruptura_extrato.vw_app_pdvs` | Lojas com Extrato em estoque, com coordenadas | `loja`, `rede`, `endereco`, `cidade`, `uf`, `estoque_un`, `latitude`, `longitude` |
-| `ruptura_extrato.dim_cep_geo` | CEP → coordenada | `cep` (8 dígitos), `lat_ok`, `lon_ok` |
+| `estoque_redes.estoque_redes_cd` | **Histórico** de todas as cargas de estoque das redes, PDVs e CDs | `data_recebimento`, `rede`, `cod_loja`, `cnpj`, `desc_loja`, `tipo` (`'PDV'`/`'CD'`), `cod_ean`, `estoque_qtde` |
+| `estoque_redes.vw_estoque_cd_recente` | Mesma estrutura, só a **carga mais recente** de cada rede | idem |
+| `estoque_redes.vw_forecast_projecao_cd` | Projeção diária de estoque por CD × SKU | `rede`, `cd`, `produto`, `ean`, `data`, `dia` (0 = hoje), `giro_base`, `dde_base`, `target_dde` |
+| `estoque_redes.dim_cd_pdvs` | CD → PDVs que ele abastece | `cd`, `rede`, `cod_loja`, `desc_pdv`, `cnpj_pdv` |
+| `tdd.fato_tdd` | Categoria e volume do PDV por grupo e período | `"COD_PDV"`, `"COD_GRUPO"`, `"COD_PERIODO"`, `"CAT_R$_MERCADO"`, `"CAT_UN_MERCADO"` |
+| `tdd.dim_pdv` | Cadastro do PDV no TDD (1 CNPJ = 1 `COD_PDV`) | `"COD_PDV"`, `"CNPJ_PDV"` (bigint), `"DESC_PDV"`, `"CIDADE_PDV"`, `"UF_PDV"` |
+| `tdd.dim_mercado` | Grupo da categoria | `"COD_GRUPO"`, `"DESC_GRUPO"` (`1` CONCORRENTE · `2` EASELABS · `3` MERCADO) |
+| `tdd.dim_periodo` | Períodos trimestrais do TDD | `"COD_PERIODO"`, `"DESC_PERIODO"`, `"TIPO_PERIODO"` |
 
-- Filtre `tipo = 'PDV'` para estoque de loja.
+- **Filtre sempre a coluna `tipo`** conforme a pergunta: `'PDV'` (loja) ou `'CD'` (centro de
+  distribuição). O CD vem com `cnpj = '00000000000000'` e é identificado por `desc_loja`
+  (o mesmo nome da coluna `cd` do forecast).
+- A carga mais recente é **por rede**: cada rede tem sua própria `data_recebimento`. Mostre sempre
+  a data junto do número.
+- Só 10 redes enviam estoque: ARAUJO, CLAMED, DPSP, DROGAL, INDIANA, PAGUEMENOS, PANVEL, RAIA,
+  SAOJOAO e VENANCIO. PDV fora delas não tem estoque zero, tem estoque **não informado**.
 - EANs: `7896806601250` Extrato · `7896806601243` Isolado 30 mL · `7896806601281` Isolado 10 mL · `7896806601328` Isolado 20 mg.
 
-```sql
--- Q20 · Estoque de uma loja por SKU
-SELECT rede, desc_loja, cod_ean, estoque_qtde, data_recebimento
-FROM estoque_redes.vw_estoque_cd_recente
-WHERE tipo = 'PDV'
-  AND lpad(regexp_replace(cnpj::text, '\D', '', 'g'), 14, '0') = :cnpj;
-```
+### 3.1 Estoque na carga mais recente
+
+*"Quais redes informam estoque e quando foi o último envio de cada uma?"*
 
 ```sql
--- Q21 · Estoque por rede e SKU
-SELECT rede, cod_ean, COUNT(DISTINCT cnpj) FILTER (WHERE estoque_qtde > 0) AS lojas_com_estoque,
-       SUM(estoque_qtde) AS unidades, MAX(data_recebimento) AS data_estoque
+-- C01 · Estoque total e data do último envio de cada rede (query de referência)
+SELECT
+    data_recebimento,
+    rede,
+    SUM(estoque_qtde) AS soma_estoque_qtde
+FROM estoque_redes.vw_estoque_cd_recente
+GROUP BY data_recebimento, rede
+ORDER BY rede ASC, data_recebimento DESC;
+```
+
+*"Quanto de Extrato as redes têm nas lojas?"*
+
+```sql
+-- C02 · Estoque de um SKU, só PDVs, por rede
+SELECT
+    data_recebimento,
+    rede,
+    SUM(estoque_qtde) AS soma_estoque_qtde
+FROM estoque_redes.vw_estoque_cd_recente
+WHERE cod_ean = '7896806601250'   -- apenas um SKU (Extrato)
+  AND tipo = 'PDV'                -- apenas PDVs
+GROUP BY data_recebimento, rede
+ORDER BY rede ASC, data_recebimento DESC;
+```
+
+*"Quanto cada rede tem de estoque por produto, nas lojas e nos CDs?"*
+
+```sql
+-- C03 · Estoque por rede, tipo e SKU na carga mais recente
+SELECT
+    rede,
+    data_recebimento,
+    tipo,
+    SUM(estoque_qtde) FILTER (WHERE cod_ean = '7896806601250') AS extrato,
+    SUM(estoque_qtde) FILTER (WHERE cod_ean = '7896806601243') AS isolado_30ml,
+    SUM(estoque_qtde) FILTER (WHERE cod_ean = '7896806601281') AS isolado_10ml,
+    SUM(estoque_qtde) FILTER (WHERE cod_ean = '7896806601328') AS isolado_20mg,
+    SUM(estoque_qtde) AS total
+FROM estoque_redes.vw_estoque_cd_recente
+GROUP BY 1, 2, 3
+ORDER BY 1, 3;
+```
+
+*"Quanto de estoque tem a loja de CNPJ X?"*
+
+```sql
+-- C04 · Estoque de um PDV (CNPJ) por SKU na carga mais recente
+SELECT
+    rede,
+    desc_loja,
+    cod_ean,
+    estoque_qtde,
+    data_recebimento
 FROM estoque_redes.vw_estoque_cd_recente
 WHERE tipo = 'PDV'
+  AND cnpj = lpad(regexp_replace(:cnpj, '\D', '', 'g'), 14, '0')
+  -- AND cod_ean = '7896806601250'  -- um SKU específico
+ORDER BY cod_ean;
+```
+
+Sem linha: a loja não está na base de estoque (rede fora das 10 ou loja não reportada).
+
+*"Quais CDs da Raia tinham estoque no último recebimento, e quantas unidades?"*
+
+```sql
+-- C05 · CDs de uma rede com estoque na carga mais recente (geral e por SKU)
+SELECT
+    rede,
+    desc_loja AS cd,
+    data_recebimento,
+    SUM(estoque_qtde) FILTER (WHERE cod_ean = '7896806601250') AS extrato,
+    SUM(estoque_qtde) FILTER (WHERE cod_ean = '7896806601243') AS isolado_30ml,
+    SUM(estoque_qtde) FILTER (WHERE cod_ean = '7896806601281') AS isolado_10ml,
+    SUM(estoque_qtde) FILTER (WHERE cod_ean = '7896806601328') AS isolado_20mg,
+    SUM(estoque_qtde) AS total
+FROM estoque_redes.vw_estoque_cd_recente
+WHERE tipo = 'CD'
+  AND rede = :rede                 -- remova para ver os CDs de todas as redes
+GROUP BY 1, 2, 3
+HAVING SUM(estoque_qtde) > 0       -- remova para listar também os CDs zerados
+ORDER BY total DESC;
+```
+
+*"Quantas lojas da rede têm Extrato e quantas estão zeradas?"*
+
+```sql
+-- C06 · Lojas com e sem estoque de um SKU na carga mais recente, por rede
+SELECT
+    rede,
+    data_recebimento,
+    COUNT(DISTINCT cnpj) FILTER (WHERE estoque_qtde > 0)  AS lojas_com_estoque,
+    COUNT(DISTINCT cnpj) FILTER (WHERE estoque_qtde <= 0) AS lojas_zeradas,
+    SUM(estoque_qtde) AS unidades
+FROM estoque_redes.vw_estoque_cd_recente
+WHERE tipo = 'PDV'
+  AND cod_ean = :ean
+GROUP BY 1, 2
+ORDER BY 1;
+```
+
+*"Quais lojas o CD X abastece e quanto elas têm de estoque?"*
+
+```sql
+-- C07 · PDVs abastecidos por um CD, com o estoque de cada um na carga mais recente
+SELECT
+    m.cd,
+    m.desc_pdv,
+    m.cnpj_pdv,
+    e.cod_ean,
+    e.estoque_qtde,
+    e.data_recebimento
+FROM estoque_redes.dim_cd_pdvs m
+LEFT JOIN estoque_redes.vw_estoque_cd_recente e
+       ON e.rede = m.rede
+      AND e.cnpj = lpad(m.cnpj_pdv, 14, '0')
+      AND e.tipo = 'PDV'
+      AND e.cod_ean = :ean
+WHERE m.cd = :cd
+ORDER BY e.estoque_qtde DESC NULLS LAST;
+```
+
+### 3.2 Histórico de estoque
+
+Use `estoque_redes.estoque_redes_cd`. As redes enviam mais de uma carga por mês e há meses sem
+envio: para comparar meses, use **a última carga de cada mês**. Mês sem carga não aparece no
+resultado — informe isso ao usuário, não trate como estoque zero.
+
+*"Como evoluiu o estoque de Extrato nas lojas de cada rede nos últimos 6 meses?"*
+
+```sql
+-- C10 · Estoque por rede nos últimos X meses (última carga de cada mês)
+WITH cargas AS (
+  SELECT rede,
+         date_trunc('month', data_recebimento)::date AS mes,
+         MAX(data_recebimento) AS ultima_carga_mes
+  FROM estoque_redes.estoque_redes_cd
+  WHERE tipo = 'PDV'
+    AND data_recebimento >= date_trunc('month', CURRENT_DATE) - INTERVAL '6 months'   -- troque X
+  GROUP BY 1, 2
+)
+SELECT c.rede, c.mes, c.ultima_carga_mes,
+       SUM(e.estoque_qtde) AS estoque
+FROM cargas c
+JOIN estoque_redes.estoque_redes_cd e
+  ON e.rede = c.rede AND e.data_recebimento = c.ultima_carga_mes
+WHERE e.tipo = 'PDV'
+  AND e.cod_ean = '7896806601250'  -- remova para todos os SKUs
+GROUP BY 1, 2, 3
+ORDER BY 1, 2 DESC;
+```
+
+*"Como variou o estoque da loja de CNPJ X ao longo das cargas?"*
+
+```sql
+-- C11 · Histórico de estoque de um PDV (CNPJ), carga a carga
+SELECT
+    data_recebimento,
+    rede,
+    desc_loja,
+    cod_ean,
+    estoque_qtde
+FROM estoque_redes.estoque_redes_cd
+WHERE tipo = 'PDV'
+  AND cnpj = lpad(regexp_replace(:cnpj, '\D', '', 'g'), 14, '0')
+  AND data_recebimento >= CURRENT_DATE - INTERVAL '6 months'
+ORDER BY data_recebimento DESC, cod_ean;
+```
+
+*"Como variou o estoque do CD X?"*
+
+```sql
+-- C12 · Histórico de estoque de um CD, carga a carga, por SKU
+SELECT
+    data_recebimento,
+    SUM(estoque_qtde) FILTER (WHERE cod_ean = '7896806601250') AS extrato,
+    SUM(estoque_qtde) FILTER (WHERE cod_ean = '7896806601243') AS isolado_30ml,
+    SUM(estoque_qtde) FILTER (WHERE cod_ean = '7896806601281') AS isolado_10ml,
+    SUM(estoque_qtde) FILTER (WHERE cod_ean = '7896806601328') AS isolado_20mg
+FROM estoque_redes.estoque_redes_cd
+WHERE tipo = 'CD'
+  AND rede = :rede
+  AND desc_loja = :cd
+GROUP BY 1
+ORDER BY 1 DESC;
+```
+
+### 3.3 Ruptura de CD
+
+Fonte: `estoque_redes.vw_forecast_projecao_cd`. **Um CD está em ruptura em um SKU quando o
+`dde_base` do dia 0 é menor ou igual a 15.**
+
+- **Sempre filtre `dia = 0`.** Os outros dias são projeção (oriente para o app de Forecast de
+  Reposição).
+- **Sempre avalie por SKU.** Um CD pode estar OK em um SKU e em ruptura em outro. Se o usuário não
+  disser o SKU, pergunte ou mostre cada SKU separado — nunca some os SKUs.
+
+*"Quais CDs estão em ruptura de Extrato?"*
+
+```sql
+-- C20 · CDs em ruptura de um SKU
+SELECT
+    rede,
+    cd,
+    produto,
+    ROUND(giro_base, 2) AS giro_base,
+    dde_base,
+    CASE WHEN dde_base <= 15 THEN 'RUPTURA' ELSE 'OK' END AS status
+FROM estoque_redes.vw_forecast_projecao_cd
+WHERE dia = 0
+  AND ean = :ean                   -- obrigatório: um SKU por vez
+  AND dde_base <= 15               -- só quem está em ruptura
+ORDER BY dde_base DESC;
+```
+
+*"O CD X está em ruptura?"*
+
+```sql
+-- C21 · Status de ruptura de um CD, SKU a SKU
+SELECT
+    rede,
+    cd,
+    produto,
+    ean,
+    dde_base,
+    CASE WHEN dde_base <= 15 THEN 'RUPTURA' ELSE 'OK' END AS status
+FROM estoque_redes.vw_forecast_projecao_cd
+WHERE dia = 0
+  AND rede = :rede
+  AND cd = :cd
+ORDER BY ean;
+```
+
+*"Quantos CDs de cada rede estão em ruptura, por produto?"*
+
+```sql
+-- C22 · Quantidade de CDs em ruptura por rede e SKU
+SELECT
+    rede,
+    produto,
+    COUNT(*) FILTER (WHERE dde_base <= 15) AS cds_em_ruptura,
+    COUNT(*)                                AS cds_total
+FROM estoque_redes.vw_forecast_projecao_cd
+WHERE dia = 0
 GROUP BY 1, 2
 ORDER BY 1, 2;
 ```
 
-```sql
--- Q22 · Lojas com Extrato em estoque mais próximas de um CEP (linha reta)
-WITH origem AS (
-  SELECT lat_ok AS lat, lon_ok AS lon FROM ruptura_extrato.dim_cep_geo
-  WHERE cep = lpad(regexp_replace(:cep, '\D', '', 'g'), 8, '0')
-),
-lojas AS MATERIALIZED (
-  SELECT loja, rede, endereco, cidade, uf, telefone, estoque_un, latitude, longitude
-  FROM ruptura_extrato.vw_app_pdvs WHERE latitude IS NOT NULL
-)
-SELECT l.loja, l.rede, l.endereco, l.cidade, l.uf, l.telefone, l.estoque_un,
-       ROUND(ruptura_extrato.f_haversine_km(o.lat, o.lon, l.latitude, l.longitude)::numeric, 1) AS km
-FROM lojas l CROSS JOIN origem o
-WHERE ruptura_extrato.f_haversine_km(o.lat, o.lon, l.latitude, l.longitude) <= :raio_km
-ORDER BY km
-LIMIT 10;
-```
+### 3.4 Categoria de PDVs
+
+Existe categoria de **PDV** (esta seção) e categoria de **médico** (seção 1). Se não estiver claro
+qual das duas o usuário quer, pergunte.
+
+**Sempre que perguntarem a categoria de um PDV, pergunte antes:**
+1. **A categoria é Mercado ou Ease Labs?** (`tdd.dim_mercado."DESC_GRUPO"`)
+2. **A categoria é em unidades ou em faturamento?**
+
+Com as duas respostas, consulte `tdd.fato_tdd`:
+
+| Escolha | Filtro / coluna |
+|---|---|
+| Mercado | `"COD_GRUPO" = 3` |
+| Ease Labs | `"COD_GRUPO" = 2` |
+| Faturamento | `"CAT_R$_MERCADO"` |
+| Unidades | `"CAT_UN_MERCADO"` |
+
+- Use **sempre** `"CAT_R$_MERCADO"` ou `"CAT_UN_MERCADO"`, **também no grupo 2** (Ease Labs).
+- Período: o **`COD_PERIODO` mais recente do grupo escolhido** (o primeiro na ordenação ascendente)
+  **em que a coluna de categoria está preenchida** (`> 0`). Calcule dentro do grupo, como nas
+  queries abaixo, e informe o período usado na resposta.
+- O `SEM01_202601` do grupo 3 só tem categoria em **unidades**: `"CAT_R$_MERCADO"` vem 0 em todos os
+  PDVs. Por isso a categoria de faturamento no Mercado sai do `TRIM01_202506`, e a de unidades do
+  `SEM01_202601`. O grupo 2 (Ease Labs) só tem trimestres: o mais recente é `TRIM01_202506`.
+- Categoria **1 = maior**.
+- **SEM CAT:** PDV sem categoria no grupo e período escolhidos (o cruzamento volta vazio, ou a
+  categoria é 0) é **SEM CAT**. Parta sempre da `tdd.dim_pdv` com `LEFT JOIN` na `tdd.fato_tdd` e use
+  `COALESCE(NULLIF(categoria, 0)::text, 'SEM CAT')`. Nunca descarte esses PDVs das contagens.
+- O CNPJ do PDV é ligado ao `"COD_PDV"` pela `tdd.dim_pdv`.
+
+*"Qual a categoria de faturamento no mercado do PDV de CNPJ X?"*
 
 ```sql
--- Q23 · Ruptura de Extrato nos CDs hoje
-SELECT rede, cd, estoque, dde_base, compra_arredondada, em_ruptura
-FROM estoque_redes.vw_forecast_projecao_cd_extrato
-WHERE dia = 0
-ORDER BY em_ruptura DESC, dde_base;
+-- C30 · Categoria de um PDV
+WITH par AS (
+  SELECT 3 AS cod_grupo                  -- 3 = Mercado · 2 = Ease Labs
+),
+periodo AS (
+  SELECT MIN(f."COD_PERIODO") AS cod_periodo
+  FROM tdd.fato_tdd f, par
+  WHERE f."COD_GRUPO" = par.cod_grupo
+    AND f."CAT_R$_MERCADO" > 0           -- unidades: f."CAT_UN_MERCADO" > 0
+)
+SELECT d."CNPJ_PDV",
+       d."DESC_PDV",
+       d."CIDADE_PDV",
+       d."UF_PDV",
+       (SELECT m."DESC_GRUPO" FROM tdd.dim_mercado m WHERE m."COD_GRUPO" = par.cod_grupo) AS grupo,
+       p.cod_periodo,
+       COALESCE(NULLIF(f."CAT_R$_MERCADO", 0)::text, 'SEM CAT') AS categoria   -- unidades: f."CAT_UN_MERCADO"
+FROM tdd.dim_pdv d
+CROSS JOIN par
+CROSS JOIN periodo p
+LEFT JOIN tdd.fato_tdd f
+       ON f."COD_PDV" = d."COD_PDV"
+      AND f."COD_GRUPO" = par.cod_grupo
+      AND f."COD_PERIODO" = p.cod_periodo
+WHERE d."CNPJ_PDV" = :cnpj::bigint;
+-- Sem linha = CNPJ fora do cadastro do TDD. Com linha e 'SEM CAT' = PDV sem categoria no período.
+```
+
+Sem linha: o PDV não tem categoria nesse grupo e período (no grupo 2, normalmente porque não vende Ease).
+
+*"Quantos PDVs existem em cada categoria?"*
+
+```sql
+-- C31 · Distribuição de PDVs por categoria, incluindo SEM CAT
+WITH par AS (
+  SELECT 3 AS cod_grupo                  -- 3 = Mercado · 2 = Ease Labs
+),
+periodo AS (
+  SELECT MIN(f."COD_PERIODO") AS cod_periodo
+  FROM tdd.fato_tdd f, par
+  WHERE f."COD_GRUPO" = par.cod_grupo
+    AND f."CAT_R$_MERCADO" > 0           -- unidades: f."CAT_UN_MERCADO" > 0
+)
+SELECT COALESCE(NULLIF(f."CAT_R$_MERCADO", 0)::text, 'SEM CAT') AS categoria,  -- unidades: f."CAT_UN_MERCADO"
+       COUNT(*) AS pdvs
+FROM tdd.dim_pdv d
+CROSS JOIN par
+CROSS JOIN periodo p
+LEFT JOIN tdd.fato_tdd f
+       ON f."COD_PDV" = d."COD_PDV"
+      AND f."COD_GRUPO" = par.cod_grupo
+      AND f."COD_PERIODO" = p.cod_periodo
+GROUP BY 1
+ORDER BY 1;
+```
+
+*"Quais PDVs categoria 1 a 3 existem em Minas Gerais?"*
+
+```sql
+-- C32 · PDVs de categoria 1 a 3 de uma UF ou cidade
+SELECT
+    d."CNPJ_PDV",
+    d."DESC_PDV",
+    d."CIDADE_PDV",
+    d."UF_PDV",
+    f."CAT_R$_MERCADO" AS categoria     -- unidades: f."CAT_UN_MERCADO"
+FROM tdd.dim_pdv d
+JOIN tdd.fato_tdd f ON f."COD_PDV" = d."COD_PDV"
+WHERE f."COD_GRUPO" = 3                  -- 3 = Mercado · 2 = Ease Labs
+  AND f."COD_PERIODO" = (SELECT MIN("COD_PERIODO") FROM tdd.fato_tdd
+                         WHERE "COD_GRUPO" = 3 AND "CAT_R$_MERCADO" > 0)   -- unidades: "CAT_UN_MERCADO" > 0
+  AND f."CAT_R$_MERCADO" BETWEEN 1 AND 3
+  AND d."UF_PDV" = :uf                   -- ou d."CIDADE_PDV"
+ORDER BY categoria, d."CIDADE_PDV"
+LIMIT 200;
+```
+
+*"Quais PDVs categoria 1 a 3 do mercado estão sem Extrato na última carga?"*
+
+```sql
+-- C33 · PDVs de categoria 1 a 3 cruzados com o estoque de um SKU na carga mais recente
+SELECT
+    e.rede,
+    d."DESC_PDV",
+    d."CIDADE_PDV",
+    d."UF_PDV",
+    f."CAT_R$_MERCADO" AS categoria,    -- unidades: f."CAT_UN_MERCADO"
+    e.estoque_qtde,
+    e.data_recebimento
+FROM tdd.fato_tdd f
+JOIN tdd.dim_pdv d ON d."COD_PDV" = f."COD_PDV"
+JOIN estoque_redes.vw_estoque_cd_recente e
+  ON e.cnpj = lpad(d."CNPJ_PDV"::text, 14, '0')
+ AND e.tipo = 'PDV'
+ AND e.cod_ean = :ean
+WHERE f."COD_GRUPO" = 3                  -- 3 = Mercado · 2 = Ease Labs
+  AND f."COD_PERIODO" = (SELECT MIN("COD_PERIODO") FROM tdd.fato_tdd
+                         WHERE "COD_GRUPO" = 3 AND "CAT_R$_MERCADO" > 0)   -- unidades: "CAT_UN_MERCADO" > 0
+  AND f."CAT_R$_MERCADO" BETWEEN 1 AND 3
+  AND e.estoque_qtde <= 0                -- remova para ver todos, com e sem estoque
+ORDER BY categoria, e.rede
+LIMIT 200;
+```
+
+Só cruza PDVs das 10 redes que enviam estoque.
+
+#### ⭐ PDVs de uma rede por categoria
+
+**Pergunta frequente.** Identifique os PDVs da rede pela **raiz do CNPJ** (8 primeiros dígitos):
+`61585865` = RAIA DROGASIL. Não filtre os PDVs por nome com `ILIKE '%RAIA%'`, que traz farmácias como
+"PRAIA GRANDE". Para outra rede, descubra as raízes com
+`SELECT DISTINCT left(lpad("CNPJ_PDV"::text, 14, '0'), 8) FROM tdd.dim_pdv WHERE "DESC_PDV" ILIKE '%<nome da rede>%'`
+— aqui o `ILIKE` é o certo, porque o cadastro escreve mais do que o usuário fala ("Pague Menos"
+está como `FARMACIA PAGUE MENOS`).
+
+**Uma rede pode ter mais de uma raiz de CNPJ** (a Pague Menos tem `06626253` e `04899316` só no
+Ceará). Use todas as que a descoberta devolver, com `IN (...)` ou com a própria subconsulta no
+lugar do `=`; filtrar por uma só deixa lojas da rede de fora da contagem.
+
+*"Quais são todos os PDVs da Raia Drogasil e a categoria de cada um?"*
+
+```sql
+-- C34 · Todos os PDVs da RAIA DROGASIL com a categoria, incluindo SEM CAT
+WITH par AS (
+  SELECT 3 AS cod_grupo                  -- 3 = Mercado · 2 = Ease Labs
+),
+periodo AS (
+  SELECT MIN(f."COD_PERIODO") AS cod_periodo
+  FROM tdd.fato_tdd f, par
+  WHERE f."COD_GRUPO" = par.cod_grupo
+    AND f."CAT_R$_MERCADO" > 0           -- unidades: f."CAT_UN_MERCADO" > 0
+)
+SELECT lpad(d."CNPJ_PDV"::text, 14, '0') AS cnpj,
+       d."DESC_PDV",
+       d."CIDADE_PDV",
+       d."UF_PDV",
+       p.cod_periodo,
+       COALESCE(NULLIF(f."CAT_R$_MERCADO", 0)::text, 'SEM CAT') AS categoria   -- unidades: f."CAT_UN_MERCADO"
+FROM tdd.dim_pdv d
+CROSS JOIN par
+CROSS JOIN periodo p
+LEFT JOIN tdd.fato_tdd f
+       ON f."COD_PDV" = d."COD_PDV"
+      AND f."COD_GRUPO" = par.cod_grupo
+      AND f."COD_PERIODO" = p.cod_periodo
+WHERE left(lpad(d."CNPJ_PDV"::text, 14, '0'), 8) = '61585865'   -- raiz do CNPJ da RAIA DROGASIL
+ORDER BY categoria, d."UF_PDV", d."CIDADE_PDV";
+```
+
+*"Quantas lojas da Raia Drogasil existem em cada categoria?"*
+
+```sql
+-- C35 · Quantidade de PDVs da RAIA DROGASIL por categoria, incluindo SEM CAT
+WITH par AS (
+  SELECT 3 AS cod_grupo                  -- 3 = Mercado · 2 = Ease Labs
+),
+periodo AS (
+  SELECT MIN(f."COD_PERIODO") AS cod_periodo
+  FROM tdd.fato_tdd f, par
+  WHERE f."COD_GRUPO" = par.cod_grupo
+    AND f."CAT_R$_MERCADO" > 0           -- unidades: f."CAT_UN_MERCADO" > 0
+)
+SELECT COALESCE(NULLIF(f."CAT_R$_MERCADO", 0)::text, 'SEM CAT') AS categoria,  -- unidades: f."CAT_UN_MERCADO"
+       COUNT(*) AS pdvs,
+       ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER (), 1) AS pct_pdvs
+FROM tdd.dim_pdv d
+CROSS JOIN par
+CROSS JOIN periodo p
+LEFT JOIN tdd.fato_tdd f
+       ON f."COD_PDV" = d."COD_PDV"
+      AND f."COD_GRUPO" = par.cod_grupo
+      AND f."COD_PERIODO" = p.cod_periodo
+WHERE left(lpad(d."CNPJ_PDV"::text, 14, '0'), 8) = '61585865'   -- raiz do CNPJ da RAIA DROGASIL
+GROUP BY 1
+ORDER BY 1;
 ```
 
 ---
 
-## 4. PBM
+## 4. PBM (Programa de Benefício Médico)
+
+O PBM tem três visões. **Identifique qual o usuário quer:**
+
+| Visão | Pergunta típica | Fonte |
+|---|---|---|
+| **4.1 Adesões** | "Quantos pacientes aderiram ao PBM?", "Quais médicos têm mais adesões?" | `pbm.fato_pbm_adesoes` |
+| **4.2 Transações** | "Quantas unidades saíram pelo PBM?", "Em quais PDVs o paciente do médico X comprou?" | `pbm.fato_pbm_transacoes` |
+| **4.3 Vouchers** | "Quantos vouchers tivemos no mês?" | `cddd.vw_sell_out` (coluna `pbm`) |
 
 | Tabela | Conteúdo | Colunas-chave |
 |---|---|---|
-| `pbm.fato_pbm_transacoes` | Transações do programa de benefício | `"STATUS_TRN"`, `"DATA_REF"`, `"EAN"`, `"MARCA"`, `"QTDE"` (texto), `"QTDE_DEVOLVIDA"` (texto), `"CNPJ_PDV"`, `"NOME_FANTASIA"`, `"UF_PROFISSIONAL"`, `"COD_PROFISSIONAL"`, `"NOME_PROFISSIONAL"` |
+| `pbm.fato_pbm_adesoes` | Pacientes cadastrados no PBM pelo CRM do médico (CRMs adesores) | `"DATA_ADESAO"`, `"MARCA"`, `"EAN"`, `"CAMPANHA"`, `"UF_PROFISSIONAL"`, `"COD_PROFISSIONAL"` (bigint), `"NOME_PROFISSIONAL"`, `"ID_CONSUMIDOR"`, `"CNPJ_PDV"`, `"NOME_FANTASIA"` |
+| `pbm.fato_pbm_transacoes` | Compras feitas com desconto do PBM | `"STATUS_TRN"`, `"DATA_REF"`, `"EAN"`, `"MARCA"`, `"CAMPANHA"`, `"DESC_ADM"` (texto, % de desconto), `"QTDE"` (texto), `"QTDE_DEVOLVIDA"` (texto), `"CNPJ_PDV"`, `"NOME_FANTASIA"`, `"CIDADE_PDV"`, `"UF_PDV"`, `"UF_PROFISSIONAL"`, `"COD_PROFISSIONAL"` (texto), `"NOME_PROFISSIONAL"` |
+| `cddd.vw_sell_out` | Resultado Ease consolidado; a coluna `pbm` é o **Voucher** | `date`, `cod_ct`, `nome_abreviado_ct`, `cod_gr`, `cod_apres`, `pbm` |
+| `cddd.pbm_consolidado` | Origem do Voucher da `vw_sell_out` | `data_ref`, `ean`, `desconto`, `qtde`, `cod_ct`, `cod_gr` |
 
-- Venda = `"STATUS_TRN" = 'CONFIRMADA'`.
-- CRM = `"UF_PROFISSIONAL" || lpad("COD_PROFISSIONAL", 7, '0')`. `COD_PROFISSIONAL = '0'` = não informado.
-- Não expor dados do consumidor (`CPF_CONS`, `NOME_CONS`, `E_MAIL`, `CELULAR`).
+- **Pergunte o período** antes de qualquer número.
+- **Transação válida = `"STATUS_TRN" = 'CONFIRMADA'`.** Os outros status (`PRE`, `PEN`, `ANU`, `CAN`, `CANCELADA`) não são venda e vêm com data `1900-01-01`.
+- **CRM:** `"UF_PROFISSIONAL" || lpad("COD_PROFISSIONAL"::text, 7, '0')`. Código `0` = profissional não informado: exclua em rankings por médico.
+- **`"MARCA"`** varia de caixa (`ExtratoCannabs` / `EXTRATOCANNABS`): compare com `upper("MARCA")`. `CANABIDIOL` = Isolados; `EXTRATOCANNABS` = Extrato. Para SKU, use `"EAN"`.
+- **`"DESC_ADM"`** é o % de desconto em texto (`'25'`, `'25.00'`, `'99.99'`): converta com `::numeric`.
+- **Nunca exponha dados do consumidor** (`CPF_CONS`, `NOME_CONS`, `E_MAIL`, `CELULAR`, `TELEFONE`, `DATA_NASC`, endereço do consumidor). Conte pacientes por `"ID_CONSUMIDOR"`.
+
+### 4.1 Adesões
+
+*"Quantas adesões ao PBM tivemos por mês?"*
 
 ```sql
--- Q30 · Unidades PBM por mês e SKU
-SELECT date_trunc('month', "DATA_REF")::date AS mes, "EAN",
-       SUM("QTDE"::int - "QTDE_DEVOLVIDA"::int) AS unidades
-FROM pbm.fato_pbm_transacoes
-WHERE "STATUS_TRN" = 'CONFIRMADA' AND "DATA_REF" BETWEEN :data_ini AND :data_fim
+-- D01 · Adesões por mês e marca
+SELECT date_trunc('month', "DATA_ADESAO")::date AS mes,
+       upper("MARCA") AS marca,
+       COUNT(*) AS adesoes,
+       COUNT(DISTINCT "ID_CONSUMIDOR") AS pacientes
+FROM pbm.fato_pbm_adesoes
+WHERE "DATA_ADESAO" >= :data_ini AND "DATA_ADESAO" < :data_fim   -- data_fim = 1º dia do mês seguinte
 GROUP BY 1, 2
+ORDER BY 1 DESC, 2;
+```
+
+*"Quantos médicos geraram adesões no mês?"*
+
+```sql
+-- D02 · CRMs adesores por mês
+SELECT date_trunc('month', "DATA_ADESAO")::date AS mes,
+       COUNT(DISTINCT "UF_PROFISSIONAL" || lpad("COD_PROFISSIONAL"::text, 7, '0')) AS crms_adesores,
+       COUNT(*) AS adesoes
+FROM pbm.fato_pbm_adesoes
+WHERE "COD_PROFISSIONAL" <> 0
+  AND "DATA_ADESAO" >= :data_ini AND "DATA_ADESAO" < :data_fim
+GROUP BY 1
 ORDER BY 1 DESC;
 ```
 
+*"Quais médicos têm mais adesões?"*
+
 ```sql
--- Q31 · PDVs das transações PBM de um médico
+-- D03 · Ranking de médicos por adesões
+SELECT "UF_PROFISSIONAL" || lpad("COD_PROFISSIONAL"::text, 7, '0') AS crm,
+       MAX("NOME_PROFISSIONAL") AS nome,
+       COUNT(*) AS adesoes,
+       COUNT(DISTINCT "ID_CONSUMIDOR") AS pacientes
+FROM pbm.fato_pbm_adesoes
+WHERE "COD_PROFISSIONAL" <> 0
+  AND "DATA_ADESAO" >= :data_ini AND "DATA_ADESAO" < :data_fim
+GROUP BY 1
+ORDER BY adesoes DESC
+LIMIT 50;
+```
+
+*"Quantas adesões o médico X gerou?"*
+
+```sql
+-- D04 · Adesões de um médico por mês e marca
+SELECT date_trunc('month', "DATA_ADESAO")::date AS mes,
+       upper("MARCA") AS marca,
+       COUNT(*) AS adesoes
+FROM pbm.fato_pbm_adesoes
+WHERE "UF_PROFISSIONAL" || lpad("COD_PROFISSIONAL"::text, 7, '0') = :crm
+GROUP BY 1, 2
+ORDER BY 1 DESC, 2;
+```
+
+*"Quais campanhas trazem mais adesões?"*
+
+```sql
+-- D05 · Adesões por campanha
+SELECT "CAMPANHA",
+       COUNT(*) AS adesoes,
+       COUNT(DISTINCT "ID_CONSUMIDOR") AS pacientes
+FROM pbm.fato_pbm_adesoes
+WHERE "DATA_ADESAO" >= :data_ini AND "DATA_ADESAO" < :data_fim
+GROUP BY 1
+ORDER BY adesoes DESC;
+```
+
+### 4.2 Transações
+
+*"Quantas unidades saíram pelo PBM por mês?"*
+
+```sql
+-- D10 · Unidades PBM por mês e SKU
+SELECT date_trunc('month', "DATA_REF")::date AS mes, "EAN",
+       COUNT(*) AS transacoes,
+       SUM("QTDE"::int - "QTDE_DEVOLVIDA"::int) AS unidades
+FROM pbm.fato_pbm_transacoes
+WHERE "STATUS_TRN" = 'CONFIRMADA'
+  AND "DATA_REF" >= :data_ini AND "DATA_REF" < :data_fim
+GROUP BY 1, 2
+ORDER BY 1 DESC, 2;
+```
+
+*"Quantas transações tiveram desconto de 99%?"*
+
+```sql
+-- D11 · Transações com desconto de 99% por mês e SKU
+SELECT date_trunc('month', "DATA_REF")::date AS mes, "EAN",
+       COUNT(*) AS transacoes,
+       SUM("QTDE"::int - "QTDE_DEVOLVIDA"::int) AS unidades
+FROM pbm.fato_pbm_transacoes
+WHERE "STATUS_TRN" = 'CONFIRMADA'
+  AND "DESC_ADM"::numeric >= 99                -- desconto de 99% (0,99)
+  AND "DATA_REF" >= :data_ini AND "DATA_REF" < :data_fim
+GROUP BY 1, 2
+ORDER BY 1 DESC, 2;
+```
+
+*"Como se distribuem as transações por faixa de desconto?"*
+
+```sql
+-- D12 · Transações por faixa de desconto, por mês
+SELECT date_trunc('month', "DATA_REF")::date AS mes,
+       CASE WHEN "DESC_ADM"::numeric >= 99 THEN '99%'
+            WHEN "DESC_ADM"::numeric >= 70 THEN '70% a 98%'
+            ELSE 'Abaixo de 70%' END AS faixa_desconto,
+       COUNT(*) AS transacoes,
+       SUM("QTDE"::int - "QTDE_DEVOLVIDA"::int) AS unidades
+FROM pbm.fato_pbm_transacoes
+WHERE "STATUS_TRN" = 'CONFIRMADA'
+  AND "DATA_REF" >= :data_ini AND "DATA_REF" < :data_fim
+GROUP BY 1, 2
+ORDER BY 1 DESC, 2;
+```
+
+*"Em quais PDVs os pacientes do médico X compraram pelo PBM?"*
+
+```sql
+-- D13 · PDVs das transações PBM de um médico
 SELECT "NOME_FANTASIA", "CNPJ_PDV", "CIDADE_PDV", "UF_PDV",
-       SUM("QTDE"::int - "QTDE_DEVOLVIDA"::int) AS unidades, MAX("DATA_REF") AS ultima
+       SUM("QTDE"::int - "QTDE_DEVOLVIDA"::int) AS unidades,
+       MAX("DATA_REF") AS ultima_transacao
 FROM pbm.fato_pbm_transacoes
 WHERE "STATUS_TRN" = 'CONFIRMADA'
   AND "UF_PROFISSIONAL" || lpad("COD_PROFISSIONAL", 7, '0') = :crm
@@ -226,16 +1687,86 @@ ORDER BY unidades DESC
 LIMIT 20;
 ```
 
+`"CNPJ_PDV"` tem valores corrompidos (ex.: `4,0007E+13`); nesses casos identifique o PDV por `"NOME_FANTASIA"` e cidade.
+
+*"Quais médicos têm mais unidades no PBM?"*
+
 ```sql
--- Q32 · Médicos com mais unidades PBM
-SELECT "UF_PROFISSIONAL" || lpad("COD_PROFISSIONAL", 7, '0') AS crm, MAX("NOME_PROFISSIONAL") AS nome,
+-- D14 · Ranking de médicos por unidades PBM
+SELECT "UF_PROFISSIONAL" || lpad("COD_PROFISSIONAL", 7, '0') AS crm,
+       MAX("NOME_PROFISSIONAL") AS nome,
        SUM("QTDE"::int - "QTDE_DEVOLVIDA"::int) AS unidades
 FROM pbm.fato_pbm_transacoes
-WHERE "STATUS_TRN" = 'CONFIRMADA' AND "COD_PROFISSIONAL" <> '0'
-  AND "DATA_REF" BETWEEN :data_ini AND :data_fim
+WHERE "STATUS_TRN" = 'CONFIRMADA'
+  AND "COD_PROFISSIONAL" <> '0'
+  AND "DATA_REF" >= :data_ini AND "DATA_REF" < :data_fim
 GROUP BY 1
 ORDER BY unidades DESC
 LIMIT 50;
+```
+
+### 4.3 Vouchers
+
+**Quando perguntarem "quantos vouchers", use a coluna `pbm` da `cddd.vw_sell_out`.** É o número que
+abate o Sell Out Ease Total (seção 2.1).
+
+O Voucher vem da `cddd.pbm_consolidado`, que conta as transações PBM com desconto alto:
+- até 2024: desconto de **99% ou mais**, 1 unidade por unidade vendida;
+- a partir de 2025: desconto de **70% ou mais**; entre 70% e 80%, cada unidade vale **0,67**.
+
+Por isso o Voucher tem casas decimais (ago/26: 127 unidades a 99% + 93 × 0,67 = **189,31**) e não
+bate com a contagem de transações da D11.
+
+*"Quantos vouchers tivemos mês a mês?"*
+
+```sql
+-- D20 · Vouchers mês a mês
+SELECT date_trunc('month', s.date)::date AS mes,
+       ROUND(SUM(s.pbm)::numeric, 2) AS vouchers
+FROM cddd.vw_sell_out s
+GROUP BY 1
+ORDER BY 1 DESC;
+```
+
+*"Quantos vouchers cada representante teve no mês?"*
+
+```sql
+-- D21 · Vouchers por representante
+SELECT s.nome_abreviado_ct AS representante,
+       ROUND(SUM(s.pbm)::numeric, 2) AS vouchers
+FROM cddd.vw_sell_out s
+WHERE s.date >= :data_ini AND s.date < :data_fim
+GROUP BY 1
+HAVING SUM(s.pbm) > 0
+ORDER BY vouchers DESC;
+```
+
+*"Quantos vouchers por GR?"*
+
+```sql
+-- D22 · Vouchers por GR
+SELECT g.nome_gr AS gr,
+       ROUND(SUM(s.pbm)::numeric, 2) AS vouchers
+FROM cddd.vw_sell_out s
+LEFT JOIN cddd.dim_gr g ON g.cod_gr = s.cod_gr
+WHERE s.date >= :data_ini AND s.date < :data_fim
+GROUP BY 1
+ORDER BY vouchers DESC;
+```
+
+*"Quantos vouchers de cada produto?"*
+
+```sql
+-- D23 · Vouchers por SKU, mês a mês
+SELECT date_trunc('month', s.date)::date AS mes,
+       a.desc_apresentacao,
+       ROUND(SUM(s.pbm)::numeric, 2) AS vouchers
+FROM cddd.vw_sell_out s
+LEFT JOIN cddd.apres a ON a.cod_apresentacao = s.cod_apres
+WHERE s.date >= :data_ini AND s.date < :data_fim
+GROUP BY 1, 2
+HAVING SUM(s.pbm) > 0
+ORDER BY 1 DESC, 3 DESC;
 ```
 
 ---
@@ -244,18 +1775,240 @@ LIMIT 50;
 
 | Tabela | Conteúdo | Colunas-chave |
 |---|---|---|
-| `cddd.forca_vendas` | Brick → território → representante | `cod_utc` (bigint), `cod_territorio` (texto), `desc_territorio` |
-| `cddd.scd_ct_territorio` + `cddd.dim_ct` | CT do território (vigente: `data_saida_territorio IS NULL`) | `cod_territorio`, `cod_ct`, `nome_abreviado_ct`, `email_ct` |
-| `ruptura_extrato.vw_representantes_ativos` | Representantes ativos | `cod_territorio`, `desc_territorio`, `nome_abreviado_ct`, `email_ct` |
-| `audit.rx_cadastro_mais_recente` | Painel atual de médicos por setor | `crm_link`, `nome`, `setor`, `setor_cliente` (= território), `categoria`, `classificacao`, `potencial`, `email`, `celular` |
-| `audit.rx_visitas` | Histórico de visitas | `crm_norm`, `setor`, `data_da_visita`, `visita_efetiva` (`'S'`), `tipo_visita`, `comentarios` |
+| `cddd.forca_vendas` | Brick → território → representante | `cod_utc` (bigint), `cod_territorio` (texto, 7 dígitos), `desc_territorio` (nome do representante) |
+| `cddd.fv_distrito` / `cddd.fv_territorio` | GR → territórios | `desc_distrito` (nome do GR), `cod_distrito`, `cod_territorio`, `desc_territorio` |
+| `cddd.utc` | Brick → cidade, UF e região | `cod_utc`, `desc_utc`, `cidade` (sem acento), `uf`, `regiao` |
+| `cddd.scd_ct_territorio` + `cddd.dim_ct` | CT (representante) do território, com e-mail | `cod_territorio`, `cod_setor`, `cod_ct`, `nome_abreviado_ct`, `email_ct`, `data_saida_territorio` |
+| `audit.rx_cadastro_mais_recente` | **Painel atual**: médicos atribuídos a cada setor | `crm_link`, `nome`, `setor` (4 dígitos), `setor_cliente` (território), `categoria`, `classificacao`, `potencial`, `frequencia`, `dias_sem_visita`, contatos |
+| `audit.trade_cadastro_estabelecimento` | **PDVs visitados** pela força de vendas | `cnpj` (14 dígitos), `setor`, `nome_setor`, `nome_rede`, `nome_loja`, `cidade`, `uf`, `frequencia` |
+| `audit.rx_visitas` | **Histórico de visitas** | `crm_norm`, `nome`, `setor`, `setor_cliente`, `setor_ims` (nome curto do representante), `data_da_visita`, `visita_efetiva`, `tipo_visita`, `lista_de_motivo_de_nao_visita`, `comentarios` |
 
-- `SEM REP` e `SETOR VAGO%` = território sem representante.
+- **Visitado = `visita_efetiva = 'S'`.** `'N'` é tentativa sem contato: não conta como visita
+  (o motivo está em `lista_de_motivo_de_nao_visita`).
+- **Setor `3000` = Visitação Remota; os demais setores = Força de Vendas.** Se o usuário não disser
+  qual dos dois quer, pergunte. Um médico pode ter sido visitado pelos dois.
+- **Pergunte o período.** MAT = 12 meses fechados até o mês de referência (MAT 01/07/2026 =
+  ago/25 a jul/26); YTD = de janeiro até o mês de referência.
+- **Representante pelo nome:** `desc_territorio ILIKE '%primeiro nome%'` na `cddd.forca_vendas`. O
+  usuário escreve de várias formas ("Hermes", "Hermes Bizotto"); se voltar mais de um, pergunte qual.
+- **`cddd.forca_vendas` é a foto de hoje**, como o painel: só tem quem está no território agora.
+  Representante desligado não aparece nela, nem para meses em que ele vendeu. Quem estava em qual
+  território, e até quando, está na `cddd.scd_ct_territorio` (`data_saida_territorio`); o
+  desligamento, na `cddd.dim_ct` (`data_demissao`). Por isso um nome que "não existe" na força de
+  vendas pode existir na `dim_ct` — é o caso de quem saiu.
+- **GR:** `cddd.fv_distrito` → `cddd.fv_territorio` (por `cod_distrito`) → `cddd.forca_vendas`
+  (por `cod_territorio`).
+- `SEM REP` e `SETOR VAGO%` = território sem representante. Os setores `3000` e `1099` não têm
+  território na força de vendas.
+- `tipo_visita` vazio = **não informado**; não assuma visita presencial.
+- **Painel é foto de hoje; visitas são histórico.** Ao cruzar os dois, deixe isso claro na resposta.
+- **CRM:** as tabelas do banco já estão no formato UF + 7 dígitos (`MG0039273`). Em listas externas,
+  normalize antes de cruzar: só dígitos, sem zeros à esquerda, completar com zeros até 7; no RJ,
+  número com mais de 7 dígitos começando em `52` traz o prefixo do conselho, que deve ser retirado.
+- Não existe data planejada de próxima visita em nenhuma tabela.
+
+### 5.1 Representantes e hierarquia
+
+*"Quem é o Hermes? Qual o território, o e-mail e o GR dele?"*
 
 ```sql
--- Q40 · Painel e representante de um médico
-SELECT r.crm_link, r.nome, r.setor, fv.desc_territorio, ct.nome_abreviado_ct, ct.email_ct,
-       r.categoria, r.classificacao, r.potencial
+-- E01 · Representante pelo nome, com território, e-mail e GR
+SELECT DISTINCT
+       fv.cod_territorio,
+       btrim(fv.desc_territorio) AS representante,
+       ct.nome_abreviado_ct,
+       ct.email_ct,
+       d.desc_distrito AS gr
+FROM cddd.forca_vendas fv
+LEFT JOIN cddd.fv_territorio t      ON t.cod_territorio = fv.cod_territorio
+LEFT JOIN cddd.fv_distrito d        ON d.cod_distrito = t.cod_distrito
+LEFT JOIN cddd.scd_ct_territorio s  ON s.cod_territorio::text = fv.cod_territorio
+                                   AND s.data_saida_territorio IS NULL
+LEFT JOIN cddd.dim_ct ct            ON ct.cod_ct = s.cod_ct
+WHERE fv.desc_territorio ILIKE '%' || :rep || '%';
+```
+
+*"Compare o sell out do Hermes Bizotto com o do Ricardo Reis em ago/26"* — os dois nomes
+precisam aparecer no resultado, inclusive quem não vendeu.
+
+```sql
+-- E27 · Resolver os nomes antes de medir (comparação entre representantes)
+WITH pedidos(pedaco) AS (VALUES (:rep_1), (:rep_2)),   -- um pedaço de cada nome
+resolvidos AS (
+  SELECT p.pedaco,
+         btrim(fv.desc_territorio) AS representante,
+         fv.cod_territorio,
+         ct.nome_abreviado_ct,
+         ct.data_demissao
+  FROM pedidos p
+  LEFT JOIN (SELECT DISTINCT cod_territorio, desc_territorio FROM cddd.forca_vendas) fv
+         ON fv.desc_territorio ILIKE '%' || p.pedaco || '%'
+  LEFT JOIN cddd.dim_ct ct
+         ON ct.nome_abreviado_ct ILIKE '%' || p.pedaco || '%'
+),
+vendas AS (   -- os filtros do fato ficam AQUI, não no LEFT JOIN de baixo
+  SELECT f.cod_utc, f.und, fb.desc_sigla_fab
+  FROM td.fato_td f
+  JOIN cddd.canal dc      ON dc.cod_subcanal = f.cod_subcanal AND dc.desc_canal <> 'HOSPITALAR'
+  LEFT JOIN cddd.apres a  ON a.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN cddd.prod pr  ON pr.cod_marca = a.cod_marca
+  LEFT JOIN cddd.fab fb   ON fb.cod_fab = pr.cod_fab
+  WHERE f.cod_anomes = :anomes
+)
+SELECT r.pedaco,
+       COALESCE(r.representante, r.nome_abreviado_ct) AS representante,
+       r.data_demissao,
+       SUM(v.und) FILTER (WHERE v.desc_sigla_fab = 'EAS') / 1000 AS unidades_ease,
+       SUM(v.und) / 1000                                         AS unidades_mercado,
+       ROUND(100 * SUM(v.und) FILTER (WHERE v.desc_sigla_fab = 'EAS')
+             / NULLIF(SUM(v.und), 0), 2)                         AS share_ease_pct
+FROM resolvidos r
+LEFT JOIN cddd.forca_vendas fv2 ON fv2.cod_territorio = r.cod_territorio
+LEFT JOIN vendas v              ON v.cod_utc = fv2.cod_utc
+GROUP BY 1, 2, 3
+ORDER BY 2;
+-- Linha com representante nulo = o pedaço não existe em lugar nenhum: nome errado.
+-- Linha com data_demissao preenchida e unidades nulas = a pessoa saiu antes do período.
+-- Dois nomes para o mesmo pedaço = pergunte qual (BIZZOTO traz um; REIS traz dois).
+-- Filtro do fato dentro do LEFT JOIN não filtra nada: ele só deixa a coluna nula
+-- e a linha continua entrando na soma. Por isso a CTE `vendas`.
+```
+
+*"Quais representantes são da equipe do Gabriel Bastos?"*
+
+```sql
+-- E02 · Territórios e representantes de um GR
+SELECT d.desc_distrito AS gr,
+       t.cod_territorio,
+       btrim(t.desc_territorio) AS representante
+FROM cddd.fv_distrito d
+JOIN cddd.fv_territorio t ON t.cod_distrito = d.cod_distrito
+WHERE d.desc_distrito ILIKE '%' || :gr || '%'
+ORDER BY representante;
+```
+
+*"Quem atende o PDV de CNPJ X?"*
+
+```sql
+-- E03 · Representante de um PDV (pelo brick)
+SELECT p.cnpj_pdv, p.desc_pdv, p.cidade, p.uf, p.cod_utc,
+       fv.cod_territorio,
+       btrim(fv.desc_territorio) AS representante
+FROM cddd.pdvs p
+LEFT JOIN cddd.forca_vendas fv ON fv.cod_utc = p.cod_utc
+WHERE lpad(regexp_replace(p.cnpj_pdv, '\D', '', 'g'), 14, '0') = :cnpj;
+```
+
+*"Quais representantes estão ativos hoje?"*
+
+```sql
+-- E04 · Representantes ativos
+SELECT DISTINCT
+       fv.cod_territorio,
+       btrim(fv.desc_territorio) AS representante,
+       ct.nome_abreviado_ct,
+       ct.email_ct
+FROM cddd.scd_ct_territorio s
+JOIN cddd.dim_ct ct ON ct.cod_ct = s.cod_ct
+JOIN (SELECT DISTINCT cod_territorio, desc_territorio FROM cddd.forca_vendas) fv
+  ON fv.cod_territorio = s.cod_territorio::text
+WHERE s.data_saida_territorio IS NULL       -- vigente no território
+  AND ct.data_demissao IS NULL              -- não desligado
+  AND fv.desc_territorio <> 'SEM REP'
+  AND fv.desc_territorio NOT ILIKE '%VAGO%'
+  AND ct.nome_abreviado_ct NOT ILIKE '%VAGO%'
+ORDER BY representante;
+```
+
+*"Quais cidades o Hermes visita?"*
+
+```sql
+-- E05 · Cidades visitadas por um representante no período
+WITH vis AS (
+  SELECT v.crm_norm, COUNT(*) AS visitas, MAX(v.data_da_visita)::date AS ultima
+  FROM audit.rx_visitas v
+  WHERE v.visita_efetiva = 'S'
+    AND v.data_da_visita >= :data_ini AND v.data_da_visita < :data_fim
+    AND v.setor_cliente IN (SELECT DISTINCT cod_territorio FROM cddd.forca_vendas
+                            WHERE desc_territorio ILIKE '%HERMES%')   -- troque o representante aqui
+  GROUP BY 1
+)
+SELECT COALESCE(c.municipio, m.cidade)                                  AS cidade,
+       COALESCE(c.estado, NULLIF(split_part(m.utc_nome, ' / ', 1), '')) AS uf,
+       COUNT(*)          AS medicos_visitados,
+       SUM(vis.visitas)  AS visitas,
+       MAX(vis.ultima)   AS ultima_visita
+FROM vis
+LEFT JOIN (SELECT DISTINCT ON (crm_link) crm_link, municipio, estado
+           FROM audit.rx_cadastro_mais_recente ORDER BY crm_link, setor) c
+       ON c.crm_link = vis.crm_norm
+LEFT JOIN audit.medico m ON m.crm = vis.crm_norm
+GROUP BY 1, 2
+ORDER BY visitas DESC;
+```
+
+A cidade é a de atendimento do médico visitado (painel atual e, na falta, `audit.medico`).
+
+*"O Hermes visita Viçosa (MG)? Quem visita essa cidade?"*
+
+```sql
+-- E06 · Representantes que visitaram médicos de uma cidade no período
+SELECT COALESCE(btrim(fv.desc_territorio), v.setor_ims)                 AS representante,
+       v.setor,
+       COALESCE(c.municipio, m.cidade)                                  AS cidade,
+       COALESCE(c.estado, NULLIF(split_part(m.utc_nome, ' / ', 1), '')) AS uf,
+       COUNT(*)                   AS visitas,
+       COUNT(DISTINCT v.crm_norm) AS medicos,
+       MAX(v.data_da_visita)::date AS ultima_visita
+FROM audit.rx_visitas v
+LEFT JOIN (SELECT DISTINCT ON (crm_link) crm_link, municipio, estado
+           FROM audit.rx_cadastro_mais_recente ORDER BY crm_link, setor) c
+       ON c.crm_link = v.crm_norm
+LEFT JOIN audit.medico m ON m.crm = v.crm_norm
+LEFT JOIN (SELECT DISTINCT cod_territorio, desc_territorio FROM cddd.forca_vendas) fv
+       ON fv.cod_territorio = v.setor_cliente
+WHERE v.visita_efetiva = 'S'
+  AND v.data_da_visita >= :data_ini AND v.data_da_visita < :data_fim
+  AND translate(upper(COALESCE(c.municipio, m.cidade)), 'ÁÀÂÃÉÊÍÓÔÕÚÜÇ', 'AAAAEEIOOOUUC') = translate(upper(:cidade), 'ÁÀÂÃÉÊÍÓÔÕÚÜÇ', 'AAAAEEIOOOUUC')     -- ex.: 'VIÇOSA' (acento ignorado)
+  AND COALESCE(c.estado, NULLIF(split_part(m.utc_nome, ' / ', 1), '')) = :uf   -- ex.: 'MG'
+  -- AND fv.desc_territorio ILIKE '%HERMES%'   -- só um representante
+GROUP BY 1, 2, 3, 4
+ORDER BY visitas DESC;
+```
+
+Existem cidades com o mesmo nome em UFs diferentes (Viçosa em AL, MG e RN): filtre sempre a UF.
+O `translate` remove acentos dos dois lados, porque o painel grava "VIÇOSA" e a `cddd.utc` grava
+"VICOSA".
+
+*"A cidade X faz parte do território de qual representante?"*
+
+```sql
+-- E07 · Representante responsável pelos bricks de uma cidade
+SELECT u.cidade, u.uf,
+       btrim(fv.desc_territorio) AS representante,
+       fv.cod_territorio,
+       COUNT(*) AS bricks
+FROM cddd.utc u
+JOIN cddd.forca_vendas fv ON fv.cod_utc = u.cod_utc
+WHERE translate(upper(u.cidade), 'ÁÀÂÃÉÊÍÓÔÕÚÜÇ', 'AAAAEEIOOOUUC') = translate(upper(:cidade), 'ÁÀÂÃÉÊÍÓÔÕÚÜÇ', 'AAAAEEIOOOUUC')
+  AND u.uf = :uf
+GROUP BY 1, 2, 3, 4
+ORDER BY bricks DESC;
+```
+
+Território (E07) e visita (E06) são coisas diferentes: a cidade pode estar no território de um
+representante e ter sido visitada por outro, ou não ter visita no período.
+
+### 5.2 Painel
+
+*"O médico X está em qual painel? Quem é o representante dele?"*
+
+```sql
+-- E10 · Painel e representante de um médico
+SELECT r.crm_link, r.nome, r.setor,
+       btrim(fv.desc_territorio) AS representante,
+       ct.email_ct,
+       r.categoria, r.classificacao, r.potencial, r.frequencia, r.dias_sem_visita
 FROM audit.rx_cadastro_mais_recente r
 LEFT JOIN (SELECT DISTINCT cod_territorio, desc_territorio FROM cddd.forca_vendas) fv
        ON fv.cod_territorio = r.setor_cliente
@@ -263,29 +2016,147 @@ LEFT JOIN cddd.scd_ct_territorio s
        ON s.cod_territorio::text = r.setor_cliente AND s.data_saida_territorio IS NULL
 LEFT JOIN cddd.dim_ct ct ON ct.cod_ct = s.cod_ct
 WHERE r.crm_link = :crm;
+-- Sem linha = o médico não está em nenhum painel hoje. Mais de uma linha = está em mais de um painel.
 ```
 
-```sql
--- Q41 · Representante de um PDV
-SELECT p.cnpj_pdv, p.desc_pdv, p.cod_utc, fv.cod_territorio, fv.desc_territorio
-FROM cddd.pdvs p
-LEFT JOIN cddd.forca_vendas fv ON fv.cod_utc = p.cod_utc
-WHERE lpad(regexp_replace(p.cnpj_pdv, '\D', '', 'g'), 14, '0') = :cnpj;
-```
+*"Quais médicos estão no painel do Hermes?"*
 
 ```sql
--- Q42 · Últimas visitas efetivas de um médico
-SELECT data_da_visita::date, setor, tipo_visita, comentarios
+-- E11 · Médicos do painel de um representante
+SELECT r.crm_link, r.nome, r.setor, r.categoria, r.dsc_primeira_especialidade AS especialidade,
+       r.classificacao, r.potencial, r.frequencia, r.municipio, r.estado
+FROM audit.rx_cadastro_mais_recente r
+WHERE r.setor_cliente IN (SELECT DISTINCT cod_territorio FROM cddd.forca_vendas
+                          WHERE desc_territorio ILIKE '%' || :rep || '%')
+ORDER BY r.nome;
+```
+
+*"Quantos médicos tem o painel de cada representante?"*
+
+```sql
+-- E12 · Tamanho do painel por setor e representante, por potencial
+SELECT r.setor,
+       btrim(fv.desc_territorio) AS representante,
+       COUNT(DISTINCT r.crm_link) AS medicos,
+       COUNT(DISTINCT r.crm_link) FILTER (WHERE r.potencial = 'A') AS potencial_a,
+       COUNT(DISTINCT r.crm_link) FILTER (WHERE r.potencial = 'M') AS potencial_m,
+       COUNT(DISTINCT r.crm_link) FILTER (WHERE r.potencial = 'B') AS potencial_b
+FROM audit.rx_cadastro_mais_recente r
+LEFT JOIN (SELECT DISTINCT cod_territorio, desc_territorio FROM cddd.forca_vendas) fv
+       ON fv.cod_territorio = r.setor_cliente
+GROUP BY 1, 2
+ORDER BY medicos DESC;
+```
+
+*"O PDV de CNPJ X é visitado? Por quem?"*
+
+```sql
+-- E13 · PDV visitado pela força de vendas e representante responsável
+SELECT t.cnpj,
+       t.nome_rede,
+       t.nome_loja,
+       t.cidade,
+       t.uf,
+       t.setor,
+       t.nome_setor,
+       t.frequencia,
+       btrim(fv.desc_territorio) AS representante,
+       ct.email_ct
+FROM audit.trade_cadastro_estabelecimento t
+LEFT JOIN cddd.scd_ct_territorio s
+       ON s.cod_setor = t.setor AND s.data_saida_territorio IS NULL
+LEFT JOIN cddd.dim_ct ct ON ct.cod_ct = s.cod_ct
+LEFT JOIN (SELECT DISTINCT cod_territorio, desc_territorio FROM cddd.forca_vendas) fv
+       ON fv.cod_territorio = s.cod_territorio::text
+WHERE t.cnpj = lpad(regexp_replace(:cnpj, '\D', '', 'g'), 14, '0');
+-- Sem linha = o PDV não está no cadastro de visitação da força de vendas.
+```
+
+`audit.trade_cadastro_estabelecimento` é o cadastro de PDVs visitados pela força de vendas: um
+CNPJ (14 dígitos, texto) por linha, com o `setor` (4 dígitos) que o visita.
+
+### 5.3 Visitas
+
+*"Quando o médico X foi visitado pela última vez?"*
+
+```sql
+-- E20 · Últimas visitas efetivas de um médico
+SELECT data_da_visita::date AS data,
+       setor,
+       setor_ims AS representante,
+       COALESCE(tipo_visita, 'Não informado') AS tipo,
+       comentarios
 FROM audit.rx_visitas
-WHERE crm_norm = :crm AND visita_efetiva = 'S'
-ORDER BY data_da_visita DESC
+WHERE crm_norm = :crm
+  AND visita_efetiva = 'S'
+ORDER BY data_da_visita DESC, id_visita DESC
 LIMIT 5;
 ```
 
+*"Quantos médicos únicos foram visitados no MAT, pela força de vendas e pela visitação remota?"*
+
 ```sql
--- Q43 · Painel de um setor com a última visita efetiva
+-- E21 · Médicos únicos visitados no período, por canal
+SELECT CASE WHEN setor = 3000 THEN 'Visitação Remota' ELSE 'Força de Vendas' END AS canal,
+       COUNT(DISTINCT crm_norm) AS medicos_visitados,
+       COUNT(*) AS visitas_efetivas
+FROM audit.rx_visitas
+WHERE visita_efetiva = 'S'
+  AND data_da_visita >= :data_ini AND data_da_visita < :data_fim   -- MAT 01/07/2026: '2025-08-01' a '2026-08-01'
+GROUP BY 1;
+```
+
+O total de médicos distintos é menor que a soma dos dois canais, porque um médico pode ter sido
+visitado pelos dois. Para o total, rode a mesma query sem o `GROUP BY`.
+
+*"Quantas visitas cada representante fez por mês?"*
+
+```sql
+-- E22 · Visitas efetivas por representante e mês (força de vendas)
+SELECT date_trunc('month', v.data_da_visita)::date AS mes,
+       COALESCE(btrim(fv.desc_territorio), v.setor_ims) AS representante,
+       v.setor,
+       COUNT(*) AS visitas,
+       COUNT(DISTINCT v.crm_norm) AS medicos
+FROM audit.rx_visitas v
+LEFT JOIN (SELECT DISTINCT cod_territorio, desc_territorio FROM cddd.forca_vendas) fv
+       ON fv.cod_territorio = v.setor_cliente
+WHERE v.visita_efetiva = 'S'
+  AND v.setor <> 3000
+  AND v.data_da_visita >= :data_ini AND v.data_da_visita < :data_fim
+GROUP BY 1, 2, 3
+ORDER BY 1 DESC, visitas DESC;
+```
+
+*"Qual a cobertura do painel? Quantos médicos do painel foram visitados?"*
+
+```sql
+-- E23 · Cobertura do painel atual no período, por setor
+WITH visitados AS (
+  SELECT DISTINCT crm_norm, setor
+  FROM audit.rx_visitas
+  WHERE visita_efetiva = 'S'
+    AND data_da_visita >= :data_ini AND data_da_visita < :data_fim
+)
+SELECT r.setor,
+       COUNT(DISTINCT r.crm_link) AS medicos_no_painel,
+       COUNT(DISTINCT r.crm_link) FILTER (WHERE vi.crm_norm IS NOT NULL) AS medicos_visitados,
+       ROUND(100.0 * COUNT(DISTINCT r.crm_link) FILTER (WHERE vi.crm_norm IS NOT NULL)
+             / NULLIF(COUNT(DISTINCT r.crm_link), 0), 1) AS pct_cobertura
+FROM audit.rx_cadastro_mais_recente r
+LEFT JOIN visitados vi ON vi.crm_norm = r.crm_link AND vi.setor = r.setor
+GROUP BY 1
+ORDER BY pct_cobertura DESC;
+```
+
+*"Quais médicos do painel do setor X estão há mais tempo sem visita?"*
+
+```sql
+-- E24 · Painel de um setor com a última visita efetiva
 SELECT r.crm_link, r.nome, r.categoria, r.potencial,
-       MAX(v.data_da_visita)::date AS ultima_visita, COUNT(v.id_visita) AS visitas_efetivas
+       MAX(v.data_da_visita)::date AS ultima_visita,
+       (SELECT MAX(data_da_visita)::date FROM audit.rx_visitas) - MAX(v.data_da_visita)::date AS dias_desde,
+       COUNT(v.id_visita) AS visitas_efetivas
 FROM audit.rx_cadastro_mais_recente r
 LEFT JOIN audit.rx_visitas v
        ON v.crm_norm = r.crm_link AND v.setor = r.setor AND v.visita_efetiva = 'S'
@@ -294,40 +2165,33 @@ GROUP BY 1, 2, 3, 4
 ORDER BY ultima_visita NULLS FIRST;
 ```
 
+`dias_desde` conta a partir da data mais recente da base de visitas. Médico sem visita aparece
+primeiro, com `ultima_visita` vazia.
+
+*"Por que as visitas não acontecem?"*
+
 ```sql
--- Q44 · Visitas efetivas por setor e mês
-SELECT setor, date_trunc('month', data_da_visita)::date AS mes,
-       COUNT(*) AS visitas, COUNT(DISTINCT crm_norm) AS medicos
+-- E25 · Tentativas sem contato por motivo
+SELECT COALESCE(lista_de_motivo_de_nao_visita, 'Não informado') AS motivo,
+       COUNT(*) AS tentativas,
+       COUNT(DISTINCT crm_norm) AS medicos
 FROM audit.rx_visitas
-WHERE visita_efetiva = 'S' AND data_da_visita BETWEEN :data_ini AND :data_fim
+WHERE visita_efetiva = 'N'
+  AND data_da_visita >= :data_ini AND data_da_visita < :data_fim
+GROUP BY 1
+ORDER BY tentativas DESC;
+```
+
+*"Quantas visitas foram por telefone, WhatsApp ou vídeo?"*
+
+```sql
+-- E26 · Visitas efetivas por tipo de contato
+SELECT CASE WHEN setor = 3000 THEN 'Visitação Remota' ELSE 'Força de Vendas' END AS canal,
+       COALESCE(tipo_visita, 'Não informado') AS tipo,
+       COUNT(*) AS visitas
+FROM audit.rx_visitas
+WHERE visita_efetiva = 'S'
+  AND data_da_visita >= :data_ini AND data_da_visita < :data_fim
 GROUP BY 1, 2
-ORDER BY 1, 2;
-```
-
----
-
-## 6. Mercado (TDD) e Cadastro de PDV
-
-| Tabela | Conteúdo | Colunas-chave |
-|---|---|---|
-| `tdd.dim_pdv` | Cadastro de PDV do mercado | `"COD_PDV"`, `"CNPJ_PDV"` (bigint), `"DESC_PDV"`, `"CIDADE_PDV"`, `"UF_PDV"`, `"UTC_PDV"` |
-| `tdd.fato_tdd` | Volume e categoria do PDV no mercado de cannabis | `"COD_PDV"`, `"COD_GRUPO"` (usar `3`), `"COD_PERIODO"` (`SEM01_202601`, `TRIM01_202506`…), `"CAT_UN_MERCADO"` (1 = maior, 8 = menor), `"UN_MERCADO"`, `"R$_PDV_MERCADO"` |
-| `cddd.canal` | Subcanal → canal | `cod_subcanal`, `desc_subcanal`, `desc_canal`, `desc_grupo_canal` |
-
-```sql
--- Q50 · Categoria e volume de mercado de um PDV
-SELECT d."DESC_PDV", f."COD_PERIODO", f."CAT_UN_MERCADO", f."UN_MERCADO", f."R$_PDV_MERCADO"
-FROM tdd.dim_pdv d
-JOIN tdd.fato_tdd f ON f."COD_PDV" = d."COD_PDV"
-WHERE d."CNPJ_PDV" = :cnpj::bigint AND f."COD_GRUPO" = 3
-ORDER BY f."COD_PERIODO";
-```
-
-```sql
--- Q51 · Cadastro e canal de um PDV
-SELECT p.cnpj_pdv, p.desc_pdv, p.desc_endereco, p.bairro, p.cidade, p.uf, p.cep, p.cod_utc,
-       c.desc_subcanal, c.desc_canal
-FROM cddd.pdvs p
-LEFT JOIN cddd.canal c ON c.cod_subcanal = p.cod_subcanal
-WHERE lpad(regexp_replace(p.cnpj_pdv, '\D', '', 'g'), 14, '0') = :cnpj;
+ORDER BY 1, visitas DESC;
 ```

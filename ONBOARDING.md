@@ -6,17 +6,38 @@
 
 ## 1. Status
 
-- **Fases concluídas:** 0 (decisões), 1 (fundação) e 2 (modelos, canal e API
-  do chat).
+- **Fases concluídas:** 0 (decisões), 1 (fundação), 2 (modelos, canal e API
+  do chat), 3 (catálogo, validador de SQL e executor somente leitura) e 4
+  (orquestrador com fakes).
 - **Existe hoje:** projeto Django configurado, healthcheck, infraestrutura
   local (Postgres, Redis e banco analítico sintético com usuário de leitura),
   Docker/Railway, a API do chat com idempotência e isolamento por usuário, os
   modelos de auditoria e o Admin.
-- **Ainda não existe:** IA, catálogo e executor de consultas (Fases 3 a 5). A
-  API aceita a pergunta e a registra, mas ninguém responde ainda — o
-  enfileiramento entra na Fase 4, no ponto marcado em `messaging/views.py`.
-- **Bloqueios externos:** usuário de leitura no RDS (D-01), rede Railway → RDS
-  (D-02) e chave da OpenAI (D-03). Ver `docs/open-decisions.md`.
+- **O chat já responde de ponta a ponta** com o provedor fake e o banco
+  sintético: a API enfileira, o orquestrador planeja, valida, executa,
+  redige, confere os números e registra tudo.
+- **Suíte de validação pronta** (Fase 7): `app/knowledge/casos_validacao.yaml`
+  tem 127 casos derivados do `chatbot_bi_referencia_querys.md`, com gabarito
+  montado da própria consulta do documento. `run_synthetic_cases --so-gabarito`
+  confere os gabaritos no banco sem chamar a IA.
+- **A IA real está ligada** (Fase 5): `gpt-5.6-terra` escreve a consulta e
+  `gpt-5.6-luna` redige (ADR-0016). Converse com ela por
+  `manage.py chat_local`; o contexto vai recortado por tema (ADR-0015) e há
+  teto de gasto mensal (`AI_MONTHLY_BUDGET_USD`).
+- **A interface web está pronta** (Fase 6, ADR-0017). Para rodar local:
+  túnel do RDS aberto, `DEBUG=1` no processo, um worker do Celery
+  (`cd app && DEBUG=1 uv run celery -A config worker -P solo`) e
+  `DEBUG=1 uv run python app/manage.py runserver`. O login usa os usuários
+  do Django (`manage.py createsuperuser`).
+- **Ainda não existe:** a rodada completa da suíte (Fase 7) e o relatório
+  (Fase 8). Até lá, quem responde é o `FakeAIProvider`, que casa a pergunta
+  com o título das consultas de referência e não entende pergunta de
+  verdade.
+- **Acesso ao banco real:** a role `bi_chatbot_ro` lê os 6 schemas do documento
+  de referência. Em desenvolvimento o acesso é pelo túnel SSM, que sobe só no
+  WSL (`infra/rds/abrir_tunel_wsl.sh`); conecte em `127.0.0.1:15432`.
+- **Pendências externas:** rede da aplicação no ECS até o RDS (D-02) e o schema
+  de metas (`remuneracao_fv`). Ver `docs/open-decisions.md`.
 
 ## 2. Documentos-chave (nesta ordem)
 
@@ -53,18 +74,22 @@ bi/
 │   │   ├── celery.py · urls.py · views.py (health) · wsgi.py · asgi.py
 │   ├── conversations/         # Conversation (thread de um usuário)
 │   ├── messaging/             # Message, channels/{base,web,fake}, services, API
-│   ├── ai_orchestrator/       # AIReply, AICall, CatalogGap + prompts/planner_v1.md
-│   └── datasource/            # QueryRun (cada tentativa de consulta)
-├── infra/analytics_db/init/   # cria o usuário de leitura do banco sintético
+│   ├── ai_orchestrator/       # orchestrator, rules, grounding, canned, tasks,
+│   │                          # providers/{base,fake}, prompts/, modelos de auditoria
+│   ├── datasource/            # QueryRun, sql_guard, executors/{base,fake,postgres_readonly}
+│   ├── catalog/               # loader do catálogo + comando catalog_check
+│   └── knowledge/             # catalog.yaml (schemas, bloqueios, limites) + schema_snapshot.md
+├── infra/analytics_db/init/   # banco sintético local (schema, dados, usuário de leitura)
+├── infra/rds/                 # túnel SSM (WSL) e scripts do usuário de leitura no RDS
 ├── tests/ conftest.py · unit/ · integration/
 ├── docs/ adr/ · plan.md · open-decisions.md · catalog-checklist.md
 ├── docker-compose.yml · Dockerfile · railway.json · pyproject.toml · uv.lock
 └── .env.example
 ```
 
-Faltam os apps `catalog` e `reporting`, e os módulos de orquestração
-(`rules`, `grounding`, `providers`, `tasks`) dentro de `ai_orchestrator`. A
-estrutura completa planejada está no `CLAUDE.md`.
+Falta o app `reporting` e os módulos de orquestração (`rules`, `grounding`,
+`providers`, `tasks`) dentro de `ai_orchestrator`. A estrutura completa
+planejada está no `CLAUDE.md`.
 
 ## 5. Decisões que valem entender antes de mexer no código
 
@@ -89,7 +114,22 @@ estrutura completa planejada está no `CLAUDE.md`.
   existe.
 - **SQL gerado pela IA com as referências como norte (ADR-0014)**, validado
   em três camadas (ADR-0008), e nenhum número sem consulta registrada
-  (ADR-0010). Isso começa a virar código na Fase 3.
+  (ADR-0010).
+- **`datasource/sql_guard.py` é a barreira principal da aplicação.** Ele
+  percorre a árvore sintática inteira, e não o texto: é assim que
+  `WITH x AS (DELETE ...)` é pego. O SQL executado é o original, só embrulhado
+  no limite de linhas — reemitir da árvore poderia mudar um cast e o número
+  junto.
+- **A permissão é por schema**, e não tabela a tabela, enquanto D-04 não vem.
+  O que protege dado pessoal é a lista de colunas bloqueadas do catálogo, mais
+  o GRANT do usuário de leitura no banco.
+- **O pipeline tem duas correções únicas, e só duas.** Consulta recusada ou
+  com erro volta uma vez para a IA com o motivo; resposta que cita número sem
+  suporte volta uma vez com o número acusado. Na segunda falha o sistema para
+  de tentar: entrega a tabela crua (o dado existe) ou um aviso legível (não
+  existe). Insistir custaria chamadas pagas para o mesmo resultado.
+- **"Não sei" vira `CatalogGap`.** É o que transforma a pergunta sem resposta
+  em backlog do catálogo, em vez de beco sem saída.
 
 ## 6. Cuidados ao continuar
 

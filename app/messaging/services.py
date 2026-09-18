@@ -57,7 +57,7 @@ def ingest_inbound_message(conversation, inbound: InboundMessage) -> tuple[Messa
     return message, True
 
 
-def deliver_reply(channel: Channel, conversation, text: str) -> Message:
+def deliver_reply(channel: Channel, conversation, text: str, in_reply_to=None) -> Message:
     """Entrega a resposta pelo canal e grava a mensagem de saída.
 
     Falha na entrega vira Message.Status.FAILED em vez de exceção: é fronteira
@@ -84,4 +84,5 @@ def deliver_reply(channel: Channel, conversation, text: str) -> Message:
         client_message_id=new_outbound_id(),
         status=status,
         delivery_detail=detail,
+        in_reply_to=in_reply_to,
     )

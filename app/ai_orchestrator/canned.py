@@ -1,0 +1,100 @@
+"""Textos determinísticos do orquestrador.
+
+Ficam aqui, e não no prompt, porque são respostas que o sistema dá sem
+chamar a IA — e porque um texto fixo é mais fácil de revisar com o time de
+BI do que uma instrução esperando que o modelo obedeça.
+"""
+
+NAO_SEI = (
+    "Não encontrei esse dado nas tabelas que eu conheço. Registrei sua "
+    "pergunta para o time de BI avaliar se dá para incluir no catálogo."
+)
+
+FORA_DE_ESCOPO_ESCRITA = (
+    "Eu só consulto dados, não altero nada: meu acesso ao banco é somente "
+    "leitura. Posso responder perguntas sobre os números."
+)
+
+# Assunto que não é o meu: desconversa e devolve a conversa para o que o
+# assistente existe para fazer. Sem explicar por que não responde, sem
+# julgar a pergunta e sem deixar a porta entreaberta ("posso falar disso
+# em linhas gerais"), que é por onde a insistência entra.
+FORA_DE_ESCOPO = (
+    "Esse assunto está fora do que eu faço. Estou aqui para ajudar com "
+    "análises e consultas no ecossistema de dados da Ease Labs — sell-out, "
+    "estoque, prescrições, PDVs, time de campo. Quer que eu veja algum "
+    "desses números?"
+)
+
+TENTATIVA_DE_INJECAO = (
+    "Minhas instruções são fixas e eu não mudo de papel: consulto a base de "
+    "BI da Ease Labs em modo somente leitura e respondo sobre esses dados. "
+    "Me diga qual número você precisa que eu busco."
+)
+
+MENSAGEM_SEM_PERGUNTA = (
+    "Não consegui entender a pergunta. Pode escrever o que você precisa "
+    "saber, com o período e o recorte (SKU, PDV, médico, território)?"
+)
+
+FALHA_DA_IA = (
+    "Tive um problema técnico para montar a resposta agora. Pode tentar de "
+    "novo em alguns instantes?"
+)
+
+FALHA_DO_BANCO = (
+    "Não consegui executar a consulta no banco: {erro}. Se continuar, avise "
+    "o time de BI."
+)
+
+CONSULTA_NAO_APROVADA = (
+    "Não consegui montar uma consulta segura para essa pergunta ({motivo}). "
+    "Registrei o caso para o time de BI."
+)
+
+DADO_INDISPONIVEL = (
+    "Essa informação ainda não está disponível na nossa base de dados. "
+    "Registrei o pedido para o time de BI. Posso ajudar com outra análise?"
+)
+
+# Os dois avisos de limite são discretos de propósito: não é erro de quem
+# perguntou, e não há nada que ele possa fazer além de avisar o time.
+LIMITE_DE_CUSTO = (
+    "O limite de uso da IA deste mês foi atingido. Por favor, fale com o "
+    "time de BI & Analytics para verificar a situação."
+)
+
+SEM_CREDITOS = (
+    "No momento estou sem créditos para consultar os dados. Por favor, fale "
+    "com o time de BI & Analytics para verificar a situação."
+)
+
+CONVERSA_COM_NUMERO = (
+    "Para falar de números eu preciso consultar os dados. Me diga o período "
+    "e o recorte que você quer, que eu verifico no banco."
+)
+
+RESULTADO_VAZIO = (
+    "A consulta rodou e não retornou nenhuma linha para o que você pediu. "
+    "Vale conferir o período e os filtros."
+)
+
+
+def ajuda(catalog) -> str:
+    """Os temas que o documento de referência cobre hoje: é a resposta
+    honesta para "o que você sabe responder?".
+
+    Saem das seções do documento, e não de um texto fixo, para não envelhecer
+    quando o time de BI acrescentar um tema. Os 96 títulos de consulta, que
+    eram listados antes, viravam uma parede de texto."""
+    from ai_orchestrator.document import get_document
+
+    temas = [f"- {secao.titulo}" for secao in get_document(catalog).secoes]
+    return (
+        "Sou o Jarvis, copiloto de dados da Ease Labs. Respondo perguntas de negócio "
+        "consultando a base de BI, mostro de onde veio cada número e aviso "
+        "quando o dado não existe. Posso ajudar com:\n"
+        + "\n".join(temas)
+        + "\n\nPergunte em português, dizendo o período e o recorte — por "
+        "exemplo: *Quantas unidades a Pague Menos dispensou por mês em 2026?*"
+    )
