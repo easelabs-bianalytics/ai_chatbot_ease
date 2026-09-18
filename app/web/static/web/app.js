@@ -372,10 +372,10 @@
           <h2 class="section-label">Projetos</h2>
           <button class="secao-acao" type="button" id="btnNovoProjeto" aria-label="Novo projeto" title="Novo projeto">${ICONES.somar}</button>
         </div>
-        ${pastas || '<p class="conversa-vazia">Agrupe conversas de um mesmo assunto em projetos.</p>'}
+        ${pastas}
       </div>
       <div class="lista-secao">
-        <div class="secao-cabeca"><h2 class="section-label">Conversas</h2></div>
+        <div class="secao-cabeca"><h2 class="section-label">Recentes</h2></div>
         ${soltas.length
           ? soltas.map((c) => itemConversa(c, n++)).join('')
           : `<p class="conversa-vazia">${ativas.length ? 'Todas as conversas estão em projetos.' : 'Suas conversas aparecem aqui. Comece com uma pergunta.'}</p>`}
@@ -812,6 +812,7 @@
     el.dataset.id = m.id;
     el.innerHTML = `
       <div class="ia-avatar" aria-hidden="true">${jarvis()}</div>
+      <div class="msg-corpo">
       <article class="cartao-ia ${tipo.classe}">
         <div class="cartao-ia-corpo">
           ${tipo.rotulo ? `<div class="cartao-ia-rotulo">${ICONES[tipo.icone] || ''}${esc(tipo.rotulo)}</div>` : ''}
@@ -823,7 +824,8 @@
         ${blocoGrafico(fonte, m.id)}
         ${blocoFonte(fonte, m.id)}
       </article>
-      ${blocoContinuacoes(fonte)}`;
+      ${blocoContinuacoes(fonte)}
+      </div>`;
     if (fonte.grafico && fonte.dados) GRAFICOS.set(String(m.id), { grafico: fonte.grafico, dados: fonte.dados });
     return el;
   };
