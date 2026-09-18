@@ -482,6 +482,9 @@ body.bg-gradiente {
 .chat-shell.recolhida .sidebar-marca .marca-jarvis { width: 36px; height: 36px; }
 .chat-shell.recolhida .btn-nova { width: 40px; height: 40px; padding: 0; justify-content: center; overflow: hidden; }
 .chat-shell.recolhida .user-trigger { justify-content: center; padding: 6px; }
+/* A lista some no modo recolhido, e com ela o elemento flexível que empurrava
+   o usuário para baixo: sem isto ele sobe e encosta no botão de nova conversa. */
+.chat-shell.recolhida .sidebar-usuario { margin-top: auto; }
 .chat-shell.recolhida .sidebar-recolher svg { transform: scaleX(-1); }
 .marca-jarvis { display: none; }
 
@@ -533,14 +536,6 @@ body.bg-gradiente {
 .conversa-item.ativa .conversa-titulo { color: var(--primary-800); }
 .conversa-data { font-size: 11.5px; color: var(--gray-500); }
 .conversa-vazia { font-size: 13px; color: var(--gray-500); padding: 8px 6px; line-height: 1.5; }
-/* Divisor de período na lista: com vinte conversas no mesmo dia, "Hoje,
-   14:36" repetido vinte vezes não ajuda ninguém a achar nada. */
-.grupo-periodo { padding: 12px 8px 4px; }
-.grupo-periodo:first-child { padding-top: 2px; }
-.periodo-titulo {
-  font-size: 11px; font-weight: 600; letter-spacing: 0.5px;
-  text-transform: uppercase; color: var(--gray-400);
-}
 
 .skeleton {
   border-radius: var(--radius-md);
@@ -1360,11 +1355,13 @@ button.secao-cabeca {
   transform: translateY(6px);
 }
 .sidebar-usuario.open > .dropdown-menu { transform: none; }
-/* Recolhida, a sidebar tem 64 px: um menu com `left:0; right:0` sairia com
-   64 px de largura e o texto quebrando letra a letra. Aqui ele solta da
-   largura da trilha e abre para o lado. */
+/* Recolhida, a sidebar tem 64 px. Ancorar o menu nela o espremia e, quando
+   ele era mais alto que o espaço acima do avatar, o topo saía da tela. Aqui
+   ele abre ao lado da trilha, alinhado pela base, como um painel. */
 .chat-shell.recolhida .sidebar-usuario .dropdown-menu {
-  left: 8px; right: auto; min-width: 232px;
+  left: calc(100% + 6px); right: auto;
+  bottom: 0; top: auto;
+  min-width: 248px;
 }
 
 @media (max-width: 640px) {

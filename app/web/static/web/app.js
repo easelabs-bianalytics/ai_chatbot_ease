@@ -129,37 +129,6 @@
   };
   const fmtNum = (n) => Number(n).toLocaleString('pt-BR');
 
-  // Dentro de "Hoje", repetir "Hoje" em cada linha é ruído: fica só a hora.
-  // Fora dele, a data curta, que é o que ajuda a achar a conversa.
-  const DIAS = 24 * 60 * 60 * 1000;
-  const periodoDe = (iso) => {
-    const d = new Date(iso);
-    const hoje = new Date();
-    const ontem = new Date(); ontem.setDate(hoje.getDate() - 1);
-    if (d.toDateString() === hoje.toDateString()) return { chave: 'hoje', titulo: 'Hoje', curto: fmtHora(iso) };
-    if (d.toDateString() === ontem.toDateString()) return { chave: 'ontem', titulo: 'Ontem', curto: fmtHora(iso) };
-    if (hoje - d < 7 * DIAS) {
-      return { chave: 'semana', titulo: 'Últimos 7 dias',
-               curto: d.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '') };
-    }
-    if (d.getFullYear() === hoje.getFullYear() && d.getMonth() === hoje.getMonth()) {
-      return { chave: 'mes', titulo: 'Este mês', curto: d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) };
-    }
-    return { chave: 'antes', titulo: 'Mais antigas',
-             curto: d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) };
-  };
-
-  const porPeriodo = (conversas) => {
-    const grupos = [];
-    conversas.forEach((c) => {
-      const p = periodoDe(c.updated_at);
-      const ultimo = grupos[grupos.length - 1];
-      if (ultimo && ultimo.chave === p.chave) ultimo.itens.push(c);
-      else grupos.push({ chave: p.chave, titulo: p.titulo, itens: [c] });
-    });
-    return grupos;
-  };
-
   // ---------------------------------------------------------- API
   const csrf = () => (document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/) || [])[1] || '';
 
@@ -350,11 +319,11 @@
     try { localStorage.setItem(CHAVE_PASTAS, JSON.stringify([...pastasAbertas])); } catch { /* navegação privada */ }
   };
 
-  const itemConversa = (c, i, agrupado = false) => `
+  const itemConversa = (c, i) => `
     <div class="conversa-linha" style="animation-delay:${Math.min(i, 8) * 25}ms">
       <button class="conversa-item${c.id === state.conversaId ? ' ativa' : ''}" type="button" data-id="${c.id}">
         <span class="conversa-titulo">${esc(c.title || 'Nova conversa')}</span>
-        <span class="conversa-data">${esc(agrupado ? periodoDe(c.updated_at).curto : fmtData(c.updated_at))}</span>
+        <span class="conversa-data">${esc(fmtData(c.updated_at))}</span>
       </button>
       <button class="item-acoes" type="button" data-menu-conversa="${c.id}" aria-label="Opções da conversa" aria-haspopup="true">${ICONES.mais}</button>
     </div>`;
@@ -394,9 +363,7 @@
       <div class="lista-secao">
         <div class="secao-cabeca"><h2 class="section-label">Conversas</h2></div>
         ${soltas.length
-          ? porPeriodo(soltas).map((g) => `
-              <div class="grupo-periodo"><span class="periodo-titulo">${esc(g.titulo)}</span></div>
-              ${g.itens.map((c) => itemConversa(c, n++, true)).join('')}`).join('')
+          ? soltas.map((c) => itemConversa(c, n++)).join('')
           : `<p class="conversa-vazia">${ativas.length ? 'Todas as conversas estão em projetos.' : 'Suas conversas aparecem aqui. Comece com uma pergunta.'}</p>`}
       </div>
       ${arquivadas.length ? `
