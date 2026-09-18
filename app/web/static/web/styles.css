@@ -775,9 +775,27 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
 }
 
 .ia-avatar {
-  width: 34px; height: 34px;
+  width: 38px; height: 38px;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
+}
+/* Ao passar o mouse, o Jarvis dá um pulinho com esticada e achatada — o
+   movimento clássico que faz um boneco parecer ter peso. É diferente do
+   aceno da marca e do flutuar da tela inicial de propósito: o mesmo gesto
+   em três lugares vira tique. */
+.ia-avatar .jarvis { transform-box: view-box; transform-origin: 50% 100%; }
+.ia-avatar:hover .jarvis { animation: jarvisPulo 0.6s cubic-bezier(0.3, 1.4, 0.5, 1); }
+.ia-avatar:hover .j-olho { animation: jarvisArregala 0.6s ease-out; }
+@keyframes jarvisPulo {
+  0%   { transform: translateY(0) scale(1, 1); }
+  22%  { transform: translateY(-4px) scale(0.94, 1.08); }
+  52%  { transform: translateY(1px) scale(1.08, 0.92); }
+  78%  { transform: translateY(0) scale(0.98, 1.02); }
+  100% { transform: translateY(0) scale(1, 1); }
+}
+@keyframes jarvisArregala {
+  0%, 100% { transform: scale(1); }
+  35%      { transform: scale(1.35); }
 }
 
 .cartao-ia {
