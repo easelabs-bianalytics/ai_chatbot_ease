@@ -59,6 +59,7 @@ class Relatorio:
     custo: Decimal = Decimal("0")
     tokens_entrada: int = 0
     tokens_saida: int = 0
+    tokens_em_cache: int = 0
     latencias: tuple = ()          # ordenadas, em ms
     consultas: int = 0
     consultas_corrigidas: int = 0
@@ -70,6 +71,14 @@ class Relatorio:
     lacunas: tuple = ()
     planilhas: int = 0
     por_dia: tuple = ()
+
+    @property
+    def taxa_de_cache(self) -> float:
+        """Fatia da entrada que veio do cache do provedor, e custa um décimo.
+
+        É o indicador que diz se vale mexer na ordem do contexto: prefixo
+        estável no começo do prompt vira desconto direto."""
+        return self.tokens_em_cache / self.tokens_entrada if self.tokens_entrada else 0.0
 
     @property
     def com_dado(self) -> int:
@@ -140,6 +149,11 @@ def montar_relatorio(inicio=None, fim=None, dias: int = 30) -> Relatorio:
         ).values_list("latency_ms", flat=True)
     ))
 
+    em_cache = sum(
+        (r or {}).get("tokens_em_cache", 0) or 0
+        for r in AICall.objects.filter(ai_reply__in=respostas).values_list("response", flat=True)
+    )
+
     consultas = QueryRun.objects.filter(ai_reply__in=respostas)
     contagem_consultas = consultas.aggregate(
         total=Count("id"),
@@ -174,6 +188,7 @@ def montar_relatorio(inicio=None, fim=None, dias: int = 30) -> Relatorio:
         custo=totais["custo"] or Decimal("0"),
         tokens_entrada=totais["entrada"] or 0,
         tokens_saida=totais["saida"] or 0,
+        tokens_em_cache=em_cache,
         latencias=latencias,
         consultas=contagem_consultas["total"],
         consultas_corrigidas=contagem_consultas["corrigidas"],

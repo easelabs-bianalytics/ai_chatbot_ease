@@ -94,14 +94,19 @@ def test_planejamento_manda_prompt_contexto_recortado_e_pergunta(catalogo):
     assert plano.reference_query_id == "B13"
 
 
-def test_chave_de_cache_e_o_tema_da_pergunta(catalogo):
-    """O prefixo em cache custa um décimo; ele só é reaproveitado se
-    perguntas do mesmo tema usarem a mesma chave."""
-    provider = _provider(catalogo, [_plano()])
+def test_chave_de_cache_do_plano_nao_carrega_o_tema(catalogo):
+    """A chave roteia a requisição. Uma por tema fragmentava o roteamento: a
+    pergunta de estoque não reaproveitava o prefixo comum — prompt mais
+    núcleo, ~5,8 mil tokens iguais em toda pergunta — que a de sell-out tinha
+    acabado de aquecer. Medido em 2026-09-18: 20% de cache no plano contra
+    42% na redação, que sempre usou chave fixa."""
+    provider = _provider(catalogo, [_plano(), _plano()])
 
     provider.plan(PlanRequest(question="Quais CDs estão em ruptura de Extrato?"))
+    provider.plan(PlanRequest(question="Quantas prescrições tivemos em agosto?"))
 
-    assert provider._client.chamadas[0]["prompt_cache_key"] == "plano:planner_v1:estoque"
+    chaves = [c["prompt_cache_key"] for c in provider._client.chamadas]
+    assert chaves == ["plano:planner_v1", "plano:planner_v1"]
 
 
 def test_data_de_hoje_vai_junto(catalogo):

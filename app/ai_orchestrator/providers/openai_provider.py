@@ -242,7 +242,13 @@ class OpenAIProvider(AIProvider):
             formato=PlanoEstruturado,
             esforco=self.effort,
             max_tokens=MAX_TOKENS_PLANO,
-            cache_key=f"plano:{PROMPT_VERSION}:{'completo' if contexto.completo else '+'.join(contexto.secoes)}",
+            # Chave única, sem o tema: ela roteia a requisição, e uma chave
+            # por tema fragmentava o roteamento — a pergunta de estoque nunca
+            # reaproveitava o prefixo comum (prompt + núcleo, ~5,8 mil tokens
+            # iguais em toda pergunta) que a de sell-out tinha acabado de
+            # aquecer. Medido em 2026-09-18: plano com chave por tema cacheava
+            # 20% da entrada; a redação, com chave fixa, cacheava 42%.
+            cache_key=f"plano:{PROMPT_VERSION}",
         )
 
         usage.request["secoes"] = list(contexto.secoes)

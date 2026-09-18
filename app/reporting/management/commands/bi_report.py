@@ -73,6 +73,7 @@ class Command(BaseCommand):
         self._linha("Por pergunta", f"US$ {r.custo_por_pergunta}")
         self._linha("Projeção para 30 dias", f"US$ {r.custo_projetado_mes}")
         self._linha("Tokens", f"{r.tokens_entrada:,} entrada · {r.tokens_saida:,} saída".replace(",", "."))
+        self._linha("Entrada servida pelo cache", f"{r.taxa_de_cache:.0%}", alerta=r.taxa_de_cache < 0.35)
 
         if r.regras:
             self._titulo("Respostas decididas por regra, sem IA")

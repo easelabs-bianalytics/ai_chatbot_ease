@@ -542,7 +542,11 @@ body.bg-gradiente {
   display: flex; flex-direction: column; gap: 4px;
   overflow-y: auto; min-height: 0;
   margin: 0 -6px; padding: 0 6px 12px;
+  /* a mesma barra fina da conversa: a padrão do sistema é grossa e rouba
+     atenção de uma lista que é só apoio */
+  scrollbar-width: thin; scrollbar-color: var(--gray-300) transparent;
 }
+.conversa-lista:hover { scrollbar-color: var(--gray-400) transparent; }
 .conversa-item {
   position: relative;
   display: flex; flex-direction: column; gap: 2px;
