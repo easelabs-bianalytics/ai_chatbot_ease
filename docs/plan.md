@@ -322,18 +322,33 @@ São **dois repositórios**, e a maior parte das mudanças mexe só no primeiro.
 | Repositório | Onde | Branch | O que vai nele |
 |---|---|---|---|
 | **Jarvis** (`bi/`) | `easelabs-bianalytics/ai_chatbot_ease` | `main` — é a convenção do histórico até aqui | o app inteiro: código, tela, prompts, catálogo, migrations, docs, scripts SQL |
-| **`sales_force_crm`** | `easelabs-analytics/sales_force_crm` | **sempre uma branch nova por mudança, nunca commit direto na `main`** | só `infra/` — o que o Jarvis precisa na AWS |
+| **`sales_force_crm`** | `easelabs-analytics/sales_force_crm` | **sempre a `feat/infra-jarvis`** — uma branch só, de vida longa; merge na `main` mais tarde | só `infra/` — o que o Jarvis precisa na AWS |
 
-**Sobre o merge na `main` do `sales_force_crm` (regra do Rubens,
-2026-09-21):** os dois merges do dia — a infra do Jarvis (`951618b`) e os
-alarmes (`2f03e64`) — foram pedidos por ele para tirar da frente o plano que
-propunha destruir o Jarvis. **Daqui em diante não commitamos nem mesclamos na
-`main` desse repositório:** o app ainda vai mudar de estrutura, e a `main` é
-compartilhada com o time do Cockpit. O nosso ciclo termina com a branch
-empurrada; o merge é decisão da Natália. O efeito colateral a aceitar é que,
-enquanto a branch não é mesclada, um `plan` feito por outra pessoa a partir
-da `main` mostra os recursos novos como sobra — então avisar ela ao abrir a
-branch.
+**A branch do `sales_force_crm` (decisão do Rubens, 2026-09-21):** tudo o que
+é do Jarvis — bump de imagem, variável, secret, alarme — é commitado na
+**`feat/infra-jarvis`**. Nada de branch nova por mudança e nada de commit
+direto na `main`: o app ainda vai mudar de estrutura, e a `main` é
+compartilhada com o time do Cockpit. O merge na `main` vem depois, combinado
+com a Natália e no padrão dela (commit `merge: incorpora feat/infra-jarvis em
+main`, como os de `951618b` e `2f03e64`).
+
+Como a Natália trabalha, conferido no histórico em 2026-09-21: o dia a dia
+dela vai **direto na `main`** (inclusive infra, como o IAM `7a22750` e o bump
+do `sync` `01dc9cd`); trabalhos maiores vão numa branch de 1 a 6 commits,
+mesclada no mesmo dia. Por isso a `main` anda rápido, e a nossa branch
+precisa acompanhar:
+
+- **antes de começar uma mudança**, trazer a `main` para a branch:
+  `git checkout feat/infra-jarvis && git merge origin/main` (se ela estiver só
+  atrás, é avanço rápido, sem commit de merge);
+- **enquanto a branch tiver algo que a `main` não tem**, um `plan` feito por
+  outra pessoa a partir da `main` mostra os nossos recursos novos como sobra
+  a destruir. Avisar a Natália quando empurrar algo que não seja só bump de
+  imagem.
+
+Em 2026-09-21 a `feat/infra-jarvis` foi avançada até a `main` (que já tinha
+os dois merges do dia e o trabalho dela), e a `feat/infra-jarvis-alarmes`
+ficou sem uso — já está mesclada.
 
 **Quando a mudança toca o `sales_force_crm`:**
 
@@ -365,7 +380,9 @@ branch.
 5. **Commit no Jarvis antes do build.** A tag da imagem é o hash do commit;
    o passo 8 recusa rodar com arquivo fora de commit.
 6. **Push do `sales_force_crm` antes de qualquer `apply`** (regra 3), e todo
-   `apply` com `-target` enquanto o IAM da Natália não estiver no código.
+   `apply` com `-target` nos recursos do Jarvis — o state é compartilhado
+   com o Cockpit, e o `plan` sem alvo mostra também o que é das outras
+   frentes.
 7. **Nunca entram:** `.env`, `terraform.tfstate`, `tfplan*` — já estão no
    `.gitignore` dos dois — nem senha, chave ou código de acesso em mensagem de
    commit.
@@ -1121,6 +1138,151 @@ de retenção do histórico e restrição à rede corporativa.
         se um dia ficar lento, é lá que se olha
       - o p95 do `bi_report` mede só as chamadas ao modelo, então o número
         real sentido pela pessoa é um pouco maior
+
+---
+
+## Fase 10 — Anexos: planilha para preencher e imagem para ler
+**Status: ⏳ em andamento** · implementado e testado localmente, com a API
+real; segunda rodada feita depois do teste do Rubens na tela; falta a
+validação dele e ir ao ar (2026-09-21)
+
+Pedido do Rubens: mandar um xlsx/csv e pedir que o Jarvis preencha com dado
+de sell-out, ou um print para ele analisar — **com todos os cuidados para
+aumentar o mínimo possível o custo**, e sem guardar o arquivo. Decisão e
+números na **ADR-0024**.
+
+### Como ficou
+
+- [x] **O arquivo nunca é guardado.** Bytes no Redis da task (cache do
+      Django, banco `/1`), 15 min para a entrada e 30 min para a planilha
+      preenchida, descartados depois da resposta — também quando ela falha.
+      Upload só em memória (`FILE_UPLOAD_MAX_MEMORY_SIZE`), sem arquivo
+      temporário em disco. A conversa guarda tipo, nome e resumo — e, da
+      imagem, uma **miniatura** (ver a segunda rodada)
+- [x] **Da planilha sobe só a forma**: abas, linhas, colunas com tipo e dois
+      exemplos. Teto de 4.000 caracteres; no teste real, 212. O modelo devolve
+      quatro nomes de coluna, nunca valores; quem preenche é o `openpyxl` com o
+      resultado do banco (ADR-0010 dentro da planilha)
+- [x] **Casamento das linhas sem token**: idêntico após normalizar, ou nome
+      contido em **uma única** chave do banco. A resposta lista o que casou
+      por aproximação e o que ficou em branco, pelo nome
+- [x] **Imagem**: validada pelo conteúdo (Pillow), reduzida a 1.280 px, lida
+      por **uma** chamada ao `luna` com prompt próprio de ~350 tokens, sem
+      catálogo e sem banco. Resposta rotulada como vinda da imagem, decisão
+      própria (`image_reading`) na auditoria e no `bi_report`. Instrução
+      escrita dentro da imagem é registrada e ignorada (ADR-0021)
+- [x] **Limites** em `attachments/limites.py`: 5 MiB, 20 mil linhas, 60
+      colunas, 8 linhas de amostra; `.xlsx`/`.xlsm`/`.csv` e PNG/JPEG/WEBP.
+      Recusa na subida, antes de qualquer chamada paga
+- [x] **Tela**: clipe no compositor, **Ctrl+V de print** direto no campo,
+      etiqueta do anexo com linhas/colunas ou dimensões, nome do anexo na
+      bolha da pergunta, botão "Baixar planilha preenchida" na resposta (que
+      vira "expirada" depois do prazo)
+- [x] Suíte: **544 testes** (62 novos). Entre eles, um que falha se o
+      conteúdo da planilha subir ao modelo, um que confere o limite de 50 mil
+      linhas na consulta do preenchimento e um que confere o descarte dos
+      bytes quando a leitura da imagem falha
+
+### Medido com a API real (2026-09-21)
+
+| Caso | Resultado | Custo |
+|---|---|---|
+| Print de painel 1920×1080 (reduzido a 1280×720) | leu as 4 redes, achou a única queda (Drogasil, 980 → 902) e **não obedeceu** a instrução escrita no print | **US$ 0,00056**, 6,2 s |
+| Planilha de 5 redes, coluna de sell-out vazia | 1ª versão: 1 de 5 casou (o banco diz "RAIA DROGASIL", a planilha "Drogasil"). Com o casamento por nome contido: **3 de 5**, com as aproximações e as em branco listadas | **US$ 0,046**, o custo normal de uma pergunta |
+
+As duas que ficaram em branco estavam certas em ficar: "Drogaria São Paulo"
+é "DROGARIA DPSP" no banco (sigla, não dá para deduzir sem chutar) e a outra
+não existe.
+
+### Segunda rodada — depois do teste do Rubens na tela (2026-09-21)
+
+Ele colou o print de uma planilha vazia pedindo "preencha as informações", e
+mandou a mesma planilha em xlsx pedindo "pode preencher o que está faltando"
+(representantes × PX Ease, PX Aché, VAR %, unidades de sell-out, market
+share). O print foi só lido ("não há números na imagem"); a planilha voltou
+com "envie a planilha". As causas, todas lidas no registro das chamadas:
+
+- [x] **Print que precisa do banco vira pedido ao banco.** A leitura agora
+      diz quando o pedido só se resolve com dado da empresa. Tabela a
+      completar é transcrita (cabeçalhos e nomes), vira planilha **em
+      memória** e segue o caminho do preenchimento — números do banco,
+      arquivo para baixar. Pedido de conferência ("isso bate com o nosso
+      sell-out?") vira pergunta autossuficiente ao planejador. A conversão é
+      só em memória: no banco fica a pergunta como foi escrita, com a imagem
+- [x] **Várias colunas de uma vez**: uma chave e, para cada coluna vazia, a
+      coluna do resultado que a preenche — uma consulta só, com CTEs
+- [x] **Seções escolhidas também pelos cabeçalhos da planilha**: "pode
+      preencher o que falta" não diz tema; "PX EASE YTD" e "SELL OUT" dizem
+- [x] **Com planilha, os três temas vão completos.** O terceiro em resumo
+      (era a prescrição, justamente o PX pedido) fez o modelo pedir o
+      documento inteiro: 47 mil tokens, US$ 0,125. O tema a mais custa
+      centavos de fração
+- [x] **A planilha acompanha toda chamada ao planejador** — antes, a do
+      documento inteiro saía sem ela e o modelo respondia "não há planilha
+      anexada" (US$ 0,097)
+- [x] **Planilha pendente**: quando o Jarvis pergunta um detalhe antes de
+      preencher ("painel atual ou território?", "VAR % contra o quê?"), a
+      planilha espera 30 min e a resposta da pessoa a herda. Só a última
+      resposta conta: mudou de assunto, a planilha não reaparece
+- [x] **Coluna de texto mostra a amostra inteira no resumo** (8 linhas):
+      com dois exemplos, o modelo filtrou por dois dos três representantes
+- [x] **Validador recusava `VALUES`** — defeito antigo. O `sqlglot` lê
+      `WITH x AS (VALUES ...)` como `SELECT * FROM (VALUES ...)`, e o
+      validador tomava esse `*` (que só seleciona literais) por `SELECT *` na
+      `audit.rx_cadastro_mais_recente`. A pessoa lia "Não consegui montar uma
+      consulta segura (SELECT * não é permitido…)" sem haver `*` nenhum. A
+      exceção é estreita: só `VALUES` puro, sem join; `*` na tabela,
+      `VALUES` com join e `*` em subconsulta continuam recusados, com teste.
+      As três consultas reais recusadas passam agora
+- [x] **Correção usa o mesmo contexto do plano corrigido** — defeito antigo:
+      plano feito com o documento inteiro era "corrigido" com o recortado, e
+      o modelo desistia
+- [x] **Banco fora do ar não é erro de consulta** — defeito antigo: com o
+      túnel caído no meio, a IA foi chamada para reescrever um SQL certo
+      (US$ 0,094). Agora conexão recusada ou perdida vira `QueryUnavailable`:
+      sem correção, sem lacuna de catálogo, e aviso sem detalhe técnico
+- [x] **Prévia da imagem**, como nas outras IAs: no compositor, a própria
+      imagem com o X no canto, sem nome de arquivo; na bolha, a miniatura
+      (clicar abre maior). Para ela continuar na conversa depois do F5, fica
+      guardada uma **miniatura** — JPEG de até 480 px, poucos KB. Ela é tudo
+      o que resta do print; a imagem que foi ao modelo continua descartada
+- [x] Suíte: **583 testes**
+
+Medido na planilha real, depois das correções: a primeira pergunta custa
+~US$ 0,05 (uma chamada, sem documento inteiro) e volta com a dúvida certa
+("painel atual ou território?"). Respondida, a chamada que escreve a consulta
+dos cinco indicadores custou **US$ 0,088 e 55 s** — é pesada, e é o preço de
+um pedido que à mão seriam cinco perguntas. **O preenchimento de ponta a ponta
+dessa planilha não completou no teste local**: a consulta passou no validador
+e foi executada, mas o túnel SSM caiu no meio. Fica para a validação do
+Rubens.
+
+### Achado no caminho
+
+- [x] **Contagem de reenvio do código mostrava 61 s.** Com os dois pedidos
+      no mesmo tique do relógio (o do Windows tem ~15 ms), `int(60,0) + 1`
+      dava 61. Trocado por arredondar para cima, com teste que falhava antes.
+      Era o teste do login que falhava de vez em quando
+
+### Para ir ao ar (repete os passos 8, 9 e 10 da Fase 9)
+
+- [ ] Commit no Jarvis, **árvore limpa** (passo 8)
+- [ ] Imagem nova com `docker buildx ... --provenance=false` — ela passa a
+      levar o **Pillow**
+- [ ] Bump de `jarvis_container_image` na **`feat/infra-jarvis`** do
+      `sales_force_crm` (antes, `git merge origin/main` nela), `plan` com
+      alvo mostrando só a imagem
+- [ ] **Validação do Rubens na tela** (em andamento): print de tabela vazia,
+      planilha com várias colunas, prévia da imagem
+- [ ] **Três migrations novas** (`messaging.0003_anexo_sem_arquivo`,
+      `messaging.0004_miniatura_da_imagem`,
+      `ai_orchestrator.0003_leitura_de_imagem`): snapshot do RDS antes, depois
+      `migrate` como task avulsa (passo 10). São só colunas novas com valor
+      padrão e mudança de `choices` — nada é reescrito
+- [ ] Nada muda na infraestrutura: o Redis já está na task, e o cache usa o
+      banco `/1` dele. Memória fica em 1 GB; o limite de 5 MiB foi escolhido
+      para caber nela
+- [ ] Testar em produção: um print colado com Ctrl+V e uma planilha pequena
 
 ---
 
