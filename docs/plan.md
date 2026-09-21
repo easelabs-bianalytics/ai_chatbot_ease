@@ -718,7 +718,7 @@ código 127 ("comando não encontrado") — esperado, o placeholder nginx não t
 `celery`. Como ele não é essencial, a task segue de pé. Resolve sozinho no
 passo 9.
 
-#### Passo 5 — CNAME de validação do certificado
+#### Passo 5 — CNAME de validação do certificado ✅
 
 ```bash
 terraform output jarvis_acm_domain_validation_options
@@ -756,7 +756,7 @@ Para conferir, de qualquer terminal:
 `nslookup -type=CNAME _a3091bb1e1464f6881c11f71cb86c874.jarvis.easelabs.app.br`
 — tem de responder o valor `…acm-validations.aws`.
 
-#### Passo 6 — Esperar o certificado virar `ISSUED`
+#### Passo 6 — Esperar o certificado virar `ISSUED` ✅
 
 ```bash
 aws acm describe-certificate --region sa-east-1 \
@@ -784,7 +784,7 @@ certificado do Cockpit e um aviso de site inseguro.
 Aplicado em 2026-09-21: `1 added, 0 changed, 0 destroyed`, e conferido no
 listener HTTPS do ALB.
 
-#### Passo 7 — CNAME final
+#### Passo 7 — CNAME final ✅
 
 - [x] No registro.br, mesmo caminho do passo 5: `CNAME`, nome **`jarvis`**,
       valor **`cockpit-prod-alb-1971305495.sa-east-1.elb.amazonaws.com.`**
@@ -798,7 +798,7 @@ para HTTPS. O HTTPS devolve 502 até o passo 9 — é o nginx provisório do
 passo 4, não problema de DNS. O resolvedor da máquina pode demorar mais a
 enxergar o CNAME novo.
 
-#### Passo 8 — Build e push da imagem real
+#### Passo 8 — Build e push da imagem real ✅
 
 Fora do Terraform, e **neste repositório** — o código do Jarvis está aqui, não
 no `sales_force_crm`. Antes do build, os ajustes de código:
@@ -875,7 +875,7 @@ baixando de volta do ECR. O Poetry segue em aberto com a Natália (tabela de
 pendências): se for exigência literal, troca o instalador e sai uma imagem
 nova — nada nos passos seguintes muda.
 
-#### Passo 9 — Bump da imagem: a forma de deploy deste repositório
+#### Passo 9 — Bump da imagem: a forma de deploy deste repositório ✅
 
 Editar o `default` de `jarvis_container_image` em `infra/variables.tf` para
 `595324409476.dkr.ecr.sa-east-1.amazonaws.com/cockpit-prod-jarvis:<hash>`.
