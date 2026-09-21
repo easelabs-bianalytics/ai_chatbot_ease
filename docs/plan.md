@@ -984,19 +984,29 @@ Isso é sucesso, não falha.
 
 #### Passo 11 — Testar e fechar
 
-- [ ] `https://jarvis.easelabs.app.br` abre com cadeado, sem aviso
+- [x] `https://jarvis.easelabs.app.br` abre com cadeado, sem aviso — o
+      `curl` valida a cadeia e a página de login vem com o campo de e-mail e
+      o botão "Enviar código" (2026-09-21). **Falta abrir no navegador**
 - [ ] Login por código: o e-mail chega (pelo Gmail do Cockpit) e o código entra
 - [ ] Uma pergunta que vá ao banco, com o número conferido
 - [ ] Uma planilha baixada e um gráfico desenhado
 - [ ] `bi_report --dias 1` mostrando a pergunta, o custo e a latência
-- [ ] Target do ALB `healthy` no `/api/health/`
-- [ ] Log dos três containers no CloudWatch, e o `jarvis-worker` agora
-      **rodando** (no passo 4 ele parava com código 127, por causa do nginx)
+- [x] Target do ALB `healthy` no `/api/health/` (2026-09-21)
+- [x] Log dos três containers no CloudWatch, e o `jarvis-worker` agora
+      **rodando** (no passo 4 ele parava com código 127, por causa do nginx).
+      Conferido em 2026-09-21: `celery@ip-10-20-0-98 ready.`, conectado no
+      Redis da própria task; nenhum 500 no `jarvis-web`
 - [ ] **Merge, combinado com a Natália.** A `feat/infra-jarvis` nasceu de
       `feat/permissoes-rubens-deploy`, que também não está na `main`, e o IAM
       novo dela ainda não está em branch nenhuma. A ordem que não quebra
       nada: ela sobe o IAM dela, a `feat/permissoes-rubens-deploy` entra na
       `main`, e só então a nossa
+
+**Produção começa sem histórico** (decidido em 2026-09-21). As 53 conversas
+do banco local — 20 do `rubens_filho`, herdadas da conta `demo`, e 33 de
+teste (`validacao_sintetica`, `chat_local`, `smoke-fase4`) — ficam só no
+Docker local. O `migrate` cria tabela, nunca copia dado: o schema `jarvis`
+nasceu vazio de propósito, com apenas os quatro usuários.
 
 **Daí em diante, qualquer mudança de código repete só os passos 8 e 9**
 (commit no Jarvis, build e push da imagem, bump no `sales_force_crm`), e o 10
