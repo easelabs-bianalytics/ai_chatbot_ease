@@ -30,6 +30,13 @@ def ana(django_user_model):
     )
 
 
+@pytest.fixture
+def senha_ligada(settings):
+    """Usuário e senha só existem com LOGIN_POR_SENHA=1 (desenvolvimento).
+    Os testes desta seção provam que, ligado, ele continua seguro."""
+    settings.LOGIN_POR_SENHA = True
+
+
 def _csrf(cliente) -> str:
     cliente.get("/api/auth/sessao/")
     return cliente.cookies["csrftoken"].value
@@ -69,7 +76,17 @@ def test_sessao_anonima_diz_que_nao_ha_ninguem():
     assert Client().get("/api/auth/sessao/").json() == {"autenticado": False}
 
 
-def test_login_sem_csrf_e_recusado(ana):
+def test_login_por_senha_vem_desligado(ana):
+    """Com ele ligado, a conta `demo` e qualquer senha antiga seriam porta de
+    entrada sem e-mail da empresa (decisão de 2026-09-21)."""
+    resposta_http = _login(Client(enforce_csrf_checks=True))
+
+    assert resposta_http.status_code == 403
+    assert "@easelabs.com.br" in resposta_http.json()["error"]
+    assert Client().get("/api/auth/sessao/").json()["autenticado"] is False
+
+
+def test_login_sem_csrf_e_recusado(ana, senha_ligada):
     """Sem a checagem, outro site conseguiria logar a vítima na conta do
     atacante — e as perguntas dela iriam para o histórico dele."""
     cliente = Client(enforce_csrf_checks=True)
@@ -83,20 +100,20 @@ def test_login_sem_csrf_e_recusado(ana):
     assert resposta_http.status_code == 403
 
 
-def test_login_certo_abre_a_sessao(ana):
+def test_login_certo_abre_a_sessao(ana, senha_ligada):
     cliente = Client(enforce_csrf_checks=True)
 
     resposta_http = _login(cliente)
 
     assert resposta_http.status_code == 200
     assert resposta_http.json()["usuario"] == {
-        "usuario": "ana", "nome": "Ana Souza", "iniciais": "AS", "equipe": False,
+        "usuario": "ana", "email": "", "nome": "Ana Souza", "iniciais": "AS", "equipe": False,
     }
     assert cliente.get("/api/auth/sessao/").json()["autenticado"] is True
 
 
 @pytest.mark.parametrize("usuario,senha", [("ana", "errada"), ("ninguem", "senha-forte-123")])
-def test_login_errado_nao_diz_o_que_errou(ana, usuario, senha):
+def test_login_errado_nao_diz_o_que_errou(ana, senha_ligada, usuario, senha):
     """Dizer se o usuário existe ajudaria quem tenta adivinhar contas."""
     resposta_http = _login(Client(enforce_csrf_checks=True), usuario, senha)
 
@@ -104,14 +121,14 @@ def test_login_errado_nao_diz_o_que_errou(ana, usuario, senha):
     assert resposta_http.json()["error"] == "Usuário ou senha incorretos."
 
 
-def test_usuario_desativado_nao_entra(ana):
+def test_usuario_desativado_nao_entra(ana, senha_ligada):
     ana.is_active = False
     ana.save()
 
     assert _login(Client(enforce_csrf_checks=True)).status_code == 400
 
 
-def test_logout_encerra_a_sessao(ana):
+def test_logout_encerra_a_sessao(ana, senha_ligada):
     cliente = Client(enforce_csrf_checks=True)
     _login(cliente)
     token = cliente.cookies["csrftoken"].value

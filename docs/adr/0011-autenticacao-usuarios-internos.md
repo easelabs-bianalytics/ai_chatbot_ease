@@ -1,7 +1,8 @@
 # ADR-0011: Autenticação de usuários internos pelo Django
 
 ## Status
-Aceito — 2026-09-14
+Aceito — 2026-09-14. A forma de login (usuário e senha) foi substituída pelo
+código no e-mail corporativo em 2026-09-21 — ver ADR-0023.
 
 ## Contexto
 O chat expõe dados de negócio da Ease Labs e consome recursos pagos (API

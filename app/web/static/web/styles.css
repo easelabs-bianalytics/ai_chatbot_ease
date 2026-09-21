@@ -340,6 +340,21 @@ body.bg-gradiente {
   transition: all var(--transition-base);
 }
 .input-field::placeholder { color: var(--gray-400); }
+/* O preenchimento automático do Chrome pinta o campo de azul-claro e ignora
+   o `background` — no login ele trocava a paleta inteira do formulário. A
+   sombra interna gigante é o único jeito de cobrir a cor dele; a transição
+   longa impede que ela pisque de volta. */
+.input-field:-webkit-autofill,
+.input-field:-webkit-autofill:hover {
+  -webkit-text-fill-color: var(--gray-900);
+  -webkit-box-shadow: 0 0 0 1000px var(--bg-card) inset;
+  caret-color: var(--gray-900);
+  transition: background-color 9999s ease-out 0s, border-color var(--transition-base);
+}
+.input-field:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--gray-900);
+  -webkit-box-shadow: 0 0 0 1000px var(--bg-card) inset, 0 0 0 3px var(--primary-100);
+}
 .input-field:hover { border-color: var(--gray-400); }
 .input-field:focus { border-color: var(--primary-500); box-shadow: 0 0 0 3px var(--primary-100); }
 .input-error-msg { font-size: 13px; color: var(--error); animation: fadeIn 0.25s ease-out; }
@@ -411,10 +426,23 @@ body.bg-gradiente {
 /* Azul-noite quase preto (o --gray-950 da identidade), com um halo índigo
    atrás do cartão e um fio verde na base. O índigo puro no fundo inteiro
    puxava para o roxo e brigava com o próprio índigo dos botões. */
+/* O login segue o tema escolhido. Sempre escuro, ele fazia quem usa o tema
+   claro sair de uma tela quase preta direto para o app branco — um clarão a
+   cada entrada. No claro: o gradiente da marca do resto do app, com o mesmo
+   halo índigo atrás do cartão, bem mais suave. */
 #panel-login {
   max-width: none; padding: 24px;
   display: flex; align-items: center; justify-content: center;
   min-height: 100dvh;
+  /* Halo mais forte e mais fechado que o do tema escuro: a 0,14 e 760 px ele
+     se diluía no gradiente e parecia só um fundo levemente lilás. Aqui ele
+     abraça o cartão e se lê como intencional. */
+  background:
+    radial-gradient(620px 460px at 50% 46%, rgba(85, 88, 212, 0.22), transparent 66%),
+    radial-gradient(1000px 340px at 50% 116%, rgba(110, 204, 100, 0.12), transparent 70%),
+    linear-gradient(165deg, #F4F4FE 0%, #F7F8FA 45%, #F0FBF4 100%);
+}
+:root[data-escuro="1"] #panel-login {
   background:
     radial-gradient(760px 520px at 50% 45%, rgba(85, 88, 212, 0.42), transparent 68%),
     radial-gradient(1000px 340px at 50% 116%, rgba(110, 204, 100, 0.14), transparent 70%),
@@ -451,8 +479,40 @@ body.bg-gradiente {
 .login-card h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; text-align: center; }
 .login-sub { font-size: 13.5px; color: var(--gray-500); text-align: center; margin-top: -10px; margin-bottom: 4px; }
 .login-footnote { text-align: center; font-size: 12px; color: var(--gray-400); margin-top: 6px; }
-/* o cartão branco precisa de mais separação para não "flutuar" no índigo */
-.login-card { box-shadow: 0 24px 60px rgba(15, 17, 25, 0.35), 0 2px 8px rgba(15, 17, 25, 0.2); }
+
+/* Login por código: e-mail, depois o código. */
+.login-etapa { display: flex; flex-direction: column; gap: 16px; animation: fadeIn 0.25s ease-out; }
+.login-etapa[hidden] { display: none; }
+.login-enviado { font-size: 13.5px; line-height: 1.55; color: var(--gray-600); text-align: center; }
+/* O e-mail vai inteiro na própria linha: quebrado no "@" ele deixa de
+   parecer um endereço. */
+.login-enviado strong { display: block; color: var(--gray-900); font-weight: 600; overflow-wrap: anywhere; }
+.login-spam { display: block; margin-top: 4px; font-size: 12.5px; color: var(--gray-500); }
+/* Seis dígitos grandes e espaçados: é um número para copiar do e-mail, e
+   precisa ser conferido de relance. */
+.input-codigo {
+  text-align: center;
+  font-size: 26px; font-weight: 700;
+  letter-spacing: 12px; padding-left: 28px;
+  font-variant-numeric: tabular-nums;
+}
+.input-codigo::placeholder { color: var(--gray-300); letter-spacing: 12px; }
+.login-acoes {
+  display: flex; justify-content: center; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--gray-400); margin-top: -4px;
+}
+.login-acoes[hidden] { display: none; }
+.login-link {
+  font-family: var(--font-family); font-size: 13px; font-weight: 600;
+  color: var(--primary-600); background: none; border: none; cursor: pointer;
+  padding: 4px 6px; border-radius: var(--radius-sm);
+}
+.login-link:hover:not(:disabled) { background: var(--primary-50); color: var(--primary-700); }
+.login-link:disabled { color: var(--gray-400); cursor: default; font-weight: 500; }
+/* No fundo claro, sombra leve basta; no escuro o cartão precisa de mais
+   separação para não "flutuar" no índigo. */
+.login-card { box-shadow: 0 18px 48px rgba(52, 56, 120, 0.12), 0 2px 6px rgba(15, 17, 25, 0.06); }
+:root[data-escuro="1"] .login-card { box-shadow: 0 24px 60px rgba(15, 17, 25, 0.35), 0 2px 8px rgba(15, 17, 25, 0.2); }
 
 /* ============================================================
    CHAT — estrutura
@@ -492,6 +552,7 @@ body.bg-gradiente {
 
 /* ── Lista de conversas ── */
 .sidebar {
+  position: relative;
   display: flex; flex-direction: column; gap: 14px;
   padding: 16px 14px 14px;
   border-right: 1px solid var(--border-light);
@@ -579,8 +640,9 @@ body.bg-gradiente {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .conversa-item.ativa .conversa-titulo { color: var(--primary-800); }
-.conversa-data { font-size: 11.5px; color: var(--gray-500); }
 .conversa-vazia { font-size: 13px; color: var(--gray-500); padding: 8px 6px; line-height: 1.5; }
+/* Dentro de uma pasta vazia: uma linha curta, sem competir com a lista. */
+.pasta-conversas .conversa-vazia { font-size: 12px; color: var(--gray-400); padding: 4px 6px 6px; }
 
 .skeleton {
   border-radius: var(--radius-md);
@@ -933,16 +995,19 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
   background: var(--primary-50); border-color: var(--primary-200);
   transform: translateY(-1px);
 }
+/* Só a última resposta mostra continuações (ver `atualizarContinuacoes`). */
+.continuacoes[hidden] { display: none; }
 
 /* ── Gráfico da resposta ── */
 /* Desenhado no navegador com os números da consulta (ADR-0020). Altura fixa
    porque o Chart.js precisa de uma caixa medida — sem ela o canvas cresce a
    cada redesenho. */
+/* Sem borda própria: dentro do cartão da resposta, uma segunda moldura só
+   empilhava linhas. O fio no topo basta para separar do texto. */
 .grafico {
-  margin: 4px 18px 16px;
-  padding: 14px 14px 10px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-lg);
+  margin: 4px 18px 8px;
+  padding: 14px 0 6px;
+  border-top: 1px solid var(--border-light);
   background: var(--bg-card);
 }
 .grafico-titulo {
@@ -950,17 +1015,7 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
   margin-bottom: 10px;
 }
 .grafico-area { position: relative; height: 260px; }
-.grafico-nota { font-size: 11.5px; color: var(--gray-500); margin-top: 8px; }
-.grafico-acoes { display: flex; justify-content: flex-end; margin-top: 6px; }
-.grafico-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-family: var(--font-family); font-size: 12px; font-weight: 500;
-  color: var(--gray-600); background: none; border: none; cursor: pointer;
-  padding: 4px 8px; border-radius: var(--radius-sm);
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-.grafico-btn:hover { background: var(--gray-50); color: var(--primary-600); }
-.grafico-btn svg { width: 13px; height: 13px; }
+.grafico-nota { font-size: 11.5px; color: var(--gray-500); margin-top: 8px; line-height: 1.5; }
 @media (max-width: 720px) {
   .grafico { margin: 4px 12px 12px; }
   .grafico-area { height: 220px; }
@@ -980,7 +1035,10 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
   border-top-color: var(--border-light);
   background: linear-gradient(180deg, var(--bg-lateral) 0%, var(--bg-card) 100%);
 }
-.fonte-toggle, .fonte-excel { opacity: 0.45; transition: opacity var(--transition-base); }
+/* 0,45 fazia as ações parecerem desabilitadas: quem não passava o mouse no
+   cartão achava que não dava para baixar. 0,75 continua um degrau abaixo
+   do texto, sem parecer inativo. */
+.fonte-toggle, .fonte-excel { opacity: 0.75; transition: opacity var(--transition-base); }
 .cartao-ia:hover .fonte-toggle, .cartao-ia:hover .fonte-excel,
 .fonte.aberta .fonte-toggle, .fonte.aberta .fonte-excel,
 .fonte-toggle:focus-visible, .fonte-excel:focus-visible { opacity: 1; }
@@ -1461,4 +1519,38 @@ button.secao-cabeca {
 
 @media (max-width: 640px) {
   .produto-area { display: none; }
+}
+
+/* ============================================================
+   ARRASTAR E REDIMENSIONAR A LATERAL
+   ============================================================ */
+
+/* Borda direita arrastável. Sem alça desenhada: o cursor é a única pista, e
+   nada é gravado — recarregar a página devolve a largura padrão. */
+.sidebar-alca {
+  position: absolute; top: 0; bottom: 0; right: -3px; width: 7px;
+  cursor: col-resize; z-index: 5; touch-action: none;
+}
+.chat-shell.recolhida .sidebar-alca { display: none; }
+/* Enquanto arrasta: sem seleção de texto e sem a transição da grade, que a
+   trinta quadros por segundo vira arrasto emborrachado. */
+body.redimensionando { user-select: none; cursor: col-resize; }
+body.redimensionando .chat-shell { transition: none; }
+
+/* A conversa em trânsito fica esmaecida, e o destino é uma linha de 2 px.
+   Nada de sombra ou fantasma: a lista é apoio, não o assunto da tela. */
+.conversa-linha[draggable="true"] { cursor: grab; }
+.conversa-linha.arrastando { opacity: 0.4; cursor: grabbing; }
+.conversa-linha.solta-antes::before,
+.conversa-linha.solta-depois::after {
+  content: ''; position: absolute; left: 6px; right: 6px; height: 2px;
+  background: var(--primary-600); border-radius: 2px;
+}
+.conversa-linha.solta-antes::before { top: -1px; }
+.conversa-linha.solta-depois::after { bottom: -1px; }
+.pasta.alvo-pasta { border-radius: var(--radius-md); box-shadow: inset 0 0 0 2px var(--primary-200); }
+
+@media (max-width: 900px) {
+  /* No celular a lateral é gaveta de largura fixa; não há borda para puxar. */
+  .sidebar-alca { display: none; }
 }

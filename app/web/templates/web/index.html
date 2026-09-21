@@ -44,19 +44,34 @@
         <p class="login-produto">Jarvis · Copiloto de Dados</p>
         <h1>Entre na sua conta</h1>
         <p class="login-sub">Pergunte aos dados da Ease Labs.</p>
-        <div class="input-group">
-          <label class="input-label" for="loginUser">Usuário</label>
-          <input class="input-field" id="loginUser" type="text" autocomplete="username" required>
+        {% comment %}
+          Duas etapas no mesmo cartão: primeiro o e-mail, depois o código que
+          chegou nele. Sem senha — só entra quem lê uma caixa @easelabs.com.br.
+        {% endcomment %}
+        <div class="login-etapa" id="etapaEmail">
+          <div class="input-group">
+            <label class="input-label" for="loginEmail">E-mail da Ease Labs</label>
+            <input class="input-field" id="loginEmail" type="email" inputmode="email"
+                   autocomplete="email" placeholder="nome.sobrenome@easelabs.com.br" required>
+          </div>
         </div>
-        <div class="input-group">
-          <label class="input-label" for="loginPass">Senha</label>
-          <div class="input-senha">
-            <input class="input-field" id="loginPass" type="password" autocomplete="current-password" required>
-            <button type="button" class="btn-olho" data-alvo="loginPass" aria-label="Exibir senha" aria-pressed="false"></button>
+        <div class="login-etapa" id="etapaCodigo" hidden>
+          <p class="login-enviado">Enviamos um código de 6 dígitos para
+            <strong id="loginEmailEnviado"></strong>
+            <span class="login-spam">Não chegou? Confira também o spam.</span></p>
+          <div class="input-group">
+            <label class="input-label" for="loginCodigo">Código</label>
+            <input class="input-field input-codigo" id="loginCodigo" type="text" inputmode="numeric"
+                   autocomplete="one-time-code" maxlength="7" placeholder="000000" required>
           </div>
         </div>
         <div class="input-error-msg" id="loginErro" role="alert" hidden></div>
-        <button class="btn btn-primary btn-lg btn-full" id="btnLogin" type="submit">Entrar</button>
+        <button class="btn btn-primary btn-lg btn-full" id="btnLogin" type="submit">Enviar código</button>
+        <div class="login-acoes" id="loginAcoes" hidden>
+          <button class="login-link" type="button" id="btnReenviar" disabled>Reenviar código</button>
+          <span aria-hidden="true">·</span>
+          <button class="login-link" type="button" id="btnOutroEmail">Usar outro e-mail</button>
+        </div>
         <p class="login-footnote">BI &amp; Analytics · Ease Labs</p>
       </form>
     </div>
@@ -145,6 +160,11 @@
           </button>
         </div>
       </div>
+
+      <!-- Borda arrastável para mudar a largura. Fica DENTRO do <aside>, em
+           posição absoluta: como filho direto do grid ela viraria uma terceira
+           coluna e quebraria o layout inteiro. -->
+      <div class="sidebar-alca" id="alcaSidebar" aria-hidden="true"></div>
     </aside>
     <div class="sidebar-veu" id="sidebarVeu" hidden></div>
 

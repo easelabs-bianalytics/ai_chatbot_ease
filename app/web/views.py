@@ -10,6 +10,9 @@ no login, para ninguém conseguir logar o usuário numa conta alheia a partir
 de outro site.
 """
 
+import ipaddress
+
+from django.conf import settings
 from django.contrib.auth import authenticate, login, logout
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -20,7 +23,11 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from web.acesso import INTERVALO_REENVIO, normalizar_email, solicitar_codigo, verificar_codigo
+
 MENSAGEM_LOGIN_INVALIDO = "Usuário ou senha incorretos."
+MENSAGEM_DOMINIO = f"Use o seu e-mail @{settings.DOMINIO_DE_ACESSO}."
+MENSAGEM_CODIGO_INVALIDO = "Código inválido ou expirado. Confira o e-mail ou peça um novo código."
 
 
 class _CsrfSempre(SessionAuthentication):
@@ -39,6 +46,7 @@ def usuario_json(user) -> dict:
     iniciais = "".join(p[0] for p in partes[:2]).upper() or user.username[:2].upper()
     return {
         "usuario": user.username,
+        "email": user.email,
         "nome": nome,
         "iniciais": iniciais,
         # Quem administra vê custo e tokens na fonte da resposta; o restante
@@ -68,11 +76,86 @@ class SessaoView(APIView):
         return Response({"autenticado": True, "usuario": usuario_json(request.user)})
 
 
-class LoginView(APIView):
+def _ip(request) -> str | None:
+    """IP de quem pediu, para o limite por IP e a trilha.
+
+    Atrás do ALB o endereço da conexão é o do balanceador; o do usuário vem
+    no X-Forwarded-For. Vale o ÚLTIMO da lista, que é o que o ALB escreveu —
+    os anteriores o próprio navegador pode inventar."""
+    encaminhado = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    candidato = encaminhado.split(",")[-1].strip() if encaminhado else request.META.get("REMOTE_ADDR", "")
+    try:
+        return str(ipaddress.ip_address(candidato))
+    except ValueError:
+        return None
+
+
+class SolicitarCodigoView(APIView):
+    """Passo 1: manda o código ao e-mail. Só aceita @easelabs.com.br."""
+
     permission_classes = [AllowAny]
     authentication_classes = [_CsrfSempre]
 
     def post(self, request):
+        email = normalizar_email(str(request.data.get("email") or ""))
+        if email is None:
+            # Dizer que o domínio está errado não entrega nada: a regra é
+            # pública. O que não se diz é se o e-mail existe.
+            return Response({"error": MENSAGEM_DOMINIO}, status=status.HTTP_400_BAD_REQUEST)
+
+        pedido = solicitar_codigo(email, ip=_ip(request), navegador=request.META.get("HTTP_USER_AGENT", ""))
+        if pedido.situacao == "aguarde":
+            return Response(
+                {"error": f"Aguarde {pedido.aguarde_segundos} s para pedir outro código.",
+                 "reenviar_em": pedido.aguarde_segundos},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+        if pedido.situacao == "limite":
+            return Response(
+                {"error": "Muitos pedidos de código. Espere alguns minutos e tente de novo."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+        if pedido.situacao == "falha_envio":
+            return Response(
+                {"error": "Não consegui enviar o e-mail agora. Tente de novo em instantes."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        return Response({
+            "enviado": True,
+            "email": email,
+            "reenviar_em": int(INTERVALO_REENVIO.total_seconds()),
+        })
+
+
+class EntrarComCodigoView(APIView):
+    """Passo 2: confere o código e abre a sessão."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = [_CsrfSempre]
+
+    def post(self, request):
+        email = normalizar_email(str(request.data.get("email") or ""))
+        if email is None:
+            return Response({"error": MENSAGEM_DOMINIO}, status=status.HTTP_400_BAD_REQUEST)
+        usuario = verificar_codigo(email, str(request.data.get("codigo") or ""))
+        if usuario is None:
+            return Response({"error": MENSAGEM_CODIGO_INVALIDO}, status=status.HTTP_400_BAD_REQUEST)
+        login(request, usuario, backend="django.contrib.auth.backends.ModelBackend")
+        return Response({"autenticado": True, "usuario": usuario_json(usuario)})
+
+
+class LoginView(APIView):
+    """Usuário e senha — desligado fora do desenvolvimento.
+
+    Com ele ligado, a conta `demo` e qualquer senha antiga continuariam
+    sendo porta de entrada sem e-mail da empresa."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = [_CsrfSempre]
+
+    def post(self, request):
+        if not settings.LOGIN_POR_SENHA:
+            return Response({"error": MENSAGEM_DOMINIO}, status=status.HTTP_403_FORBIDDEN)
         usuario = str(request.data.get("usuario") or "").strip()
         senha = str(request.data.get("senha") or "")
         if not usuario or not senha:

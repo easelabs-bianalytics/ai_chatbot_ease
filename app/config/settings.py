@@ -42,6 +42,43 @@ if env_bool("TRUST_PROXY_SSL_HEADER", default=True):
 
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
+
+# Acesso por código enviado ao e-mail corporativo (web/acesso.py). Só entra
+# quem lê uma caixa @easelabs.com.br — é o que restringe o app à empresa, e
+# quem sai dela perde o acesso quando a TI desliga o e-mail.
+DOMINIO_DE_ACESSO = "easelabs.com.br"
+# Usuário e senha ficam desligados: com eles, a conta `demo` e qualquer
+# senha antiga seriam uma porta de entrada sem e-mail da empresa. Só para
+# desenvolvimento, e nunca em produção.
+LOGIN_POR_SENHA = env_bool("LOGIN_POR_SENHA", default=False)
+
+# A sessão expira depois de 30 dias SEM USO, não 30 dias depois do login: a
+# cada requisição o prazo recomeça. Quem usa todo dia não é deslogado; um
+# notebook esquecido não fica aberto para sempre.
+SESSION_COOKIE_AGE = 30 * 24 * 60 * 60
+SESSION_SAVE_EVERY_REQUEST = True
+
+# E-mail — a mesma lógica do Cockpit (sales_force_crm/config/settings.py):
+# console no desenvolvimento (o código aparece no terminal do runserver) e
+# Gmail SMTP em produção. O remetente precisa ser a própria conta
+# autenticada: o Gmail reescreve ou marca como spam um From de outro domínio.
+# `EMAIL_ENVIO_REAL=1` liga o Gmail também em desenvolvimento, para testar o
+# e-mail de verdade.
+if DEBUG and not env_bool("EMAIL_ENVIO_REAL", default=False):
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+else:
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+    EMAIL_HOST = "smtp.gmail.com"
+    EMAIL_PORT = 587
+    EMAIL_USE_TLS = True
+    EMAIL_TIMEOUT = 15
+    # .get e não [...]: o collectstatic do build da imagem roda sem essas
+    # variáveis. Se faltarem em produção, o envio falha e é registrado.
+    EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+    EMAIL_HOST_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
+DEFAULT_FROM_EMAIL = os.environ.get(
+    "DEFAULT_FROM_EMAIL", f"Jarvis · Ease Labs <{os.environ.get('EMAIL_HOST_USER', 'jarvis@localhost')}>"
+)
 # SECURE_SSL_REDIRECT fica desligado de propósito: o healthcheck da
 # plataforma bate no container em HTTP e cairia em redirect infinito.
 

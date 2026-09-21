@@ -77,7 +77,6 @@
     lista: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
     relogio: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
     planilha: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg>',
-    imagem: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>',
   };
 
   // ---------------------------------------------------------- Jarvis
@@ -121,14 +120,6 @@
     : `web-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
   const fmtHora = (iso) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  const fmtData = (iso) => {
-    const d = new Date(iso);
-    const hoje = new Date();
-    const ontem = new Date(); ontem.setDate(hoje.getDate() - 1);
-    if (d.toDateString() === hoje.toDateString()) return `Hoje, ${fmtHora(iso)}`;
-    if (d.toDateString() === ontem.toDateString()) return `Ontem, ${fmtHora(iso)}`;
-    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' });
-  };
   const fmtNum = (n) => Number(n).toLocaleString('pt-BR');
 
   // ---------------------------------------------------------- API
@@ -149,7 +140,12 @@
       sessaoEncerrada();
       throw new Error('Sua sessão terminou. Entre de novo.');
     }
-    if (!res.ok) throw new Error(data.error || data.detail || `Erro ${res.status}`);
+    if (!res.ok) {
+      const erro = new Error(data.error || data.detail || `Erro ${res.status}`);
+      erro.status = res.status;
+      erro.dados = data;
+      throw erro;
+    }
     return data;
   };
 
@@ -271,7 +267,7 @@
     $('#panel-chat').hidden = true;
     $('#panel-login').hidden = false;
     document.title = 'Entrar · Jarvis · Ease Labs';
-    setTimeout(() => $('#loginUser').focus(), 50);
+    etapaDoLogin('email');
   };
 
   const sessaoEncerrada = () => {
@@ -288,7 +284,12 @@
     $('#headerUserName').textContent = usuario.nome;
     $('#headerUserRole').textContent = usuario.equipe ? 'Equipe BI & Analytics' : 'BI & Analytics';
     $('#menuUserName').textContent = usuario.nome;
-    $('#menuUserSub').textContent = `@${usuario.usuario}`;
+    $('#menuUserSub').textContent = usuario.email || `@${usuario.usuario}`;
+    // Quem veio do Admin (/admin/login redireciona para cá com ?proximo=)
+    // volta para ele depois de entrar. Só caminho interno do Admin: um
+    // `proximo` apontando para fora seria um redirecionamento aberto.
+    const proximo = new URLSearchParams(location.search).get('proximo');
+    if (proximo && /^\/admin\/[\w\-/]*$/.test(proximo)) { location.href = proximo; return; }
     carregarConversas();
     irParaRota(location.pathname, 'replace');
   };
@@ -321,11 +322,13 @@
     try { localStorage.setItem(CHAVE_PASTAS, JSON.stringify([...pastasAbertas])); } catch { /* navegação privada */ }
   };
 
+  // `title`: o nome inteiro no hover. A linha é cortada com reticências para
+  // caber na lateral, e quem batizou a conversa de "Ruptura de Extrato no CD
+  // de Ribeirão" só via "Ruptura de Extrato no...".
   const itemConversa = (c, i) => `
-    <div class="conversa-linha" style="animation-delay:${Math.min(i, 8) * 25}ms">
-      <button class="conversa-item${c.id === state.conversaId ? ' ativa' : ''}" type="button" data-id="${c.id}">
+    <div class="conversa-linha" style="animation-delay:${Math.min(i, 8) * 25}ms" draggable="true" data-arrastar="${c.id}">
+      <button class="conversa-item${c.id === state.conversaId ? ' ativa' : ''}" type="button" data-id="${c.id}" title="${esc(c.title || 'Nova conversa')}">
         <span class="conversa-titulo">${esc(c.title || 'Nova conversa')}</span>
-        <span class="conversa-data">${esc(fmtData(c.updated_at))}</span>
       </button>
       <button class="item-acoes" type="button" data-menu-conversa="${c.id}" aria-label="Opções da conversa" aria-haspopup="true">${ICONES.mais}</button>
     </div>`;
@@ -341,16 +344,16 @@
       const daPasta = ativas.filter((c) => c.project === p.id);
       const aberta = pastasAbertas.has(p.id) || daPasta.some((c) => c.id === state.conversaId);
       return `
-        <div class="pasta${aberta ? ' aberta' : ''}">
+        <div class="pasta${aberta ? ' aberta' : ''}" data-pasta-alvo="${p.id}">
           <div class="pasta-linha">
-            <button class="pasta-cabeca" type="button" data-pasta="${p.id}" aria-expanded="${aberta}">
+            <button class="pasta-cabeca" type="button" data-pasta="${p.id}" aria-expanded="${aberta}" title="${esc(p.name)}">
               ${ICONES.pasta}<span class="pasta-nome">${esc(p.name)}</span><span class="pasta-contagem">${daPasta.length}</span>
             </button>
             <button class="item-acoes" type="button" data-menu-projeto="${p.id}" aria-label="Opções do projeto" aria-haspopup="true">${ICONES.mais}</button>
           </div>
           <div class="pasta-conversas">${daPasta.length
             ? daPasta.map((c) => itemConversa(c, n++)).join('')
-            : '<p class="conversa-vazia">Vazio. Mova conversas para cá pelo menu ⋯ de cada uma.</p>'}</div>
+            : '<p class="conversa-vazia">Vazio — arraste conversas para cá.</p>'}</div>
         </div>`;
     }).join('');
 
@@ -374,7 +377,7 @@
         </div>
         ${pastas}
       </div>
-      <div class="lista-secao">
+      <div class="lista-secao" data-solta="soltas">
         <div class="secao-cabeca"><h2 class="section-label">Recentes</h2></div>
         ${soltas.length
           ? soltas.map((c) => itemConversa(c, n++)).join('')
@@ -429,6 +432,159 @@
     const id = Number(item.dataset.id);
     if (id !== state.conversaId) abrirConversa(id, 'push');
   });
+
+  // ---------------------------------------------------------- arrastar
+  // Um gesto só resolve as duas organizações: soltar dentro de uma pasta
+  // move a conversa para ela (PATCH `project`), e soltar entre duas
+  // conversas muda a ordem (PATCH `ordem`). Soltar na seção "Recentes" tira
+  // da pasta.
+  //
+  // Desligado durante a busca: ali a lista é resultado de filtro, e arrastar
+  // dentro de um filtro ordenaria uma coisa que some no próximo termo.
+  let arrastada = null;
+  let pista = { el: null, classe: '' };
+
+  const limparPista = () => {
+    pista.el?.classList.remove(pista.classe);
+    pista = { el: null, classe: '' };
+  };
+
+  const marcarPista = (el, classe) => {
+    if (pista.el === el && pista.classe === classe) return;
+    limparPista();
+    if (el) { el.classList.add(classe); pista = { el, classe }; }
+  };
+
+  const listaEl = $('#listaConversas');
+
+  listaEl.addEventListener('dragstart', (ev) => {
+    const linha = ev.target.closest('[data-arrastar]');
+    if (!linha || state.busca) { ev.preventDefault(); return; }
+    arrastada = Number(linha.dataset.arrastar);
+    linha.classList.add('arrastando');
+    ev.dataTransfer.effectAllowed = 'move';
+    // O Firefox só começa o arrasto se algo for escrito no dataTransfer.
+    ev.dataTransfer.setData('text/plain', String(arrastada));
+  });
+
+  listaEl.addEventListener('dragend', (ev) => {
+    ev.target.closest('[data-arrastar]')?.classList.remove('arrastando');
+    limparPista();
+    arrastada = null;
+  });
+
+  listaEl.addEventListener('dragover', (ev) => {
+    if (arrastada === null) return;
+    ev.preventDefault();
+    ev.dataTransfer.dropEffect = 'move';
+
+    const linha = ev.target.closest('[data-arrastar]');
+    if (linha && Number(linha.dataset.arrastar) !== arrastada) {
+      const r = linha.getBoundingClientRect();
+      marcarPista(linha, ev.clientY < r.top + r.height / 2 ? 'solta-antes' : 'solta-depois');
+      return;
+    }
+    marcarPista(ev.target.closest('[data-pasta-alvo]'), 'alvo-pasta');
+  });
+
+  listaEl.addEventListener('drop', async (ev) => {
+    if (arrastada === null) return;
+    ev.preventDefault();
+
+    const id = arrastada;
+    const linha = ev.target.closest('[data-arrastar]');
+    const sobre = linha && Number(linha.dataset.arrastar) !== id
+      ? Number(linha.dataset.arrastar)
+      : null;
+    const alvoPasta = ev.target.closest('[data-pasta-alvo]');
+    const emSoltas = ev.target.closest('[data-solta="soltas"]');
+    const depois = sobre !== null
+      && ev.clientY >= linha.getBoundingClientRect().top + linha.getBoundingClientRect().height / 2;
+
+    limparPista();
+    arrastada = null;
+
+    const conversa = state.conversas.find((c) => c.id === id);
+    if (!conversa) return;
+    const projetoAntes = conversa.project ?? null;
+
+    // Soltar em cima de outra conversa herda a pasta dela: é o que o olho
+    // espera de quem largou o item no meio daquela lista.
+    let projeto = projetoAntes;
+    if (sobre !== null) projeto = state.conversas.find((c) => c.id === sobre)?.project ?? null;
+    else if (alvoPasta) projeto = Number(alvoPasta.dataset.pastaAlvo);
+    else if (emSoltas) projeto = null;
+
+    const ordem = state.conversas.filter((c) => c.id !== id);
+    let destino;
+    if (sobre !== null) {
+      destino = ordem.findIndex((c) => c.id === sobre) + (depois ? 1 : 0);
+    } else if (projeto !== projetoAntes) {
+      // Largou no corpo da pasta (ou na lista solta), sem mirar ninguém:
+      // entra no topo do grupo de destino.
+      const i = ordem.findIndex((c) => (c.project ?? null) === projeto && c.status !== 'archived');
+      destino = i === -1 ? ordem.length : i;
+    } else {
+      return;  // soltou onde já estava
+    }
+
+    // Otimista: a lista se mexe na hora e o servidor confirma depois. Se
+    // falhar, recarrega — melhor voltar ao que o banco tem do que deixar a
+    // tela mentindo.
+    conversa.project = projeto;
+    // Largar numa pasta fechada abre a pasta: sem isto a conversa some de
+    // vista no instante em que foi movida, e parece que deu errado.
+    if (projeto && projeto !== projetoAntes) { pastasAbertas.add(projeto); salvarPastas(); }
+    ordem.splice(destino, 0, conversa);
+    state.conversas = ordem;
+    renderLista();
+    atualizarCabecalhoDoProjeto();
+
+    try {
+      if (projeto !== projetoAntes) {
+        await api(`/api/conversations/${id}/`, { method: 'PATCH', body: { project: projeto } });
+      }
+      await api('/api/conversations/ordem/', {
+        method: 'PATCH',
+        body: { ids: state.conversas.map((c) => c.id) },
+      });
+    } catch (e) {
+      toast(`Não consegui mover a conversa: ${e.message}`, true);
+      carregarConversas();
+    }
+  });
+
+  // ---------------------------------------------------------- largura
+  // Arrastar a borda direita da lateral. Sem alça desenhada de propósito: o
+  // cursor é a única pista, e nada é gravado — um F5 devolve os 300 px do
+  // padrão. É ajuste de momento, para ler um título longo, não preferência.
+  const alca = $('#alcaSidebar');
+  const shell = $('#panel-chat');
+
+  alca?.addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 0 || shell.classList.contains('recolhida')) return;
+    ev.preventDefault();
+    alca.setPointerCapture(ev.pointerId);
+    document.body.classList.add('redimensionando');
+
+    const mover = (e) => {
+      const esquerda = $('#sidebar').getBoundingClientRect().left;
+      const largura = Math.min(560, Math.max(220, e.clientX - esquerda));
+      shell.style.setProperty('--sidebar-w', `${Math.round(largura)}px`);
+    };
+    const soltar = () => {
+      document.body.classList.remove('redimensionando');
+      alca.removeEventListener('pointermove', mover);
+      alca.removeEventListener('pointerup', soltar);
+      alca.removeEventListener('pointercancel', soltar);
+    };
+    alca.addEventListener('pointermove', mover);
+    alca.addEventListener('pointerup', soltar);
+    alca.addEventListener('pointercancel', soltar);
+  });
+
+  // Duplo clique devolve o padrão sem precisar do F5.
+  alca?.addEventListener('dblclick', () => shell.style.removeProperty('--sidebar-w'));
 
   // ---------------------------------------------------------- menu ⋯
   const menu = $('#menuContexto');
@@ -787,6 +943,18 @@
     if (pensando) area.insertBefore(el, pensando); else area.appendChild(el);
     // O Chart.js precisa do canvas já no documento para medir a área.
     desenharGraficosNovos(el);
+    atualizarContinuacoes();
+  };
+
+  // Continuações só na resposta mais recente, e só enquanto ela é a última
+  // coisa da conversa. Deixadas em toda resposta, numa conversa longa viravam
+  // uma escada de botões antigos — e clicar numa delas respondia uma
+  // pergunta que já não era a do momento. Quando o usuário pergunta de novo
+  // (ou o "pensando" aparece), as da última somem também.
+  const atualizarContinuacoes = () => {
+    const mensagens = $$('#mensagens > .msg');
+    const ultima = mensagens[mensagens.length - 1];
+    $$('#mensagens .continuacoes').forEach((c) => { c.hidden = !(ultima && ultima.contains(c)); });
   };
 
   const elementoPergunta = (m) => {
@@ -859,9 +1027,6 @@
       <div class="grafico">
         ${fonte.grafico.titulo ? `<div class="grafico-titulo">${esc(fonte.grafico.titulo)}</div>` : ''}
         <div class="grafico-area"><canvas data-grafico="${id}" role="img"></canvas></div>
-        <div class="grafico-acoes">
-          <button class="grafico-btn" type="button" data-imagem="${id}">${ICONES.imagem}Baixar imagem</button>
-        </div>
       </div>`;
   };
 
@@ -890,6 +1055,24 @@
 
   const fmtEixo = (v) => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 
+  // A IA escolhe as colunas, não a unidade. O nome da coluna diz: é a
+  // convenção das consultas de referência (`retencao_90d_pct`, `share_pct`).
+  // Sem isto o eixo de retenção ia de 0 a 60 sem dizer de quê.
+  const PERCENTUAL = /(^|_)(pct|perc|percent|percentual)(?=_|$)/i;
+  const ehPercentual = (coluna) => PERCENTUAL.test(coluna);
+  const fmtValor = (v, coluna) => fmtEixo(v) + (ehPercentual(coluna) ? '%' : '');
+  // "retencao_90d_pct" vira "retencao 90d" na legenda: o % já está no número.
+  const rotuloSerie = (coluna) => coluna.replace(PERCENTUAL, '').replace(/_+/g, ' ').trim();
+
+  // Quantos meses pular entre um rótulo e outro, para caber na horizontal.
+  // O passo acompanha o calendário (3 = jan/abr/jul/out, 6 = jan/jul): um
+  // eixo que mostra "fev, mai, ago" parece aleatório.
+  const LARGURA_POR_ROTULO = 56;
+  const passoDoEixo = (pontos, largura) => {
+    const cabem = Math.max(2, Math.floor(largura / LARGURA_POR_ROTULO));
+    return [1, 2, 3, 6, 12].find((p) => Math.ceil(pontos / p) <= cabem) || 12;
+  };
+
   // Quantas categorias cabem numa barra antes de virar parede de fiapo, e
   // quanta altura cada uma precisa para a barra ser legível.
   const MAX_CATEGORIAS = 14;
@@ -908,14 +1091,38 @@
 
     let linhas = (dados.rows || []).filter((l) => l[ix] !== null && l[ix] !== undefined);
     const porMes = ehMensal(linhas.map((l) => l[ix]));
+    const temporal = ehTemporal(linhas.map((l) => l[ix]));
     // Mês fora de ordem numa linha do tempo desenha um ziguezague que não
     // existe: quando o eixo é temporal, a ordem é a do calendário.
-    if (ehTemporal(linhas.map((l) => l[ix]))) {
+    if (temporal) {
       linhas = [...linhas].sort((a, b) => String(a[ix]).localeCompare(String(b[ix])));
     }
 
     const linha = grafico.tipo === 'linha';
     const horizontal = grafico.tipo === 'barras_horizontais';
+    const valorDe = (l, nome) => l[colunas.indexOf(nome)];
+    const notas = [];
+
+    // Zeros no começo de uma linha do tempo quase sempre são o programa
+    // ainda começando, não um resultado. Medido em 2026-09-21: a retenção de
+    // jun/23 era 0 de 3 compradores, e desenhava uma subida de 0 a 30% que
+    // não aconteceu. Saem do desenho, com aviso — e continuam na planilha.
+    if (linha && temporal) {
+      const zerado = (l) => series.every((s) => {
+        const v = valorDe(l, s);
+        return v === null || v === undefined || Number(v) === 0;
+      });
+      let n = 0;
+      while (n < linhas.length - 1 && zerado(linhas[n])) n += 1;
+      if (n > 0) {
+        const de = rotuloEixo(linhas[0][ix], porMes);
+        const ate = rotuloEixo(linhas[n - 1][ix], porMes);
+        notas.push(n === 1
+          ? `${de} estava zerado e ficou fora do gráfico; continua na planilha.`
+          : `De ${de} a ${ate} a série estava zerada e ficou fora do gráfico; continua na planilha.`);
+        linhas = linhas.slice(n);
+      }
+    }
     // Trinta barras num cartão de conversa viram fiapos. Corta mantendo a
     // ordem que o SQL pediu — as primeiras são as que importam — e avisa.
     const total = linhas.length;
@@ -926,15 +1133,19 @@
 
     const area = canvas.parentElement;
     if (horizontal) area.style.height = `${linhas.length * ALTURA_POR_BARRA + 24}px`;
-    if (deFora > 0 && !area.nextElementSibling?.classList.contains('grafico-nota')) {
+    if (deFora > 0) {
+      notas.push(`Mostrando ${linhas.length} de ${fmtNum(total)} — a lista inteira está na tabela acima e na planilha.`);
+    }
+    if (notas.length && !area.nextElementSibling?.classList.contains('grafico-nota')) {
       const nota = document.createElement('div');
       nota.className = 'grafico-nota';
-      nota.textContent = `Mostrando ${linhas.length} de ${fmtNum(total)} — a lista inteira está na tabela acima e na planilha.`;
+      nota.textContent = notas.join(' ');
       area.after(nota);
     }
 
     const umaSerie = series.length === 1;
-    const valorDe = (l, nome) => l[colunas.indexOf(nome)];
+    const emPercentual = series.every(ehPercentual);
+    const passo = temporal && porMes && !horizontal ? passoDoEixo(linhas.length, area.clientWidth || 600) : 1;
 
     // Com uma série só, o número vai na ponta da barra e o eixo de valores
     // some: dois jeitos de ler o mesmo número é um a mais do que o preciso.
@@ -952,11 +1163,11 @@
           if (horizontal) {
             ctx.textAlign = 'left';
             ctx.textBaseline = 'middle';
-            ctx.fillText(fmtEixo(v), barra.x + 7, barra.y);
+            ctx.fillText(fmtValor(v, series[0]), barra.x + 7, barra.y);
           } else {
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
-            ctx.fillText(fmtEixo(v), barra.x, barra.y - 6);
+            ctx.fillText(fmtValor(v, series[0]), barra.x, barra.y - 6);
           }
         });
         ctx.restore();
@@ -975,12 +1186,22 @@
       },
     };
 
+    // Numa série mensal, só um mês a cada `passo` ganha rótulo, e sempre na
+    // horizontal. 36 meses inclinados a 45° não se liam (2026-09-21).
+    const mesmoMesDoPasso = (i) => {
+      if (passo === 1) return true;
+      const d = partesDeData(linhas[i]?.[ix]);
+      return d ? (Number(d.mes) - 1) % passo === 0 : true;
+    };
     const eixoDeCategoria = {
       grid: { display: false },
       border: { display: false },
       ticks: {
         font: { size: 11 }, color: token('--gray-600'), autoSkip: false,
-        callback(v) { return encurtar(String(this.getLabelForValue(v))); },
+        ...(temporal && porMes && !horizontal ? { maxRotation: 0, minRotation: 0 } : {}),
+        callback(v) {
+          return mesmoMesDoPasso(v) ? encurtar(String(this.getLabelForValue(v))) : '';
+        },
       },
     };
     // Escondido quando o número já está na barra; na linha ele é necessário.
@@ -990,7 +1211,10 @@
       grace: '8%',
       grid: { color: token('--border-light'), drawTicks: false },
       border: { display: false },
-      ticks: { font: { size: 11 }, color: token('--gray-600'), padding: 6, callback: (v) => fmtEixo(v) },
+      ticks: {
+        font: { size: 11 }, color: token('--gray-600'), padding: 6,
+        callback: (v) => fmtEixo(v) + (emPercentual ? '%' : ''),
+      },
     };
 
     const semAnimacao = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -999,7 +1223,7 @@
       data: {
         labels: linhas.map((l) => rotuloEixo(l[ix], porMes)),
         datasets: series.map((nome, n) => ({
-          label: nome.replace(/_/g, ' '),
+          label: rotuloSerie(nome),
           data: linhas.map((l) => valorDe(l, nome)),
           borderColor: CORES[n % CORES.length],
           backgroundColor: linha ? 'transparent' : CORES[n % CORES.length],
@@ -1030,7 +1254,9 @@
           tooltip: {
             backgroundColor: token('--toast-bg'), bodyColor: token('--toast-fg'),
             titleColor: token('--toast-fg'), padding: 10, cornerRadius: 8, displayColors: series.length > 1,
-            callbacks: { label: (c) => ` ${c.dataset.label}: ${fmtEixo(c.parsed[horizontal ? 'x' : 'y'])}` },
+            callbacks: {
+              label: (c) => ` ${c.dataset.label}: ${fmtValor(c.parsed[horizontal ? 'x' : 'y'], series[c.datasetIndex])}`,
+            },
           },
         },
         scales: horizontal
@@ -1133,17 +1359,6 @@
     const excel = ev.target.closest('[data-excel]');
     if (excel) { await baixarExcel(excel); return; }
 
-    const imagem = ev.target.closest('[data-imagem]');
-    if (imagem) {
-      const canvas = document.querySelector(`canvas[data-grafico="${imagem.dataset.imagem}"]`);
-      if (!canvas) return;
-      const link = document.createElement('a');
-      link.download = `grafico_${new Date().toISOString().slice(0, 10)}.png`;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
-      return;
-    }
-
     const sugestao = ev.target.closest('.sugestao, .continuacao');
     if (sugestao) enviar(sugestao.dataset.texto);
   });
@@ -1197,6 +1412,7 @@
         <div class="pensando-trilha"></div>
       </article>`;
     $('#mensagens').appendChild(el);
+    atualizarContinuacoes();
     rolarParaFim();
   };
 
@@ -1228,6 +1444,7 @@
     clearInterval(state.relogio);
     state.aguardando = null;
     $('#pensando')?.remove();
+    atualizarContinuacoes();
     atualizarBotao();
   };
 
@@ -1369,33 +1586,134 @@
     });
   });
 
+  // ---------------------------------------------------------- login por código
+  // Etapa 1: o e-mail @easelabs.com.br. Etapa 2: o código que chegou nele.
+  // As regras de segurança (validade, tentativas, limites) estão no servidor,
+  // em web/acesso.py; aqui é só a conversa com quem está entrando.
+  const DOMINIO = '@easelabs.com.br';
+  const login = { etapa: 'email', email: '', relogio: null };
+
+  const erroDoLogin = (texto) => {
+    const erro = $('#loginErro');
+    erro.textContent = texto || '';
+    erro.hidden = !texto;
+  };
+
+  const etapaDoLogin = (etapa) => {
+    login.etapa = etapa;
+    const noCodigo = etapa === 'codigo';
+    $('#etapaEmail').hidden = noCodigo;
+    $('#etapaCodigo').hidden = !noCodigo;
+    $('#loginAcoes').hidden = !noCodigo;
+    $('#btnLogin').textContent = noCodigo ? 'Entrar' : 'Enviar código';
+    erroDoLogin('');
+    if (noCodigo) {
+      $('#loginEmailEnviado').textContent = login.email;
+      $('#loginCodigo').value = '';
+      setTimeout(() => $('#loginCodigo').focus(), 50);
+    } else {
+      clearInterval(login.relogio);
+      setTimeout(() => $('#loginEmail').focus(), 50);
+    }
+  };
+
+  // "Reenviar" fica travado pelo mesmo tempo que o servidor exige entre dois
+  // pedidos, com a contagem à vista: sem ela, a pessoa clica, nada acontece,
+  // e ela acha que quebrou.
+  const travarReenvio = (segundos) => {
+    const botao = $('#btnReenviar');
+    clearInterval(login.relogio);
+    let falta = Math.max(0, Math.round(segundos));
+    const pintar = () => {
+      botao.disabled = falta > 0;
+      botao.textContent = falta > 0 ? `Reenviar em ${falta} s` : 'Reenviar código';
+    };
+    pintar();
+    login.relogio = setInterval(() => {
+      falta -= 1;
+      pintar();
+      if (falta <= 0) clearInterval(login.relogio);
+    }, 1000);
+  };
+
+  const pedirCodigo = async () => {
+    const r = await api('/api/auth/codigo/', { method: 'POST', body: { email: login.email } });
+    login.email = r.email;
+    etapaDoLogin('codigo');
+    travarReenvio(r.reenviar_em || 60);
+  };
+
   $('#formLogin').addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    const erro = $('#loginErro');
     const botao = $('#btnLogin');
-    erro.hidden = true;
-    const usuario = $('#loginUser').value.trim();
-    const senha = $('#loginPass').value;
-    if (!usuario || !senha) {
-      erro.textContent = 'Informe usuário e senha.';
-      erro.hidden = false;
+    erroDoLogin('');
+
+    if (login.etapa === 'email') {
+      let email = $('#loginEmail').value.trim().toLowerCase();
+      // Quem digita só "fernando.franco" quer dizer o e-mail da empresa.
+      if (email && !email.includes('@')) email += DOMINIO;
+      if (!email.endsWith(DOMINIO)) {
+        erroDoLogin(`Use o seu e-mail ${DOMINIO}.`);
+        $('#loginEmail').focus();
+        return;
+      }
+      login.email = email;
+      botao.disabled = true;
+      botao.textContent = 'Enviando…';
+      try {
+        await pedirCodigo();
+      } catch (e) {
+        erroDoLogin(e.message);
+        botao.textContent = 'Enviar código';
+      } finally {
+        botao.disabled = false;
+      }
+      return;
+    }
+
+    const codigo = $('#loginCodigo').value.replace(/\D/g, '');
+    if (codigo.length !== 6) {
+      erroDoLogin('O código tem 6 dígitos.');
+      $('#loginCodigo').focus();
       return;
     }
     botao.disabled = true;
     botao.textContent = 'Entrando…';
     try {
-      const r = await api('/api/auth/login/', { method: 'POST', body: { usuario, senha } });
-      $('#loginPass').value = '';
+      const r = await api('/api/auth/entrar/', { method: 'POST', body: { email: login.email, codigo } });
+      clearInterval(login.relogio);
+      $('#loginCodigo').value = '';
       entrar(r.usuario);
     } catch (e) {
-      erro.textContent = e.message;
-      erro.hidden = false;
-      $('#loginPass').select();
+      erroDoLogin(e.message);
+      $('#loginCodigo').select();
     } finally {
       botao.disabled = false;
       botao.textContent = 'Entrar';
     }
   });
+
+  // O código colado com espaço ("123 456") ou digitado com o teclado do
+  // celular entra limpo; com 6 dígitos, entra sozinho.
+  $('#loginCodigo').addEventListener('input', (ev) => {
+    const limpo = ev.target.value.replace(/\D/g, '').slice(0, 6);
+    if (ev.target.value !== limpo) ev.target.value = limpo;
+    if (limpo.length === 6 && !$('#btnLogin').disabled) $('#formLogin').requestSubmit();
+  });
+
+  $('#btnReenviar').addEventListener('click', async () => {
+    erroDoLogin('');
+    $('#btnReenviar').disabled = true;
+    try {
+      await pedirCodigo();
+      toast('Enviamos um novo código. O anterior deixou de valer.');
+    } catch (e) {
+      erroDoLogin(e.message);
+      travarReenvio(e.dados?.reenviar_em || 30);
+    }
+  });
+
+  $('#btnOutroEmail').addEventListener('click', () => etapaDoLogin('email'));
 
   // ---------------------------------------------------------- menu e gaveta
   const fecharDropdown = () => {

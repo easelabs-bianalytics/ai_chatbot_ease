@@ -1,0 +1,12 @@
+Jarvis · Copiloto de Dados da Ease Labs
+
+Seu código de acesso: {{ codigo }}
+
+Digite este código na tela de entrada do Jarvis.
+Ele vale por {{ minutos }} minutos e só pode ser usado uma vez.
+
+Não foi você que pediu? Pode ignorar este e-mail. Ninguém entra no Jarvis sem este código.
+
+--
+BI & Analytics · Ease Labs
+Enviado para {{ email }}

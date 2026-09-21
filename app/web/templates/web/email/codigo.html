@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+<title>Seu código de acesso ao Jarvis</title>
+</head>
+{% comment %}
+  E-mail: tabela e estilo inline. Gmail e Outlook ignoram <style>, flexbox e
+  SVG — o que não estiver aqui dentro de style="" some.
+{% endcomment %}
+<body style="margin:0;padding:0;background:#F4F4FE;">
+  {% comment %}
+    Prévia na caixa de entrada, antes de abrir. Sem o código de propósito:
+    ela aparece na tela bloqueada do celular.
+  {% endcomment %}
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
+    Use este código para entrar no Jarvis. Ele vale por {{ minutos }} minutos.
+  </div>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#F4F4FE;">
+    <tr>
+      <td align="center" style="padding:40px 16px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
+               style="max-width:480px;background:#FFFFFF;border-radius:16px;border-top:4px solid #5558D4;box-shadow:0 12px 32px rgba(52,56,120,0.10);">
+          <tr>
+            <td align="center" style="padding:36px 36px 8px;">
+              <img src="cid:logo" width="138" height="30" alt="Ease Labs" style="display:block;border:0;outline:none;">
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:16px 36px 0;">
+              <img src="cid:jarvis" width="56" height="56" alt="" style="display:block;border:0;outline:none;">
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:10px 36px 22px;font-family:'Segoe UI',Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:#9CA1B8;border-bottom:1px solid #EEEEF3;">
+              Jarvis · Copiloto de Dados
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:26px 36px 6px;font-family:'Segoe UI',Arial,Helvetica,sans-serif;font-size:20px;font-weight:700;color:#1A1D2E;">
+              Seu código de acesso
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:0 36px 22px;font-family:'Segoe UI',Arial,Helvetica,sans-serif;font-size:14px;line-height:22px;color:#5E6484;">
+              Digite este código na tela de entrada do Jarvis.
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:0 36px;">
+              {% comment %}
+                O código como os produtos de verdade mostram: cinza quase
+                preto, monoespaçado, espaçamento moderado, num quadro neutro
+                sem borda. Índigo sobre lilás com dígitos muito afastados
+                tinha cara de modelo pronto (2026-09-21).
+              {% endcomment %}
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="background:#F2F3F6;border-radius:8px;">
+                <tr>
+                  <td align="center" style="padding:14px 24px;font-family:'SFMono-Regular',Menlo,Consolas,'Liberation Mono','Courier New',monospace;font-size:30px;font-weight:600;letter-spacing:4px;color:#1A1D2E;">
+                    {{ codigo }}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:18px 36px 0;font-family:'Segoe UI',Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;color:#5E6484;">
+              Vale por <strong style="color:#2D3148;">{{ minutos }} minutos</strong> e só pode ser usado uma vez.
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:26px 36px 32px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#F7F8FA;border-radius:10px;">
+                <tr>
+                  <td style="padding:14px 16px;font-family:'Segoe UI',Arial,Helvetica,sans-serif;font-size:12.5px;line-height:19px;color:#7A80A0;">
+                    <strong style="color:#454A66;">Não foi você que pediu?</strong> Pode ignorar este e-mail.
+                    Ninguém entra no Jarvis sem este código.
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:480px;">
+          <tr>
+            <td align="center" style="padding:18px 16px 0;font-family:'Segoe UI',Arial,Helvetica,sans-serif;font-size:11.5px;line-height:18px;color:#9CA1B8;">
+              BI &amp; Analytics · Ease Labs<br>
+              Enviado para {{ email }}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
