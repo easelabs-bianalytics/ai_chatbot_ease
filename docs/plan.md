@@ -984,23 +984,47 @@ Isso é sucesso, não falha.
 
 #### Passo 11 — Testar e fechar
 
-- [x] `https://jarvis.easelabs.app.br` abre com cadeado, sem aviso — o
-      `curl` valida a cadeia e a página de login vem com o campo de e-mail e
-      o botão "Enviar código" (2026-09-21). **Falta abrir no navegador**
-- [ ] Login por código: o e-mail chega (pelo Gmail do Cockpit) e o código entra
-- [ ] Uma pergunta que vá ao banco, com o número conferido
-- [ ] Uma planilha baixada e um gráfico desenhado
-- [ ] `bi_report --dias 1` mostrando a pergunta, o custo e a latência
+- [x] `https://jarvis.easelabs.app.br` abre com cadeado, sem aviso
+- [x] Login por código: o e-mail chegou em segundos pelo Gmail do Cockpit e o
+      código entrou (Rubens, 2026-09-21)
+- [x] Uma pergunta que vá ao banco, com o número conferido
+- [x] Uma planilha baixada e um gráfico desenhado
+- [x] `bi_report --dias 1` em produção (task avulsa): 1 pergunta, 1 pessoa, 1
+      planilha, "respondeu com dado" e número ancorado, 1 consulta sem erro
+      nem correção, **21,1 s** até a resposta, **US$ 0,0433** na pergunta
+      (25.449 tokens de entrada, 10% servidos pelo cache), nenhuma lacuna de
+      catálogo. Os 21,1 s ficam acima da meta de 20 s do SPEC — é uma medida
+      só, e a investigação do p95 continua na lista do "Depois do deploy"
 - [x] Target do ALB `healthy` no `/api/health/` (2026-09-21)
 - [x] Log dos três containers no CloudWatch, e o `jarvis-worker` agora
       **rodando** (no passo 4 ele parava com código 127, por causa do nginx).
       Conferido em 2026-09-21: `celery@ip-10-20-0-98 ready.`, conectado no
       Redis da própria task; nenhum 500 no `jarvis-web`
-- [ ] **Merge, combinado com a Natália.** A `feat/infra-jarvis` nasceu de
-      `feat/permissoes-rubens-deploy`, que também não está na `main`, e o IAM
-      novo dela ainda não está em branch nenhuma. A ordem que não quebra
-      nada: ela sobe o IAM dela, a `feat/permissoes-rubens-deploy` entra na
-      `main`, e só então a nossa
+- [ ] **Merge, combinado com a Natália** — o único item que falta. Conferido
+      em 2026-09-21, e o cenário mudou para melhor:
+      - a `feat/permissoes-rubens-deploy` **já está na `main`** (o topo dela,
+        `01dc9cd`, é ancestral de `origin/main`): `git log
+        origin/main..origin/feat/permissoes-rubens-deploy` não retorna nada.
+        Ela não é mais pré-requisito de nada e pode ser apagada — decisão da
+        Natália, que é quem mantém o repositório
+      - o **IAM dela já está na `main`** (`7a22750`, `AdministratorAccess`
+        no lugar das 4 policies granulares). Era a pendência que fazia um
+        `apply` sem alvo ser perigoso
+      - a `main` também já tem o bump do `sync` (`01dc9cd`), e o que está no
+        ar bate: a task definition `cockpit-prod-sync` roda `2d00178`
+      - a nossa branch está **5 commits atrás** da `main`. O preparo é
+        `git merge origin/main` dentro da `feat/infra-jarvis`. **Merge de
+        teste feito e descartado em 2026-09-21: sem conflito**, e o
+        resultado preserva o `sync` dela em `2d00178`, o IAM com
+        `AdministratorAccess` e o nosso Jarvis em `2ea453d`
+      - **quem faz o merge na `main` é ela.** Os 8 merges mais recentes da
+        `main` são commits `merge: incorpora <branch> em main` feitos pela
+        conta `easelabs-analytics`. Os documentos de infra
+        (`PASSO_A_PASSO_DEPLOY_TERRAFORM.md`, `infra/README.md`,
+        `CLAUDE.md`) mandam branch + commit + push **antes do apply**, e o
+        passo a passo encerra no "daí em diante, qualquer mudança de imagem
+        repete só o passo 9" — nenhum deles descreve merge para a `main`,
+        então vale a convenção do repositório, que é ela
 
 **Produção começa sem histórico** (decidido em 2026-09-21). As 53 conversas
 do banco local — 20 do `rubens_filho`, herdadas da conta `demo`, e 33 de
