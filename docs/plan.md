@@ -207,8 +207,8 @@ Commit só quando pedido.
       segunda chamada ao modelo. Investigar antes do deploy
 
 ## Fase 9 — Deploy
-**Status: ⏳ em andamento** · passos 0 a 9 fechados; o Jarvis real está no
-ar, e o próximo é migrations e usuários (passo 10) (2026-09-21)
+**Status: ⏳ em andamento** · passos 0 a 10 fechados; o Jarvis está no ar e
+com o banco pronto. Falta só testar e fechar (passo 11) (2026-09-21)
 
 ### Onde estamos
 
@@ -224,8 +224,8 @@ ar, e o próximo é migrations e usuários (passo 10) (2026-09-21)
 | 7 — CNAME final | ✅ `jarvis.easelabs.app.br` → ALB no DNS público, certificado válido |
 | 8 — Imagem real | ✅ `cockpit-prod-jarvis:2ea453d` no ECR, linux/amd64, 83 MB |
 | 9 — Bump da imagem | ✅ task definition `cockpit-prod-jarvis:2` com `2ea453d`, alvo saudável no ALB |
-| 10 — Migrations e usuários | 🔲 **urgente**: até ele, pedir o código de acesso dá erro (falta `web_codigodeacesso`) |
-| 11 — Testar e fechar | 🔲 depende do 7 e do 10 |
+| 10 — Migrations e usuários | ✅ 19 tabelas no `jarvis`, 4 administradores criados |
+| 11 — Testar e fechar | 🔲 já pode: falta entrar de verdade e fazer uma pergunta |
 
 **A regra para daqui em diante, da Natália (2026-09-21): separar as nossas
 mudanças do resto e subir só as nossas.** Todo `apply` desta branch é com
@@ -927,7 +927,7 @@ Dois tropeços de máquina:
   grupo **`/aws/ecs/cockpit-prod`**, streams `jarvis-web/…`,
   `jarvis-worker/…` e `jarvis-redis/…`
 
-#### Passo 10 — Migrations e usuários (acréscimo do Jarvis)
+#### Passo 10 — Migrations e usuários (acréscimo do Jarvis) ✅
 
 O demo do documento não tem banco próprio; o Jarvis tem. `migrate` é task
 avulsa, não roda no start do container:
@@ -943,17 +943,17 @@ aws ecs run-task --region sa-east-1 \
   --overrides '{"containerOverrides":[{"name":"jarvis-web","command":["python","app/manage.py","migrate","--noinput"]}]}'
 ```
 
-- [ ] **Snapshot manual do RDS antes do `migrate`** (regra 7), com o nome
+- [x] **Snapshot manual do RDS antes do `migrate`** (regra 7), com o nome
       `cockpit-prod-db-antes-jarvis-migrate-<AAAAMMDD>`, e esperar ficar
       disponível
-- [ ] **`migrate` — veio do passo 1.** O primeiro `migrate` (2026-09-21, pelo
+- [x] **`migrate` — veio do passo 1.** O primeiro `migrate` (2026-09-21, pelo
       túnel) criou 18 tabelas; a 19ª, `web_codigodeacesso`, nasceu depois, com
       o login por código, e ainda não existe no RDS. **Sem ela ninguém entra
       em produção.** Depois, `migrate --check` não deve ter nada pendente
-- [ ] Conferir no `psql` que nada nasceu fora do schema:
+- [x] Conferir no `psql` que nada nasceu fora do schema:
       `SELECT schemaname, count(*) FROM pg_tables GROUP BY 1 ORDER BY 2 DESC;`
       — o `jarvis` deve ter 19 tabelas
-- [ ] **`sincronizar_usuarios` — veio do passo 1**, mesma receita trocando o
+- [x] **`sincronizar_usuarios` — veio do passo 1**, mesma receita trocando o
       comando por
       `["python","app/manage.py","sincronizar_usuarios","--arquivo","infra/app-db/usuarios_iniciais.csv"]`.
       Cria os quatro administradores já com e-mail e papel de equipe.
@@ -962,6 +962,25 @@ aws ecs run-task --region sa-east-1 \
       comuns
 
 Não há senha para definir: o acesso é por código no e-mail (ADR-0023).
+
+Feito em 2026-09-21, nesta ordem:
+
+| O que | Resultado |
+|---|---|
+| Snapshot `cockpit-prod-db-antes-jarvis-migrate-20260921` | `available`, 100% |
+| `migrate` (task avulsa, task definition `:2`) | `Applying web.0001_initial... OK`, exit 0 |
+| `migrate --check` | nada pendente |
+| Tabelas por schema | `jarvis` com **19**; `cockpit` 108, `cddd` 31 e os outros intocados |
+| `sincronizar_usuarios` | `4 criado(s), 0 atualizado(s), 0 desativado(s)` — os quatro como `is_staff`, sem senha utilizável |
+| Produção | `/` e `/api/health/` em 200, `/admin/login/` redireciona para o login por código, **nenhum 500** no log |
+
+A tabela que faltava, `web_codigodeacesso`, é a 19ª. Sem ela, pedir o código
+de acesso dava erro — era o que travava a entrada.
+
+Cuidado ao conferir: `run-task` sobe os três containers e o `jarvis-web` é
+essencial, então a task para sozinha quando o comando termina — o
+`stoppedReason` é `Essential container in task exited`, com exit code 0.
+Isso é sucesso, não falha.
 
 #### Passo 11 — Testar e fechar
 
