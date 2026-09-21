@@ -88,6 +88,27 @@ class GuardResult:
     sql: str = ""
 
 
+def _estrela_so_de_valores(estrela) -> bool:
+    """O * que o próprio sqlglot cria ao ler `WITH x(a, b) AS (VALUES ...)`.
+
+    A árvore vira `SELECT * FROM (VALUES ...)`: o asterisco só seleciona os
+    literais escritos na consulta, não coluna de tabela nenhuma. Recusá-lo
+    barrou, em 2026-09-21, a consulta que preenchia uma planilha — o modelo
+    listou os nomes da planilha num VALUES, que é o jeito certo de fazer.
+
+    Estreito de propósito: vale só se a fonte da seleção é UNICAMENTE o
+    VALUES, sem join. Qualquer outro * continua recusado.
+    """
+    selecao = estrela.find_ancestor(exp.Select)
+    if selecao is None or selecao.args.get("joins"):
+        return False
+    origem = selecao.args.get("from") or selecao.args.get("from_")
+    fonte = getattr(origem, "this", None)
+    if isinstance(fonte, exp.Subquery):
+        fonte = fonte.this
+    return isinstance(fonte, exp.Values)
+
+
 def _recusa(motivo: str) -> GuardResult:
     return GuardResult(approved=False, reason=motivo)
 
@@ -194,7 +215,7 @@ def validate_sql(sql: str, catalog: Catalog, max_rows: int | None = None) -> Gua
         # nenhuma: só conta linhas. O que expõe dado é o * na seleção.
         estrelas_de_selecao = [
             estrela for estrela in arvore.find_all(exp.Star)
-            if not isinstance(estrela.parent, exp.Func)
+            if not isinstance(estrela.parent, exp.Func) and not _estrela_so_de_valores(estrela)
         ]
         if estrelas_de_selecao:
             return _recusa(

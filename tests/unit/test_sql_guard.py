@@ -156,6 +156,37 @@ def test_select_estrela_em_tabela_sem_dado_pessoal_e_permitido(catalogo):
     assert validate_sql("SELECT * FROM cddd.pdvs", catalogo).approved
 
 
+def test_lista_values_num_cte_nao_conta_como_select_estrela(catalogo):
+    """O sqlglot lê `WITH x(a) AS (VALUES ...)` como `SELECT * FROM (VALUES ...)`.
+    Esse * só seleciona literais; recusá-lo barrou a consulta que preenchia
+    a planilha dos representantes (2026-09-21)."""
+    sql = (
+        "WITH pedidos(representante, pedaco) AS (VALUES ('MARTA ELOISA', 'MARTA')) "
+        "SELECT p.representante, r.setor_cliente FROM pedidos p "
+        "JOIN audit.rx_cadastro_mais_recente r ON r.setor_cliente = p.pedaco"
+    )
+
+    assert validate_sql(sql, catalogo).approved
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        # * direto na tabela com dado pessoal, mesmo com VALUES por perto.
+        "WITH p(x) AS (VALUES ('a')) SELECT * FROM audit.rx_cadastro_mais_recente",
+        # VALUES com join: o * traria as colunas da tabela do join.
+        "SELECT * FROM (VALUES ('a')) AS v(x) JOIN audit.rx_cadastro_mais_recente r ON true",
+        # * numa subconsulta sobre a tabela.
+        "WITH c AS (SELECT * FROM audit.rx_cadastro_mais_recente) SELECT setor_cliente FROM c",
+    ],
+)
+def test_excecao_do_values_nao_abre_brecha(catalogo, sql):
+    resultado = validate_sql(sql, catalogo)
+
+    assert not resultado.approved
+    assert "SELECT *" in resultado.reason
+
+
 def test_coluna_bloqueada_de_outra_tabela_nao_atrapalha(catalogo):
     """`celular` só é bloqueada no cadastro de médicos. Bloquear o nome em
     qualquer tabela deixaria consultas legítimas sem resposta."""
