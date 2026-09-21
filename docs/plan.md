@@ -207,175 +207,761 @@ Commit só quando pedido.
       segunda chamada ao modelo. Investigar antes do deploy
 
 ## Fase 9 — Deploy
-**Status: 🔲** (⏳ D-02) · acesso ao console da AWS recebido em 2026-09-17 ·
-infraestrutura descrita em Terraform
+**Status: ⏳ em andamento** · passos 0 a 6 fechados; próximo é o CNAME final
+(passo 7) e, em paralelo, a imagem real (passo 8) (2026-09-21)
 
-### O que vai ao ar
+### Onde estamos
 
-O app deixa de ser local: o que hoje são três processos no Windows mais dois
-contêineres de `docker-compose` vira a lista abaixo. Nada aqui é opcional —
-onde houver escolha, ela está marcada como decisão.
+| Passo | Situação |
+|---|---|
+| 0 — Pré-condições da máquina | ✅ Terraform 1.16.2, túnel, AWS CLI, Docker |
+| 1 — Role, schema e secrets | ✅ schema `jarvis` no `easelabs`, role `jarvis_app`, 12 secrets, 18 tabelas migradas |
+| 2 — Escrever os `.tf` | ✅ 13 arquivos, 588 linhas, todas do Jarvis; branch empurrada |
+| 3 — `terraform plan` | ✅ com refresh, sem `AccessDenied`; plano só do Jarvis: **12 adições, 1 mudança, 0 destruições** |
+| 4 — `apply` com alvo | ✅ 11 recursos criados + `rds-sg` alterado; a task está no ar com o nginx |
+| 5 — CNAME de validação | ✅ criado no registro.br; conferido no DNS público |
+| 6 — Certificado `ISSUED` | ✅ emitido e anexado ao listener HTTPS |
+| 7 — CNAME final | 🔲 **com você**, no registro.br — já pode |
+| 8 — Imagem real | 🔲 pode andar já: não depende de DNS |
+| 9 — Bump da imagem | 🔲 depende do 8 |
+| 10 — Migrations e usuários | 🔲 depende do 9 |
+| 11 — Testar e fechar | 🔲 depende do 7 e do 10 |
 
-| Peça | O que é | Provisiona | Custo/mês (sa-east-1, conferir na calculadora) |
+**A regra para daqui em diante, da Natália (2026-09-21): separar as nossas
+mudanças do resto e subir só as nossas.** Todo `apply` desta branch é com
+`-target` — a lista está no passo 3. Um `apply` sem alvo faria três coisas
+que não são nossas; ver o passo 3.
+
+**Pendências que dependem de outras pessoas** — o que é nosso fica dentro
+do passo em que acontece, não aqui:
+
+| Pendência | Quem | O que destrava |
+|---|---|---|
+| Criar o CNAME final (`jarvis` → ALB) no registro.br | Rubens | passo 7 |
+| Empurrar o código de IAM aplicado em 2026-09-21 (`rubens_admin`): está no state, mas em nenhuma branch, e a nossa base ainda tem as policies antigas | Natália | um `apply` sem alvo deixar de ser perigoso, e o merge do passo 11 |
+| Confirmar se o Poetry do Dockerfile é exigência literal | Natália | o Dockerfile do passo 8 |
+
+Conferido contra o Terraform vivo do cockpit em 2026-09-21.
+
+Duas coisas para ter em mente antes de qualquer comando:
+
+1. **A infraestrutura não sai deste repositório.** Ela é descrita num Terraform
+   único em `D:\Projetos\sales_force_crm\infra\`, que já tem 73 recursos em
+   produção (VPC, ALB, cluster ECS, RDS e cinco services). O Jarvis entra lá
+   como mais um service. Este repositório só produz a imagem e os scripts SQL.
+2. **O Jarvis é um schema no `easelabs`**, não um banco novo — igual a
+   `cockpit`, `trade_fv`, `app_api` e `app_pipelines`. A garantia do ADR-0002
+   passa a ser privilégio de banco (`search_path` fixo na role, sem `CREATE`
+   fora do schema, sem `CREATEDB`) em vez de topologia.
+
+### Os quatro documentos que mandam
+
+Este plano não inventa procedimento: ele traduz para o Jarvis o que já está
+escrito no repositório de infra. Em caso de divergência, **o documento vence**.
+
+| Documento | O que ele governa |
+|---|---|
+| `sales_force_crm/demo_deploy_app/PASSO_A_PASSO_DEPLOY_TERRAFORM.md` | **o passo a passo**: quais recursos declarar, em que arquivo, e a ordem de execução validada ponta a ponta |
+| `sales_force_crm/CLAUDE.md` (seção Terraform) | as regras de qualquer mudança em `infra/`, inclusive o snapshot antes de mexer no banco de produção |
+| `sales_force_crm/infra/README.md` | o que já existe na conta, o banco único `easelabs`, secrets e acesso por SSM |
+| `sales_force_crm/Dockerfile` | o padrão multiestágio de imagem, pedido pela DBA |
+
+O modelo a copiar é o **`trade_fv`**: é o serviço mais recente e aparece em
+todos os arquivos que o Jarvis precisa tocar.
+
+### As regras (CLAUDE.md e passo a passo do `sales_force_crm`)
+
+1. **Toda mudança de infra passa pelo Terraform**: editar `.tf` → `plan` → ler
+   o diff → `apply`. Nunca criar ou alterar recurso no console ou por `aws`
+   CLI solto. As únicas exceções são as que o próprio documento marca como
+   manuais: DNS no registro.br, `CREATE ROLE`/secrets do banco, e
+   `docker build`/`push`.
+2. **Nunca `apply` sem `plan`, e ler o diff de verdade.** Mudança em algo que
+   você não tocou é drift: para e investiga, não aplica por cima.
+3. **Commit e push do `.tf` antes do `apply`, não depois.** O state remoto é
+   compartilhado, mas o `.tf` só é fonte da verdade se estiver no git.
+4. **Serviço novo é Terraform-only desde o primeiro dia, sem
+   `ignore_changes`.** A exceção existe só para o `cockpit-app`. **Consequência
+   direta para nós: o passo "atualizar o serviço" não é `update-service` por
+   CLI nem pelo console — é editar a variável da imagem, `plan`, `apply` e
+   commitar.**
+5. **Rodar `plan` periodicamente**, mesmo sem mudança, como detector de drift.
+6. **Se alguém mexer na mão numa emergência, reconciliar na hora**
+   (`import`/`state mv` até o `plan` limpar).
+7. **Banco de produção: snapshot manual antes de qualquer mudança** — regra 6
+   do `CLAUDE.md`, que não está na lista do passo a passo e ficou de fora da
+   primeira versão deste plano. Vale para o `migrate` do passo 10. Os
+   `CREATE ROLE`/`CREATE SCHEMA` e o primeiro `migrate` (passo 1) rodaram
+   **sem** snapshot — eram só acréscimos num schema novo, sem tocar em dado
+   existente, mas a regra não abre exceção e daqui em diante vale:
+
+   ```bash
+   aws rds create-db-snapshot --region sa-east-1 \
+     --db-instance-identifier cockpit-prod-db \
+     --db-snapshot-identifier cockpit-prod-db-antes-jarvis-<o-que>-<AAAAMMDD>
+   aws rds wait db-snapshot-available --region sa-east-1 \
+     --db-snapshot-identifier cockpit-prod-db-antes-jarvis-<o-que>-<AAAAMMDD>
+   ```
+
+   E quando a mudança for Terraform no próprio RDS: o `plan` tem de dizer
+   *update in-place*, nunca *replace* nem *destroy*.
+
+E a regra de nome: todo recurso se chama `cockpit-prod-jarvis-*`. Até
+2026-09-21 ela era também uma exigência de permissão (a policy antiga do
+usuário `rubens` era escopada por esse prefixo); com o `AdministratorAccess`
+virou só convenção — mas é a convenção da casa, e é o que deixa claro, no
+console, de quem é cada recurso.
+
+### Como commitar daqui em diante
+
+São **dois repositórios**, e a maior parte das mudanças mexe só no primeiro.
+
+| Repositório | Onde | Branch | O que vai nele |
 |---|---|---|---|
-| **ECR** | um repositório; uma imagem só, dois comandos diferentes | Terraform | ~US$ 1 |
-| **ECS Fargate — `web`** | Gunicorn + WhiteNoise, 0,25 vCPU / 0,5 GB | Terraform | ~US$ 9 |
-| **ECS Fargate — `worker`** | Celery (`-P solo` basta: uma pergunta por vez, 30 s cada) | Terraform | ~US$ 12 |
-| **ALB + ACM** | HTTPS, healthcheck em `/api/health/` | Terraform | ~US$ 20 |
-| **Redis** | fila do Celery — **sim, é serviço externo**, ver abaixo | Terraform | ~US$ 15 |
-| **Banco da aplicação** | conversas, usuários, sessões, auditoria — ver abaixo | Terraform + DBA | US$ 0 a 25 |
-| **Saída para a internet** | NAT ou IP público nas tasks, para chamar a OpenAI | Terraform | US$ 0 ou ~US$ 33 |
-| **Secrets Manager** | 4 segredos | Terraform | ~US$ 2 |
-| **CloudWatch Logs + alarmes** | um log group por serviço, retenção 30 dias | Terraform | ~US$ 3 |
-| **OpenAI** | fora da AWS, cartão pré-pago (ADR-0016) | manual | US$ 10 a 30 |
+| **Jarvis** (`bi/`) | `easelabs-bianalytics/ai_chatbot_ease` | `main` — é a convenção do histórico até aqui | o app inteiro: código, tela, prompts, catálogo, migrations, docs, scripts SQL |
+| **`sales_force_crm`** | `easelabs-analytics/sales_force_crm` | `feat/infra-jarvis` até o merge do passo 11; depois, uma branch nova por mudança, **nunca a `main`** | só `infra/` — o que o Jarvis precisa na AWS |
 
-Ordem de grandeza: **US$ 70 a 120/mês**, sendo NAT e ALB os dois maiores
-fixos — e os dois com alternativa mais barata, descritas abaixo.
+**Quando a mudança toca o `sales_force_crm`:**
 
-### Redis: o que muda
+| Mudança | Jarvis | `sales_force_crm` |
+|---|---|---|
+| Código do app (tela, prompt, regra, consulta de referência) | commit | só para ir ao ar: build e push (passo 8) e **bump da imagem** (passo 9) |
+| Migration nova | commit | bump, como acima, e rodar o `migrate` (passo 10) |
+| Variável de ambiente nova | commit do código que a lê | commit no `jarvis.tf` (`jarvis_environment`) |
+| Secret novo | commit do código que o lê | secret criado **à mão** antes; depois commit no `jarvis.tf` (`jarvis_secrets`) |
+| CPU, memória, número de tasks, domínio | — | commit em `variables.tf` |
+| Só documentação ou teste | commit | — |
 
-A fila do Celery hoje é um contêiner local. Em produção ela precisa de um
-serviço de verdade, porque é ela que segura a pergunta entre o clique do
-usuário e a resposta do worker.
+**As regras:**
 
-- **ElastiCache for Redis, nó único `cache.t4g.micro`** — recomendado. Sem
-  réplica: a fila é pequena e uma mensagem perdida significa uma pergunta
-  reenviada, não um dado corrompido.
-- ElastiCache **Serverless** foi descartado: a cobrança mínima de
-  armazenamento fica acima de US$ 80/mês para um uso que cabe em megabytes.
-- Redis em contêiner no próprio ECS foi descartado: sem volume persistente,
-  todo deploy derrubaria as perguntas em voo, e o Fargate não garante que o
-  worker e o Redis fiquem na mesma rede local.
-- [ ] Definir `CELERY_BROKER_URL` apontando para o endpoint do ElastiCache,
-      com `rediss://` (TLS em trânsito ligado) e AUTH token no Secrets Manager
-- [ ] SG do Redis liberando 6379 só para o SG da aplicação
+1. **Só o que é nosso, arquivo por arquivo.** `git add` com o caminho de cada
+   arquivo e `git diff --staged` antes do commit. Nunca `git add -A`,
+   `git add .` ou `git add infra/` no `sales_force_crm`: outras frentes
+   trabalham no mesmo clone, e isso levaria o trabalho delas junto (regra da
+   Natália, 2026-09-21).
+2. **Um commit por assunto.** "Login por código" e "ajuste do gráfico" são
+   dois commits, mesmo feitos no mesmo dia: é o que permite desfazer um sem o
+   outro.
+3. **Mensagens**, no estilo de cada repositório:
+   - Jarvis: uma frase em português dizendo o que muda, como no histórico —
+     *"Usa uma chave de cache só no planejamento, que é onde está 90% do custo"*;
+   - `sales_force_crm`: `feat(infra): jarvis - …`, `fix(infra): jarvis - …` e,
+     para trocar a imagem, exatamente `deploy: bump jarvis_container_image pra <hash>`.
+4. **Sem linha `Co-Authored-By`** nos commits.
+5. **Commit no Jarvis antes do build.** A tag da imagem é o hash do commit;
+   o passo 8 recusa rodar com arquivo fora de commit.
+6. **Push do `sales_force_crm` antes de qualquer `apply`** (regra 3), e todo
+   `apply` com `-target` enquanto o IAM da Natália não estiver no código.
+7. **Nunca entram:** `.env`, `terraform.tfstate`, `tfplan*` — já estão no
+   `.gitignore` dos dois — nem senha, chave ou código de acesso em mensagem de
+   commit.
+8. **Nada é commitado nem empurrado sem o ok do Rubens.**
 
-### Banco da aplicação e o schema do projeto (O-16)
+### Onde cada peça mora, e o que copiar
 
-O banco de negócio (`easelabs`, na instância `cockpit-prod-db`) **nunca**
-entra em `DATABASES` — é a trava do ADR-0002, e ela existe para que um
-`migrate` não crie tabelas do Django dentro dele. O app precisa do banco
-dele, com escrita.
+Mesma tabela da seção 0 do passo a passo, com o nome do Jarvis no lugar:
 
-Três caminhos, do mais isolado ao mais barato:
+| Peça | Arquivo | Exemplo a copiar |
+|---|---|---|
+| Role Postgres + Secrets Manager | fora do Terraform | `cockpit-prod-trade-fv-db-*` |
+| Security Group | `infra/modules/network/main.tf` | `aws_security_group.trade_fv` |
+| Target Group + Certificado + Regra do ALB | `infra/modules/alb/main.tf` | `aws_lb_target_group.trade_fv`, `aws_acm_certificate.trade_fv`, `aws_lb_listener_rule.trade_fv_host` |
+| ECR repo | `infra/ecr.tf` | `aws_ecr_repository.trade_fv` |
+| Task Definition + Service | `infra/modules/compute/jarvis.tf` (arquivo novo) | `infra/modules/compute/trade_fv.tf` |
+| Variáveis raiz | `infra/variables.tf` | blocos `trade_fv_*` |
+| Fiação entre módulos | `infra/main.tf` | blocos `trade_fv_*` em `module.network`/`alb`/`compute` |
+| Outputs | `infra/outputs.tf` | blocos `trade_fv_*` |
 
-1. **Instância RDS própria** (`db.t4g.micro`, 20 GB): isolamento total,
-   backup e janela de manutenção independentes. ~US$ 15 a 25/mês.
-2. **Database separado na instância existente** (`CREATE DATABASE jarvis`) —
-   **recomendado**. No PostgreSQL não há acesso entre databases sem FDW, então
-   o isolamento é quase o da opção 1, sem custo novo. Exige aval da DBA,
-   porque a instância é de produção de outro produto (`cockpit-prod`).
-3. ~~Schema dentro do database `easelabs`~~ — **descartado**: o usuário com
-   escrita passaria a se conectar no mesmo database dos dados de negócio, e a
-   garantia de somente leitura (ADR-0008) deixaria de ser estrutural para
-   virar questão de acerto nos `GRANT`.
+### O que já existe e o que falta
 
-Desenho proposto para a opção 2 (vale igual na 1):
+| Peça | Situação |
+|---|---|
+| VPC, subnets, ALB público + listener HTTPS, cluster ECS, execution role, log group, RDS `cockpit-prod-db` | ✅ compartilhados, é só referenciar |
+| Saída para a internet | ✅ resolvida: subnet **pública** com `assign_public_ip = true`, **sem NAT Gateway** — é o que os cinco services já fazem |
+| Permissões e state remoto | ✅ `AdministratorAccess` no usuário `rubens` (2026-09-21); state em S3 com lock no DynamoDB |
+| Roles e schema no Postgres, secrets | ✅ criados à mão no passo 1 — não são Terraform |
+| ECR, security group, target group, certificado, regra de listener, task definition, service | ✅ criados no passo 4 |
+| Anexo do certificado ao listener | 🔲 passo 6, depois de o certificado ser emitido |
+| Redis | ✅ container dentro da própria task, rodando (ver abaixo) |
+| DNS no registro.br | 🔲 passos 5 e 7, à mão |
 
-```sql
-CREATE DATABASE jarvis;                      -- separado do easelabs
-\c jarvis
-CREATE SCHEMA jarvis;                        -- não usar o public
-CREATE ROLE jarvis_app LOGIN PASSWORD :senha;   -- dono, escreve
-CREATE ROLE jarvis_ro  LOGIN PASSWORD :senha;   -- time de BI, só lê a auditoria
-ALTER SCHEMA jarvis OWNER TO jarvis_app;
-GRANT USAGE ON SCHEMA jarvis TO jarvis_ro;
-ALTER DEFAULT PRIVILEGES FOR ROLE jarvis_app IN SCHEMA jarvis
-  GRANT SELECT ON TABLES TO jarvis_ro;       -- vale para as tabelas futuras
-REVOKE ALL ON SCHEMA public FROM PUBLIC;
+Custo do que o Jarvis acrescenta: **~US$ 25/mês de AWS** (ECR ~1, Fargate ~18,
+Secrets ~4, logs ~2) **+ US$ 10 a 30 de OpenAI**. ALB, ACM, banco e saída para
+a internet são US$ 0 — já estão pagos.
+
+### Redis: container, não ElastiCache
+
+Não existe ElastiCache em produção (o módulo `cache/` está no repositório e
+nunca foi instanciado). A fila do Celery entra como **terceiro container da
+mesma task**: em `network_mode = "awsvpc"` todos os containers da task
+compartilham a interface de rede e se enxergam por `127.0.0.1`.
+
+```
+task cockpit-prod-jarvis
+├── jarvis-web     gunicorn :8000            essential=true   → target group
+├── jarvis-worker  celery -P solo            essential=false
+└── jarvis-redis   redis:7-alpine 127.0.0.1  essential=true
 ```
 
-As 18 tabelas do Django passam a viver em `jarvis`, por área:
+`CELERY_BROKER_URL=redis://127.0.0.1:6379/0`. Custo zero, nenhuma peça nova, e
+é o padrão da casa (o `cockpit-worker` já roda como sidecar). **Escala na
+horizontal mesmo assim**: a resposta não trafega pela fila — o navegador busca
+em `GET /api/conversations/:id/messages/?after=N`, que lê o Postgres. Quem
+enfileira e quem consome estão sempre na mesma task, e qualquer task responde
+o polling. O que se perde é só isto: um deploy derruba as perguntas em voo (a
+pergunta leva ~30 s, o usuário reenvia; é fila, não banco).
 
-| Área | Tabelas | Para quê |
+---
+
+### O fluxo, na ordem validada ponta a ponta
+
+Os onze passos abaixo são os do "fluxo real de deploy" do
+`PASSO_A_PASSO_DEPLOY_TERRAFORM.md`, na mesma ordem e pelo mesmo motivo. O que
+é acréscimo do Jarvis (migrations, usuários) está marcado.
+
+#### Passo 0 — Pré-condições da máquina ✅
+
+Conferido em 2026-09-18 e 2026-09-21:
+
+- [x] Túnel SSM aberto (só funciona no WSL): `bash infra/rds/abrir_tunel_wsl.sh`
+- [x] `aws sts get-caller-identity` → `arn:aws:iam::595324409476:user/rubens`
+- [x] Docker 28.0.4 com daemon de pé; `psql` 17.4; AWS CLI 2.36
+- [x] Senhas no `bi/.env` (`COCKPIT_DB_PASS` = `rubens_dba`, `ANALYTICS_DB_PASS`
+      = `bi_chatbot_ro`) — lidas só para dentro de variável de shell
+- [x] Subdomínio definido: **`jarvis.easelabs.app.br`**
+- [x] Terraform **1.16.2** instalado em 2026-09-21
+      (`winget install Hashicorp.Terraform` — o id tem `c` minúsculo; com
+      `HashiCorp` o winget não acha o pacote). Exige shell novo para o PATH
+
+#### Passo 1 — Role no Postgres e secrets no Secrets Manager ✅
+
+Seção 1 do passo a passo. **Precisa existir antes do primeiro `plan`**: a task
+definition usa `data "aws_secretsmanager_secret"`, que só lê secret existente —
+sem eles o `plan` falha na resolução do data source.
+
+**✅ Concluído em 2026-09-21.** A DBA executou
+`GRANT CREATE ON DATABASE easelabs TO rubens_dba` e daí saiu tudo o que este
+passo pedia. Comando rodado:
+
+```bash
+# hex: sem caractere que precise de escape em DSN, psql ou JSON
+export SENHA_APP=$(openssl rand -hex 24)
+
+psql "host=127.0.0.1 port=15432 dbname=easelabs user=rubens_dba sslmode=require" \
+     -v ON_ERROR_STOP=1 -v senha_app="$SENHA_APP" \
+     -f infra/app-db/02_criar_schema_jarvis.sql
+```
+
+**Uma pedra no caminho, já corrigida no script.** No PostgreSQL 16 quem cria
+uma role recebe `ADMIN` sobre ela, mas a associação nasce com `SET` desligado
+(`admin_option = t, set_option = f`) — e `CREATE SCHEMA ... AUTHORIZATION`
+exige poder **assumir** a role. O script parava em
+`must be able to SET ROLE "jarvis_app"`. A correção é uma linha, agora na
+seção 1: `GRANT jarvis_app TO CURRENT_USER WITH SET TRUE, INHERIT FALSE`. O
+`INHERIT FALSE` é explícito de propósito: sem ele o `GRANT` adota o
+`rolinherit` de quem executa, e o `rubens_dba` passaria a carregar os
+privilégios da `jarvis_app` em toda conexão — tabela criada à mão no schema
+nasceria com o dono errado.
+
+Conferências de saída, todas verdes em 2026-09-21:
+
+| O que | Resultado |
+|---|---|
+| schema `jarvis` em `easelabs`, dono `jarvis_app` | ✅ |
+| `jarvis` é o **único** schema com `pode_criar = t` — os outros 15, inclusive `public`, deram `f` | ✅ |
+| `jarvis_app` sem `CREATEDB` e sem `SUPERUSER` | ✅ |
+| `rubens_dba` **não** herda a `jarvis_app` (`pg_has_role(...,'USAGE') = f`) | ✅ |
+
+E a prova de fogo, conectando **como a aplicação**, com a senha lida do
+Secrets Manager:
+
+| Tentativa | O banco respondeu |
+|---|---|
+| `search_path` na conexão | `jarvis`, sem ninguém configurar nada |
+| `CREATE TABLE` dentro do `jarvis` | funcionou |
+| `CREATE TABLE public.…` | `permission denied for schema public` |
+| `SELECT … FROM cddd.fato_cdd` | `permission denied for schema cddd` |
+
+As duas últimas linhas são a ADR-0002 em vigor sem database separado: o
+`migrate` não tem para onde escapar, e a conexão que escreve não enxerga dado
+de negócio.
+
+Em seguida os secrets — campos discretos, nunca DSN como string, mesma
+convenção do `cockpit-prod-trade-fv-db-*`. São doze porque o Jarvis tem duas
+conexões (a que escreve no schema dele e a que lê o negócio, ADR-0008) mais a
+chave da OpenAI e a `SECRET_KEY`:
+
+```bash
+export RDS_HOST=cockpit-prod-db.cpuoqq0y8xnn.sa-east-1.rds.amazonaws.com
+export SENHA_RO_LEITURA='<senha do bi_chatbot_ro, do bi/.env>'
+export CHAVE_OPENAI='sk-...'
+export DJANGO_SECRET=$(uv run python -c \
+  "from django.core.management.utils import get_random_secret_key as g; print(g())")
+
+cria() { aws secretsmanager create-secret --name "$1" --secret-string "$2" >/dev/null && echo "  ok  $1"; }
+
+cria cockpit-prod-jarvis-db-host     "$RDS_HOST"
+cria cockpit-prod-jarvis-db-port     "5432"
+cria cockpit-prod-jarvis-db-name     "easelabs"
+cria cockpit-prod-jarvis-db-user     "jarvis_app"
+cria cockpit-prod-jarvis-db-password "$SENHA_APP"
+
+cria cockpit-prod-jarvis-analytics-db-host     "$RDS_HOST"
+cria cockpit-prod-jarvis-analytics-db-port     "5432"
+cria cockpit-prod-jarvis-analytics-db-name     "easelabs"
+cria cockpit-prod-jarvis-analytics-db-user     "bi_chatbot_ro"
+cria cockpit-prod-jarvis-analytics-db-password "$SENHA_RO_LEITURA"
+
+cria cockpit-prod-jarvis-openai-api-key "$CHAVE_OPENAI"
+cria cockpit-prod-jarvis-secret-key     "$DJANGO_SECRET"
+```
+
+- [x] **Os 12 criados em 2026-09-21**, conferidos com
+      `aws secretsmanager list-secrets --filters Key=name,Values=cockpit-prod-jarvis`
+- [x] Senha gerada com `openssl rand -hex 24` e gravada no Secrets Manager na
+      mesma execução do `psql` — não passou por arquivo, log nem histórico
+- [x] Cuidado que evitou lixo: o `.env` tem `ANALYTICS_DB_PORT=15432`, que é a
+      porta do **túnel**. Nos segredos entrou `5432` e o endpoint real do RDS
+- [x] **`jarvis_ro` descartada em 2026-09-21** — a role e os 2 segredos dela.
+      Ninguém pediu leitura direta da auditoria, e `bi_report` mais o Admin já
+      respondem uso, custo e lacunas. Recriar são 4 linhas, documentadas no
+      cabeçalho do `02_criar_schema_jarvis.sql`. O que **não** se faz é dar
+      essa leitura ao `bi_chatbot_ro`: é sob ela que roda o SQL escrito pela
+      IA, que passaria a poder consultar as perguntas de todo mundo
+
+**Migrations aplicadas no mesmo dia.** O `infra/README.md` do `sales_force_crm`
+põe `manage.py migrate` logo depois do `CREATE SCHEMA`, fora do ECS, como
+trabalho de banco — foi assim que o schema `cockpit` nasceu, e estávamos
+exatamente nesse ponto.
+
+```bash
+export APP_DB_HOST=127.0.0.1 APP_DB_PORT=15432 APP_DB_NAME=easelabs APP_DB_USER=jarvis_app
+export APP_DB_PASSWORD="$(aws secretsmanager get-secret-value \
+  --secret-id cockpit-prod-jarvis-db-password --query SecretString --output text)"
+uv run python app/manage.py migrate --plan     # conferir antes
+uv run python app/manage.py migrate --noinput
+```
+
+- [x] 18 tabelas no schema `jarvis`, **todas com dono `jarvis_app`**
+- [x] Nenhuma tabela nova em nenhum outro schema (conferido em `pg_tables`
+      agrupado por schema)
+
+**Passo 1 concluído.** Duas coisas que nasceram depois dele foram para o
+passo 10, onde podem ser feitas de verdade: a carga dos usuários
+(`sincronizar_usuarios`, que precisa do serviço de pé) e um `migrate` novo
+— a tabela `web_codigodeacesso`, do login por código, foi criada depois
+deste `migrate` e ainda não existe no RDS.
+
+Além dos 12 segredos do Jarvis, a task usa um 13º que já existia: o
+`cockpit-prod-gmail-app-password`, do Cockpit, para enviar o código de
+acesso (ADR-0023). Ele não foi criado aqui — é reaproveitado.
+
+#### Passo 2 — Escrever os blocos do Terraform, com **imagem placeholder** ✅
+
+Seções 2 a 8 do passo a passo, nos arquivos da tabela acima. A branch vem
+antes de tudo (regra 3) — e **não sai da `main`**, sai de
+`feat/permissoes-rubens-deploy`: o `iam_deploy_rubens.tf` só existe naquela
+branch e os recursos dele estão valendo na AWS. Ramificar da `main` faria o
+`plan` pedir para destruí-los.
+
+```bash
+cd /d/Projetos/sales_force_crm
+git checkout feat/permissoes-rubens-deploy && git pull
+git checkout -b feat/infra-jarvis
+```
+
+O que declarar, copiando do `trade_fv`:
+
+- `infra/modules/network/main.tf` — `aws_security_group.jarvis` (ingress só do
+  `alb-sg` na 8000) e mais um ingress no `rds-sg` vindo dele; output do id
+- `infra/ecr.tf` — `aws_ecr_repository.jarvis` (`cockpit-prod-jarvis`) +
+  lifecycle de 10 imagens + output
+- `infra/modules/alb/main.tf` — target group (health check `/api/health/`),
+  `aws_acm_certificate.jarvis`, `aws_lb_listener_certificate` e
+  `aws_lb_listener_rule.jarvis_host` por `host_header`, **prioridade 50**
+  (20/30/40 já usadas por eventos/api/trade_fv)
+- `infra/modules/compute/jarvis.tf` — `data "aws_secretsmanager_secret"` dos
+  doze (o do Gmail do Cockpit já vem declarado em `sync.tf`, no mesmo
+  módulo), task definition com os três containers, service com
+  `assign_public_ip = true` e `enable_execute_command = true`, **sem
+  `ignore_changes`**, mais a `aws_iam_role_policy` dando à execution role
+  `secretsmanager:GetSecretValue` nos ARNs do Jarvis — sem ela a task fica
+  presa em `ResourceInitializationError` com todo o resto certo
+- `infra/variables.tf` — blocos `jarvis_*`
+- `infra/main.tf` — fiação nos três módulos
+- `infra/outputs.tf` — `jarvis_acm_certificate_arn` e
+  `jarvis_acm_domain_validation_options` (o `jarvis_ecr_url` fica no próprio
+  `ecr.tf`, como os dos outros repositórios)
+
+**A variável da imagem nasce num placeholder público**, igual manda o
+documento:
+
+```hcl
+variable "jarvis_container_image" {
+  type = string
+  # Placeholder público de propósito: o cockpit-prod-jarvis nasce vazio, e
+  # apontar para uma tag dele aqui deixaria o service preso tentando puxar
+  # imagem inexistente. Trocado pelo hash real no passo 9.
+  default = "public.ecr.aws/nginx/nginx:1-alpine-perl"
+}
+```
+
+Detalhes do `jarvis-redis` que evitam dor: imagem
+`public.ecr.aws/docker/library/redis:7-alpine` (não do Docker Hub, que tem
+limite de download por IP), `command = ["redis-server", "--bind", "127.0.0.1",
+"--save", "", "--maxmemory", "128mb", "--maxmemory-policy", "noeviction"]` e
+`essential = true`.
+
+**O que foi escrito (2026-09-21)** — branch `feat/infra-jarvis`:
+
+| Arquivo | O que entrou |
+|---|---|
+| `modules/network/{main,variables,outputs}.tf` | `aws_security_group.jarvis` + ingress no `rds-sg` + output do id |
+| `ecr.tf` | `cockpit-prod-jarvis` com lifecycle de 10 imagens |
+| `modules/alb/{main,variables,outputs}.tf` | target group, `aws_acm_certificate`, `aws_lb_listener_certificate` e regra por `host_header` na **prioridade 50** |
+| `modules/compute/jarvis.tf` (novo) | task definition com os 3 containers, service, `aws_iam_role_policy` dos secrets e a task role do ECS Exec. Inclui o envio do código de acesso (ADR-0023): `EMAIL_HOST_USER` e `GMAIL_APP_PASSWORD`, com o secret do Cockpit, nos dois containers |
+| `modules/compute/variables.tf`, `variables.tf`, `main.tf`, `outputs.tf` | variáveis, fiação e outputs |
+
+`terraform fmt` e `validate` limpos. Somada contra a base, a branch tem **13
+arquivos e 588 linhas adicionadas, nenhuma removida**, tudo
+`cockpit-prod-jarvis-*`, e `iam_deploy_rubens.tf` idêntico à base.
+
+| Commit | O quê |
+|---|---|
+| `b9c4bcf` | hashes do provider para Windows no lockfile |
+| `4f06f16` | o Jarvis |
+| `b3b711d` → `f207297` | duas policies IAM que pedimos para o `plan` funcionar, **revertidas**: a Natália resolveu o acesso de outro jeito (passo 3) |
+| `5d0e1bd` | envio do código de acesso pelo Gmail do Cockpit |
+
+#### Passo 3 — `terraform plan` ✅
+
+**Regra para esta branch, da Natália (2026-09-21): separar as nossas
+mudanças do resto e subir só as nossas.** Por isso existem dois planos, e
+os dois precisam ser lidos:
+
+1. **O completo** (`terraform plan`), para enxergar o drift do state — o que
+   a regra 2 manda ler. Ele **nunca** vai para o `apply` desta branch.
+2. **O só do Jarvis**, com `-target`, que é o que vai para o `apply`. No
+   PowerShell **cada `-target` vai entre aspas**: sem elas o PowerShell parte
+   o argumento no ponto e o Terraform responde `Invalid target "module"`
+   (aconteceu em 2026-09-21):
+
+```powershell
+terraform plan -out=tfplan-jarvis `
+  "-target=aws_ecr_repository.jarvis" "-target=aws_ecr_lifecycle_policy.jarvis" `
+  "-target=module.network.aws_security_group.jarvis" "-target=module.network.aws_security_group.rds" `
+  "-target=module.alb.aws_lb_target_group.jarvis" "-target=module.alb.aws_acm_certificate.jarvis" `
+  "-target=module.alb.aws_lb_listener_certificate.jarvis" "-target=module.alb.aws_lb_listener_rule.jarvis_host" `
+  "-target=module.compute.aws_ecs_task_definition.jarvis" "-target=module.compute.aws_ecs_service.jarvis" `
+  "-target=module.compute.aws_iam_role.task_jarvis" "-target=module.compute.aws_iam_role_policy.task_jarvis_exec" `
+  "-target=module.compute.aws_iam_role_policy.execution_jarvis_secrets"
+```
+
+**Rodado em 2026-09-21, fechado com certeza.**
+
+O plano completo, **com refresh**, sem nenhum `AccessDenied`, deu `22 to
+add, 6 to change, 2 to destroy`. Só 13 itens são nossos; o resto:
+
+| O que o plano completo faria | De quem | Por que não vai junto |
 |---|---|---|
-| Acesso | `auth_user`, `auth_group*`, `auth_permission`, `django_session` | quem entra e o que vê |
-| Conversas | `conversations_conversation`, `conversations_project`, `messaging_message` | o histórico do usuário |
-| Auditoria | `ai_orchestrator_aireply`, `ai_orchestrator_aicall`, `ai_orchestrator_cataloggap`, `datasource_queryrun`, `datasource_dataexport` | a decisão, o custo, o SQL que rodou e cada download |
-| Infra do Django | `django_migrations`, `django_content_type`, `django_admin_log` | versão do schema e trilha do Admin |
+| **Destruir `rubens_admin`** (o `AdministratorAccess` do usuário `rubens`) e recriar as 4 policies antigas | Natália | ela aplicou o IAM novo hoje, de um código que ainda não está em nenhuma branch; a nossa base tem o IAM antigo |
+| Trocar a tag `purpose` do usuário `rubens` de `admin` para `dev-db-access` | Natália | mesmo motivo |
+| Substituir `aws_ecs_task_definition.sync` (`2d00178` → `27443e3`) e repontar 3 schedules e 1 policy | outra frente | bump de imagem pendente, citado no `CLAUDE.md` |
 
-- [ ] **Pedido à DBA (único bloqueio hoje)**: `ALTER ROLE rubens_dba CREATEDB CREATEROLE;`
-      — conferido em 2026-09-18, ele não tem nenhum dos dois nem `CREATE` no
-      `easelabs`. Script e explicação em `infra/app-db/01_pedido_dba_permissoes.sql`;
-      a lista completa de acessos que faltam está em `docs/permissoes-pendentes.md`
-- [ ] Decidir opção 1 ou 2 com a DBA (O-16)
-- [x] Script de criação pronto e **validado num PostgreSQL 16**:
-      `infra/app-db/02_criar_banco_jarvis.sql` (roles, database, schema
-      `jarvis`, `search_path` e leitura para o time de BI); senhas entram por
-      parâmetro, nunca no arquivo
-- [ ] `search_path=jarvis` na conexão (`OPTIONS: {"options": "-c search_path=jarvis"}`)
-- [ ] Ajustar a trava do ADR-0002: hoje recusa qualquer host `*.rds.amazonaws.com`; deve recusar só o host do banco de negócio
-- [ ] `migrate` como task avulsa do ECS **antes** de trocar a versão do serviço `web`
-- [ ] Backup: confirmar que o snapshot da instância cobre o database novo, e restore testado uma vez
-- [ ] `jarvis_ro` entregue ao time de BI para consultar a auditoria sem passar pelo app
+O plano só do Jarvis deu **12 adições, 1 mudança, 0 destruições**. A
+mudança é o `rds-sg` ganhando o ingress "Postgres from jarvis", sem perder
+nenhum dos quatro que já tinha. O segredo do Gmail está na policy de leitura,
+e senha e remetente chegam aos dois containers.
 
-### Usuários
+Histórico, para não repetir: na primeira rodada o `plan` morria com 17
+`AccessDenied` no refresh — a policy antiga do `rubens` cobria criar e
+alterar, mas não reler o state inteiro. Rodar com `-refresh=false` não serve:
+desliga a detecção de drift. Resolveu-se com o `AdministratorAccess` dado
+pela Natália.
 
-O acesso é usuário e senha do Django (ADR-0011), mas quem pode entrar sai do
-cadastro que a empresa já mantém: **`trade_fv.usuario`** (singular; as
-colunas são `id`, `usuario`, `nome`, `email`, `role`).
+#### Passo 4 — Commit, push e `apply` ✅
 
-- [x] Comando `sincronizar_usuarios` (2026-09-18): lê `trade_fv.usuario` pelo
-      papel, cria e atualiza `auth_user`, é idempotente, nunca toca em senha
-      de quem já existe e só desativa quem ele mesmo criou — os sincronizados
-      entram no grupo `cadastro-empresa`, então a `demo` e acessos temporários
-      não caem junto. Aceita `--arquivo` (CSV) enquanto o GRANT não sai.
-- [x] Os quatro administradores criados no banco local a partir de
-      `infra/app-db/usuarios_iniciais.csv`
-- [x] Decidido em 2026-09-18: **o projeto não depende de schema de outro
-      sistema**. A lista inicial entra por arquivo e a manutenção é pelo Admin
-      do Django; nada é pedido no `trade_fv` (a opção `--do-banco` do comando
-      fica desligada, caso um dia se queira retomar)
-- [ ] Definir como a senha nasce: hoje o usuário criado fica sem senha
-      utilizável (ninguém entra até definir uma, com `changepassword`).
-      Decidir entre senha inicial de uso único e SSO/OIDC no lugar do login
-      local
-- [ ] Rodar `sincronizar_usuarios --desativar-ausentes` no deploy e, depois,
-      periodicamente (quem sai da empresa precisa sair daqui)
-- [ ] Usuários internos autorizados cadastrados (D-05)
+Commit e push já feitos (regra 3). O `apply` é **do plano com alvo** gerado
+logo antes — nunca um `terraform apply` sem argumento nesta branch, que
+destruiria o `AdministratorAccess` do usuário `rubens` e publicaria o bump do
+`sync` (ver passos 2 e 3):
 
-### Rede
+```powershell
+cd D:\Projetos\sales_force_crm\infra
+# 1. gerar de novo o plano com alvo (o comando está no passo 3) e ler:
+#    tem de dar 12 adições, 1 mudança, 0 destruições
+# 2. aplicar exatamente esse arquivo:
+terraform apply tfplan-jarvis
+```
 
-- [ ] VPC do RDS; tasks em subnet privada
-- [ ] **Saída para a OpenAI** (D-02, ADR-0016) — decisão entre:
-      **NAT Gateway** (~US$ 33/mês + tráfego, tasks sem IP público) ou
-      **subnet pública com IP público na task** (US$ 0, exposição contida
-      pelo security group, que não aceita conexão de entrada)
-- [ ] ALB **interno** (só rede corporativa/VPN) ou público com HTTPS —
-      decisão; interno é o padrão para ferramenta interna
-- [ ] SGs: ALB ← rede corporativa; app ← ALB; RDS ← app (5432, SSL); Redis ← app (6379)
-- [ ] Regra no SG do RDS de negócio liberando o SG da aplicação, com SSL
+Plano gerado há mais tempo é recusado pelo Terraform se o state mudou no
+meio — por isso ele se gera de novo imediatamente antes.
 
-### Aplicação
+O service sobe servindo nginx. **O target vai aparecer `unhealthy` no
+`/api/health/` até o passo 9** — é esperado, o nginx não responde esse path.
 
-- [ ] `collectstatic` no build da imagem (WhiteNoise com manifest) e `DEBUG=0`
-- [ ] `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS` e `SECURE_PROXY_SSL_HEADER` (já existem em `settings.py`, faltam os valores)
-- [ ] Segredos no Secrets Manager: chave da OpenAI, senha do `bi_chatbot_ro`, senha do `jarvis_app`, `SECRET_KEY`
-- [ ] Healthcheck do ALB em `/api/health/` sem redirect forçado para HTTPS (o `SECURE_SSL_REDIRECT` fica desligado por isso)
-- [ ] Investigar o p95 de 28,2 s medido em 2026-09-18 (`bi_report`), acima da meta de 20 s do SPEC: ver quanto é a chamada ao modelo e quanto é o banco antes de culpar o palpite
-- [ ] Conexão com o RDS validada de dentro da VPC com o usuário de leitura
+**Aplicado em 2026-09-21: 11 criados e o `rds-sg` alterado.**
 
-### Terraform
+- [x] ECR, security group, target group, regra do listener (prioridade 50),
+      certificado, task definition, service, task role e as duas policies
+- [x] `rds-sg` com o ingress "Postgres from jarvis"
+- [x] O anexo do certificado ao listener (`aws_lb_listener_certificate.jarvis`)
+      falhou com `UnsupportedCertificate`, **e é esperado**: o ALB só aceita
+      certificado já emitido, e o nosso estava `PENDING_VALIDATION`. É ordem,
+      não erro de configuração — **o item foi para o passo 6**
+- [x] State consistente depois da falha: o plano com alvo ficou em `1 to add`,
+      só o anexo do certificado
 
-- [ ] Estado remoto em S3 com lock (o lockfile nativo do S3 dispensa a tabela no DynamoDB)
-- [ ] `infra/terraform/` com módulos: `rede` (data sources da VPC existente), `ecr`, `ecs`, `alb`, `redis`, `banco`, `segredos`, `observabilidade`
-- [ ] O que **não** é Terraform, e por quê: `CREATE DATABASE`/`ROLE` (a DBA faz, ou o provider `postgresql` com credencial de administrador — decisão), as migrações do Django (task de deploy) e a sincronização de usuários (comando)
-- [ ] Um `terraform plan` limpo revisado antes do primeiro `apply`
+**A task subiu**, e isso já valida os segredos: com a policy de leitura
+errada ela morreria em `ResourceInitializationError` antes do primeiro
+container. `jarvis-web` e `jarvis-redis` rodando; `jarvis-worker` parado com
+código 127 ("comando não encontrado") — esperado, o placeholder nginx não tem
+`celery`. Como ele não é essencial, a task segue de pé. Resolve sozinho no
+passo 9.
 
-### Observabilidade e custo
+#### Passo 5 — CNAME de validação do certificado
 
-- [ ] Log group por serviço, retenção de 30 dias
+```bash
+terraform output jarvis_acm_domain_validation_options
+```
+
+- [x] Criado no **registro.br** em 2026-09-21, zona `easelabs.app.br`, e
+      conferido no DNS do Google e da Cloudflare. Valores tirados do
+      certificado:
+
+| Campo | Valor |
+|---|---|
+| Tipo | `CNAME` |
+| Nome | `_a3091bb1e1464f6881c11f71cb86c874.jarvis` |
+| Valor | `_7e37ca99644c91a51e24296ad9d15316.wzccmgtwzk.acm-validations.aws.` |
+
+O registro.br completa o domínio sozinho no campo de nome: por isso vai só
+`_a3091…jarvis`, sem o `.easelabs.app.br.` do fim.
+
+**O caminho no registro.br:**
+
+1. Entrar em https://registro.br com a conta que administra o
+   `easelabs.app.br` — é quem criou os CNAMEs dos certificados do `eventos`,
+   da `api` e do `trade-fv`. Se não for você, é essa pessoa que faz os passos
+   5 e 7.
+2. Na lista de domínios, abrir o **`easelabs.app.br`**.
+3. Na seção de **DNS**, abrir a edição da **zona** ("Editar zona" ou
+   "Configurar zona DNS", conforme a versão da tela). Se a tela disser que o
+   domínio usa **servidores DNS externos**, a zona não fica no registro.br: o
+   registro vai no provedor indicado ali, com os mesmos três campos.
+4. **Nova entrada** → tipo `CNAME`, nome e valor da tabela acima.
+5. **Salvar** (em algumas versões há um segundo "Salvar alterações" para
+   publicar a zona). Se o campo de valor recusar o ponto final, tire o ponto.
+
+Para conferir, de qualquer terminal:
+`nslookup -type=CNAME _a3091bb1e1464f6881c11f71cb86c874.jarvis.easelabs.app.br`
+— tem de responder o valor `…acm-validations.aws`.
+
+#### Passo 6 — Esperar o certificado virar `ISSUED`
+
+```bash
+aws acm describe-certificate --region sa-east-1 \
+  --certificate-arn arn:aws:acm:sa-east-1:595324409476:certificate/9573c508-ed5a-48ed-a5cc-5d32b428d00e \
+  --query 'Certificate.Status'
+```
+
+Geralmente minutos; pode levar horas dependendo da propagação. O status muda
+sozinho, sem Terraform.
+
+- [x] Certificado `ISSUED` (2026-09-21, minutos depois do CNAME)
+- [x] **Anexar o certificado ao listener** — veio do passo 4, que falhou nele
+      de propósito: o ALB só aceita certificado já emitido. Um `apply` só dele:
+
+```powershell
+cd D:\Projetos\sales_force_crm\infra
+terraform plan -out=tfplan-cert "-target=module.alb.aws_lb_listener_certificate.jarvis"
+# conferir: 1 to add, 0 to change, 0 to destroy
+terraform apply tfplan-cert
+```
+
+Sem esse anexo, quem abrir `https://jarvis.easelabs.app.br` recebe o
+certificado do Cockpit e um aviso de site inseguro.
+
+Aplicado em 2026-09-21: `1 added, 0 changed, 0 destroyed`, e conferido no
+listener HTTPS do ALB.
+
+#### Passo 7 — CNAME final
+
+- [ ] No registro.br, mesmo caminho do passo 5: `CNAME`, nome **`jarvis`**,
+      valor **`cockpit-prod-alb-1971305495.sa-east-1.elb.amazonaws.com.`**
+      (o DNS do ALB, conferido com `terraform output -raw alb_dns_name`)
+- [ ] Só depois do passo 6: com o CNAME antes do certificado anexado, o
+      navegador mostra o aviso de site inseguro
+
+#### Passo 8 — Build e push da imagem real
+
+Fora do Terraform, e **neste repositório** — o código do Jarvis está aqui, não
+no `sales_force_crm`. Antes do build, os ajustes de código:
+
+- [ ] `Dockerfile` no padrão multiestágio do `sales_force_crm/Dockerfile`:
+      estágio `builder` com `build-essential`/`libpq-dev`, estágio `runtime` só
+      com `libpq5`, usuário `app` sem privilégio, `EXPOSE 8000`, gunicorn no
+      `CMD`. Mantém o **uv** no lugar do Poetry porque o lock deste projeto é
+      `uv.lock` — a estrutura é idêntica, só muda o instalador; confirmar com a
+      Natália se a exigência do Poetry é literal
+- [ ] Tirar o `migrate` do `CMD` (vira task avulsa no passo 10) e trocar
+      `--bind [::]:$PORT` por `--bind 0.0.0.0:8000` (o IPv6 era do Railway)
+- [ ] `app/config/env.py`: `assert_not_business_database` hoje recusa host
+      `*.rds.amazonaws.com` como banco da aplicação, que passa a ser a
+      configuração correta. Vira: recusar RDS **sob teste** e exigir
+      `search_path=jarvis` nas `OPTIONS` em runtime.
+      Achado de 2026-09-21: pelo túnel o host é `127.0.0.1`, então a trava
+      **não dispara** — o `migrate` em produção rodou sem ela reclamar. Ela
+      protege menos do que o comentário dela promete, e quem de fato barrou
+      escrita fora do lugar foi o privilégio de banco. Mais um motivo para a
+      reescrita ser por `search_path`, e não por nome de host
+- [ ] `database_from_env`: acrescentar `"OPTIONS": {"options": "-c search_path=jarvis"}`
+      e `CONN_MAX_AGE`
+- [ ] Reescrever a **ADR-0002** para descrever a garantia nova
+- [ ] `uv run pytest` verde
+- [ ] **Tudo commitado no repositório do Jarvis** (ver "Como commitar daqui
+      em diante"). A tag da imagem é o hash do commit: com arquivo alterado
+      fora de commit, a imagem leva código que não está em commit nenhum, e
+      ninguém consegue saber depois o que foi ao ar. Em 2026-09-21 havia 33
+      arquivos pendentes desde `bd9c53d` (cache explícito, revisão da tela,
+      login por código, arrastar na lateral)
+
+```bash
+cd /d/Projetos/business_brain/bi
+test -z "$(git status --porcelain)" || { echo "há arquivo fora de commit"; exit 1; }
+export CONTA=595324409476.dkr.ecr.sa-east-1.amazonaws.com
+export HASH=$(git rev-parse --short HEAD)
+
+aws ecr get-login-password --region sa-east-1 | docker login --username AWS --password-stdin $CONTA
+docker build --platform linux/amd64 -t $CONTA/cockpit-prod-jarvis:$HASH .
+docker push $CONTA/cockpit-prod-jarvis:$HASH
+```
+
+- [ ] Tag é o hash do commit, **nunca `latest`**
+- [ ] `--platform linux/amd64`: o Fargate do cockpit roda x86. Numa máquina
+      ARM (Mac M1/M2) a imagem sairia na arquitetura errada e a task não sobe
+- [ ] `docker images` deve mostrar ~200 MB, não ~800 MB
+
+#### Passo 9 — Bump da imagem: a forma de deploy deste repositório
+
+Editar o `default` de `jarvis_container_image` em `infra/variables.tf` para
+`595324409476.dkr.ecr.sa-east-1.amazonaws.com/cockpit-prod-jarvis:<hash>`.
+**Não é `.tfvars`, não é console, não é `update-service`** — a convenção do
+projeto é essa, e `git log --grep="^deploy:"` mostra o histórico dela.
+
+**Com alvo, como todo `apply` desta branch** — um `terraform apply` sem
+argumento aqui destruiria o `AdministratorAccess` do usuário `rubens` e
+publicaria o bump do `sync` (passo 3):
+
+```powershell
+cd D:\Projetos\sales_force_crm\infra
+terraform plan -out=tfplan-bump `
+  "-target=module.compute.aws_ecs_task_definition.jarvis" `
+  "-target=module.compute.aws_ecs_service.jarvis"
+# conferir: 1 to add, 1 to change, 1 to destroy — a task definition é
+# substituída por uma revisão nova (o "destroy" é a revisão antiga) e o
+# service passa a apontar para ela. Qualquer outra linha: parar.
+cd ..
+git add infra/variables.tf
+git commit -m "deploy: bump jarvis_container_image pra <hash>"
+git push
+cd infra
+terraform apply tfplan-bump
+```
+
+O commit e o push vêm **antes** do `apply` (regra 3), e o `git add` é só do
+`variables.tf` — nada de `git add infra/` inteiro, que levaria junto o que
+outras frentes tiverem alterado.
+
+#### Passo 10 — Migrations e usuários (acréscimo do Jarvis)
+
+O demo do documento não tem banco próprio; o Jarvis tem. `migrate` é task
+avulsa, não roda no start do container:
+
+A rede é a mesma do service (conferida em 2026-09-21):
+
+```bash
+aws ecs run-task --region sa-east-1 \
+  --cluster cockpit-prod-cluster \
+  --task-definition cockpit-prod-jarvis \
+  --launch-type FARGATE \
+  --network-configuration "awsvpcConfiguration={subnets=[subnet-0310890fc93479098,subnet-023ca2fe27d946623],securityGroups=[sg-0dc95d138628925f1],assignPublicIp=ENABLED}" \
+  --overrides '{"containerOverrides":[{"name":"jarvis-web","command":["python","app/manage.py","migrate","--noinput"]}]}'
+```
+
+- [ ] **Snapshot manual do RDS antes do `migrate`** (regra 7), com o nome
+      `cockpit-prod-db-antes-jarvis-migrate-<AAAAMMDD>`, e esperar ficar
+      disponível
+- [ ] **`migrate` — veio do passo 1.** O primeiro `migrate` (2026-09-21, pelo
+      túnel) criou 18 tabelas; a 19ª, `web_codigodeacesso`, nasceu depois, com
+      o login por código, e ainda não existe no RDS. **Sem ela ninguém entra
+      em produção.** Depois, `migrate --check` não deve ter nada pendente
+- [ ] Conferir no `psql` que nada nasceu fora do schema:
+      `SELECT schemaname, count(*) FROM pg_tables GROUP BY 1 ORDER BY 2 DESC;`
+      — o `jarvis` deve ter 19 tabelas
+- [ ] **`sincronizar_usuarios` — veio do passo 1**, mesma receita trocando o
+      comando por
+      `["python","app/manage.py","sincronizar_usuarios","--arquivo","infra/app-db/usuarios_iniciais.csv"]`.
+      Cria os quatro administradores já com e-mail e papel de equipe.
+      Não é obrigatório para entrar — qualquer `@easelabs.com.br` se cadastra
+      no primeiro acesso —, mas sem ele os quatro entrariam como usuários
+      comuns
+
+Não há senha para definir: o acesso é por código no e-mail (ADR-0023).
+
+#### Passo 11 — Testar e fechar
+
+- [ ] `https://jarvis.easelabs.app.br` abre com cadeado, sem aviso
+- [ ] Login por código: o e-mail chega (pelo Gmail do Cockpit) e o código entra
+- [ ] Uma pergunta que vá ao banco, com o número conferido
+- [ ] Uma planilha baixada e um gráfico desenhado
+- [ ] `bi_report --dias 1` mostrando a pergunta, o custo e a latência
+- [ ] Target do ALB `healthy` no `/api/health/`
+- [ ] Log dos três containers no CloudWatch, e o `jarvis-worker` agora
+      **rodando** (no passo 4 ele parava com código 127, por causa do nginx)
+- [ ] **Merge, combinado com a Natália.** A `feat/infra-jarvis` nasceu de
+      `feat/permissoes-rubens-deploy`, que também não está na `main`, e o IAM
+      novo dela ainda não está em branch nenhuma. A ordem que não quebra
+      nada: ela sobe o IAM dela, a `feat/permissoes-rubens-deploy` entra na
+      `main`, e só então a nossa
+
+**Daí em diante, qualquer mudança de código repete só os passos 8 e 9**
+(commit no Jarvis, build e push da imagem, bump no `sales_force_crm`), e o 10
+quando houver migration nova.
+
+---
+
+### Depois do deploy
+
 - [ ] Alarme de 5xx no ALB e de task derrubada pelo healthcheck
-- [ ] Alerta quando o log registrar "Créditos da OpenAI esgotados" (metric filter): hoje o usuário vê o aviso discreto e ninguém do time é avisado
+- [ ] Metric filter para "Créditos da OpenAI esgotados" no log — hoje o usuário
+      vê o aviso discreto e ninguém do time é avisado
 - [ ] AWS Budgets com aviso em 80% do orçamento combinado
-- [ ] Limite mensal na OpenAI ajustado ao volume (decisão de 2026-09-18: manter US$ 10 no início; ~US$ 30 para 25 perguntas/dia) e `AI_MONTHLY_BUDGET_USD` um pouco abaixo dele (US$ 9,50 com o limite de US$ 10)
-- [ ] Conta da OpenAI em créditos pré-pagos com **recarga automática desligada**: é o que garante que nada seja cobrado do cartão além do crédito comprado
-- [ ] Acompanhar na auditoria as respostas com regra `tentativa_de_injecao`: poucas são curiosidade de usuário interno, muitas e repetidas merecem conversa com o time (ADR-0021)
-
-### Retenção
-
-- [ ] Política de retenção do histórico definida (O-08) — hoje a exclusão é lógica e o banco cresce ~15 a 35 MB/mês a 50 perguntas/dia
-- [ ] Retenção do `result_sample` das consultas com gráfico: guarda o resultado inteiro (até 500 linhas), ~50 a 100 MB/mês a 50 perguntas/dia
+- [ ] OpenAI: créditos pré-pagos com **recarga automática desligada** e limite
+      mensal ajustado ao volume. Estimativa de 2026-09-21, já com o cache
+      explícito e os preços oficiais, 30 dias por mês: ~US$ 12 (10
+      perguntas/dia), ~US$ 17 (15), ~US$ 27 (25), ~US$ 50 (50)
+- [x] Cache explícito no planejamento (2026-09-21): só o prefixo fixo é
+      gravado. Medido em duas chamadas reais: pergunta de outro tema leu
+      6.262 tokens do cache e gravou zero. E a tabela de preços corrigida — a
+      entrada do Terra estava em US$ 2,50, que é o preço de **gravação**; a
+      entrada é US$ 2,00
+- [x] ~~Definir como a senha nasce~~ — resolvido em 2026-09-21: não há senha,
+      o acesso é por código no e-mail `@easelabs.com.br` (ADR-0023)
+- [x] ~~Rodar `sincronizar_usuarios --desativar-ausentes` periodicamente~~ —
+      deixou de ser necessário: quem sai da empresa perde o e-mail, e sem
+      e-mail não recebe código. Para cortar alguém antes disso, desativar no
+      Admin
+- [ ] Acompanhar as respostas com regra `tentativa_de_injecao` (ADR-0021)
+- [ ] Investigar o p95 de 28,2 s medido em 2026-09-18, acima da meta de 20 s do
+      SPEC: separar o que é chamada ao modelo do que é banco
+- [ ] Política de retenção do histórico (O-08): ~15 a 35 MB/mês a 50
+      perguntas/dia, mais 50 a 100 MB/mês de `result_sample` das consultas com
+      gráfico
+- [ ] Decidir se a ferramenta fica restrita à rede corporativa — o ALB do
+      cockpit é público, então isso seria regra de listener por IP de origem,
+      não "ALB interno". Com o login só por e-mail `@easelabs.com.br`, o
+      ganho ficou menor: quem não é da empresa já não entra
 
 ---
 

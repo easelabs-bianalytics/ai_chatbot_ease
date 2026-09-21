@@ -1,48 +1,62 @@
 # Permissões que faltam para concluir o projeto
 
-Estado em 2026-09-18. O Jarvis roda inteiro na máquina local; o que falta
-para ele subir na AWS são acessos, não código. Este documento lista cada um,
-quem concede e o que exatamente precisa ser executado.
+Estado em 2026-09-18, revisado depois de conferir o Terraform vivo do cockpit
+(`sales_force_crm/infra/`). Serve de registro do que foi pedido a
+quem, e do que ainda depende de terceiros. Pendente hoje: **um `GRANT` no banco** (seção 1). O
+resto são decisões e configuração.
 
-Uma decisão que encurta a lista: **o projeto não depende de nenhum schema de
-outro sistema.** Nada é pedido no `trade_fv`, no `eventos` ou em qualquer
-outro. O Jarvis tem o banco dele, com a tabela de usuários dele.
+Duas decisões que encurtam muito a lista:
+
+- **O projeto não depende de nenhum schema de outro sistema.** Nada é pedido no
+  `trade_fv`, no `eventos` ou em qualquer outro. A lista de usuários entra por
+  arquivo e a manutenção é pelo Admin do Django.
+- **O Jarvis é mais um schema no `easelabs`**, não um banco novo — o mesmo
+  padrão de `cockpit`, `trade_fv`, `app_pipelines` e `app_api`.
 
 ---
 
-## 1. Banco de dados — pedido à DBA
+## 1. Banco de dados — falta um GRANT
 
-**É o único item que bloqueia hoje.** O Jarvis precisa de um banco próprio
-para usuários, histórico de conversas e auditoria.
+O Jarvis grava usuários, histórico de conversas e auditoria num **schema
+`jarvis` dentro do database `easelabs`**, na instância `cockpit-prod-db`.
 
-O `rubens_dba` não consegue criá-lo: conferido em 2026-09-18, ele tem
-`rolsuper = f`, `rolcreatedb = f`, `rolcreaterole = f` e nenhum `CREATE` no
-database `easelabs`. Falta um comando, que a conta mestra da instância roda
-uma vez:
+| O que | Estado |
+|---|---|
+| `CREATEROLE` (criar `jarvis_app` e `jarvis_ro`) | ✅ concedido em 2026-09-18 |
+| `CREATEDB` | ✅ concedido junto, mas **não é usado** — ficou da versão antiga do pedido, quando a ideia era um database separado |
+| **`CREATE` no database `easelabs`** (criar o schema) | 🔲 **falta** — conferido no banco em 2026-09-18 |
+| Qualquer privilégio sobre dado de negócio | não foi pedido — segue o que o `bi_chatbot_ro` já tem |
+
+**O que falta, e por que não é o mesmo que já veio.** `CREATEDB` e `CREATEROLE`
+são atributos de cluster: permitem criar *databases* e *roles*. Criar um schema
+dentro de um database de outro dono é um privilégio do próprio database, e a
+ACL do `easelabs` hoje dá `C` só a `cockpit_admin` e `app_pipelines` — o
+`rubens_dba` não aparece nela. Conferido pelo túnel:
+`has_database_privilege('rubens_dba','easelabs','CREATE')` devolve `f`.
+
+Dois caminhos, qualquer um destrava — quem executa é quem tem o `cockpit_admin`:
 
 ```sql
-ALTER ROLE rubens_dba CREATEDB CREATEROLE;
+-- A) uma linha, e o resto sai daqui
+GRANT CREATE ON DATABASE easelabs TO rubens_dba;
+
+-- B) ou a DBA roda ela mesma o script pronto, passando as duas senhas:
+--    infra/app-db/02_criar_schema_jarvis.sql
 ```
 
-Script pronto, com a explicação para quem executa e a consulta de
-conferência: [`infra/app-db/01_pedido_dba_permissoes.sql`](../infra/app-db/01_pedido_dba_permissoes.sql).
+**B é mais parecido com o que já existe na instância**: os schemas `cockpit` e
+`trade_fv` pertencem ao `cockpit_admin` e foram criados por ela. Se preferir
+manter a posse assim, em vez de `AUTHORIZATION jarvis_app`, basta somar
+`GRANT CREATE, USAGE ON SCHEMA jarvis TO jarvis_app`.
 
-**O que isso libera, e só isso:**
+Continua sem pedido de `SUPERUSER` e de `rds_superuser`.
 
-| Atributo | Permite | Não permite |
-|---|---|---|
-| `CREATEDB` | criar databases novos | tocar em database existente, inclusive o `easelabs` |
-| `CREATEROLE` | criar e administrar as roles que ele mesmo criar | mexer no `bi_chatbot_ro`, nas roles da DBA ou na conta mestra (PostgreSQL 16) |
+### Com isso, o que eu faço em seguida (sem novo pedido)
 
-Não há pedido de `SUPERUSER`, de `rds_superuser`, nem de privilégio novo
-sobre dado de negócio. A leitura do chatbot continua sendo a que o
-`bi_chatbot_ro` já tem nos seis schemas de sempre.
-
-### Com essa permissão, o que eu faço em seguida (sem novo pedido)
-
-1. `infra/app-db/02_criar_banco_jarvis.sql` — cria o database `jarvis`, as
-   roles `jarvis_app` (escreve) e `jarvis_ro` (o time de BI lê a auditoria) e
-   o schema `jarvis`. Já validado num PostgreSQL 16 local.
+1. [`infra/app-db/02_criar_schema_jarvis.sql`](../infra/app-db/02_criar_schema_jarvis.sql)
+   — cria a role `jarvis_app` e o schema `jarvis`, com `search_path` fixo na
+   role. Não cria database, não toca em schema existente, não cria tabela.
+   **Executado em 2026-09-21**, junto com o `migrate`.
 2. `manage.py migrate` — cria as 18 tabelas dentro do schema `jarvis`. Não há
    DDL para ninguém revisar: o Django gera e aplica tudo num comando. Dez
    dessas tabelas são do próprio framework (login, sessão, permissões,
@@ -52,44 +66,55 @@ sobre dado de negócio. A leitura do chatbot continua sendo a que o
 3. `manage.py sincronizar_usuarios --arquivo infra/app-db/usuarios_iniciais.csv`
    — cria os administradores, sem senha utilizável; cada um define a sua.
 
-### Se a DBA recusar um database novo na instância
+### Por que schema e não database separado
 
-Plano B: uma instância RDS pequena só da aplicação (`db.t4g.micro`, ~US$ 15 a
-25/mês). Os mesmos scripts valem, trocando o endpoint. O que **não** vamos
-fazer é colocar as tabelas do Jarvis dentro do database `easelabs`: ali a
-role que escreve passaria a se conectar no mesmo database dos dados de
-negócio, e a garantia de somente leitura deixaria de ser estrutural.
+A versão anterior deste documento recomendava `CREATE DATABASE jarvis` e dizia
+que colocar as tabelas no `easelabs` enfraqueceria a garantia de somente
+leitura. Isso estava errado: a garantia de leitura é de outra conexão, com
+outra role (`bi_chatbot_ro`, `default_transaction_read_only`, mais o
+`sql_guard`) — ADR-0008, não ADR-0002. O que o database separado protegia eram
+duas coisas, e as duas ficam mais firmes com privilégio de banco:
+
+| Risco | Como fica |
+|---|---|
+| `migrate` criar tabela do Django em schema de negócio | `search_path = jarvis` fixado na role e `jarvis_app` sem `CREATE` em nenhum outro schema |
+| a suíte de testes criar e apagar `test_*` em produção | `jarvis_app` sem `CREATEDB`, e `settings_test.py` recusando host de RDS |
+
+O passo a passo de execução está em [`docs/plan.md`](plan.md), Fase 9,
+passo 1.
 
 ---
 
-## 2. AWS — pedido a quem administra a conta
+## 2. AWS — nada a pedir, desde que o nome siga a convenção
 
-Para o deploy com Terraform (Fase 9), o usuário/role que roda o `apply`
-precisa poder criar e administrar:
+Conferido no Terraform em 2026-09-18: o usuário IAM `rubens` **já tem as
+permissões de deploy** (`infra/iam_deploy_rubens.tf` do `sales_force_crm`) —
+ECR, ECS, ELB, ACM, security groups, Secrets Manager, CloudWatch e o state do
+Terraform em S3 com lock no DynamoDB.
 
-| Serviço | Para quê |
-|---|---|
-| ECR | guardar a imagem da aplicação |
-| ECS (Fargate) + IAM `CreateRole`/`PassRole` | os serviços `web` e `worker` e as roles de execução |
-| Elastic Load Balancing + ACM | entrada HTTPS e certificado |
-| ElastiCache | Redis da fila do Celery |
-| Secrets Manager | chave da OpenAI, senhas do banco, `SECRET_KEY` |
-| CloudWatch Logs | logs e alarmes |
-| EC2 (grupos de segurança, subnets, VPC — leitura e escrita de SG) | ligar a aplicação ao RDS e ao Redis |
-| RDS (`Describe*`) | descobrir endpoint e subnets da instância |
-| S3 | bucket do estado do Terraform |
+Elas são escopadas **por convenção de nome**, não por lista de aplicações, com
+a intenção declarada de cobrir app novo sem editar a policy. Daí a única regra
+que precisa ser respeitada:
 
-O caminho mais curto é a política gerenciada `PowerUserAccess` mais uma
-política própria com `iam:CreateRole`, `iam:AttachRolePolicy` e `iam:PassRole`
-restritas ao prefixo `jarvis-*`. Se a conta for gerida por SSO, basta um
-perfil com esse conjunto.
+> Todo recurso do Jarvis se chama `cockpit-prod-jarvis-*`. Fora dessa
+> convenção, o `apply` falha por permissão.
 
-Também é preciso, uma vez:
+Também não é mais necessário pedir:
 
-- [ ] autorizar a alteração do **security group do RDS** para aceitar conexão
-      do security group da aplicação na 5432, com SSL;
-- [ ] decidir se o ALB é **interno** (só rede corporativa/VPN — recomendado
-      para ferramenta interna) ou público.
+- **ElastiCache** — não há Redis em produção e o Jarvis não vai criar um: a
+  fila do Celery roda como container na própria task (ver Fase 9).
+- **Bucket de estado do Terraform** — já existe
+  (`cockpit-prod-terraform-state-595324409476`).
+- **VPC, ALB, cluster ECS, log group, execution role** — todos já de pé e
+  compartilhados.
+
+O que resta, e é decisão e não permissão:
+
+- [ ] regra nova no **security group do RDS** aceitando o SG do Jarvis na 5432
+      com SSL — entra pelo Terraform, no mesmo `apply`;
+- [ ] o ALB do cockpit é **público**. Se a ferramenta precisar ficar restrita à
+      rede corporativa, isso não é "ALB interno" (seria outro ALB): é regra de
+      listener por IP de origem ou autenticação no próprio app — **decidir**.
 
 ---
 
@@ -112,5 +137,6 @@ Já está com você e não depende de ninguém:
   arquivo e a manutenção é pelo Admin do Django. O comando
   `sincronizar_usuarios` mantém a opção `--do-banco` desligada, caso um dia
   se queira retomar.
-- **Schema do Jarvis dentro do `easelabs`** — descartado pelo motivo da
-  seção 1.
+- **Database `jarvis` separado, e instância RDS própria** — descartados em
+  2026-09-18 pelo motivo da seção 1: fora do padrão da casa e sem ganho real
+  de segurança.
