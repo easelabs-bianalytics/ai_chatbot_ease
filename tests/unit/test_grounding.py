@@ -87,3 +87,29 @@ def test_razao_apresentada_como_percentual_e_reprovada():
 
 def test_resposta_sem_numero_nenhum_passa():
     assert _checar("Não houve movimento relevante no período.").ok
+
+
+# O caso real de 2026-09-21: "Porque a Ease Labs caiu em Sell Out em jul/26?".
+# A análise estava certa e foi reprovada duas vezes porque citava as quedas
+# sem o sinal de menos; a pessoa recebeu a tabela crua.
+LINHAS_DA_QUEDA = (
+    ("Total Ease Labs", 7233.0, 7720.0, 487.0, 6.7),
+    ("Vendas extras", 456.0, 395.0, -61.0, -13.4),
+    ("Voucher", -234.87999999999982, -246.50999999999985, -11.630000000000024, 5.0),
+)
+
+
+def test_queda_citada_sem_sinal_passa():
+    texto = "Vendas extras recuaram 61 unidades (13,4%)."
+
+    assert _checar(texto, linhas=LINHAS_DA_QUEDA).ok
+
+
+def test_valor_negativo_com_ruido_de_ponto_flutuante_arredondado_passa():
+    texto = "O voucher foi de 234,88 para 246,51, uma diferença de 11,63."
+
+    assert _checar(texto, linhas=LINHAS_DA_QUEDA).ok
+
+
+def test_valor_absoluto_nao_abre_brecha_para_numero_inventado():
+    assert not _checar("Vendas extras recuaram 62 unidades.", linhas=LINHAS_DA_QUEDA).ok

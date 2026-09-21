@@ -108,6 +108,14 @@ def numeros_suportados(columns, rows, question: str, sql: str, row_count=None) -
 
     # A quantidade de linhas é fato do resultado: "são 3 SKUs" não é invenção.
     suportados.add(float(len(rows) if row_count is None else row_count))
+
+    # O texto não carrega o sinal: "caiu 61 unidades" e "recuou 13,4%" citam
+    # o -61 e o -13,4 do resultado, e a expressão que acha números no texto
+    # nunca pega o "-". Sem isto, em 2026-09-21 uma análise correta ("não
+    # caiu: subiu 6,7%, puxada pelo CDD; os demais recuaram") foi reprovada
+    # duas vezes e virou tabela crua. O valor absoluto não inventa número:
+    # é o mesmo dado, dito com palavra em vez de sinal.
+    suportados |= {abs(n) for n in suportados}
     return suportados
 
 
@@ -122,6 +130,25 @@ def _tem_suporte(token: str, candidatos: set, suportados: set) -> bool:
             if round(suportado, min(casas, _MAX_CASAS_DECIMAIS)) == candidato:
                 return True
     return False
+
+
+def check_grounding_varias(reply: str, consultas, question: str) -> GroundingResult:
+    """A mesma regra, para a análise que cruza várias consultas (ADR-0025).
+
+    `consultas` é uma sequência de (columns, rows, sql, row_count). Um número
+    vale se estiver em QUALQUER uma delas — a análise de uma queda cita o
+    total de uma consulta, a regional de outra e o concorrente de uma
+    terceira. Continua proibido citar o que nenhuma trouxe."""
+    suportados = set()
+    for columns, rows, sql, row_count in consultas:
+        suportados |= numeros_suportados(columns, rows, question, sql, row_count)
+
+    sem_suporte = tuple(
+        token
+        for token, candidatos in numeros_do_texto(reply)
+        if candidatos and not _tem_suporte(token, candidatos, suportados)
+    )
+    return GroundingResult(ok=not sem_suporte, unsupported=sem_suporte)
 
 
 def check_grounding(reply: str, columns, rows, question: str, sql: str, row_count=None) -> GroundingResult:
