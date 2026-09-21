@@ -1002,31 +1002,20 @@ Isso é sucesso, não falha.
       **rodando** (no passo 4 ele parava com código 127, por causa do nginx).
       Conferido em 2026-09-21: `celery@ip-10-20-0-98 ready.`, conectado no
       Redis da própria task; nenhum 500 no `jarvis-web`
-- [ ] **Merge, combinado com a Natália** — o único item que falta. Conferido
-      em 2026-09-21, e o cenário mudou para melhor:
-      - a `feat/permissoes-rubens-deploy` **já está na `main`** (o topo dela,
-        `01dc9cd`, é ancestral de `origin/main`): `git log
-        origin/main..origin/feat/permissoes-rubens-deploy` não retorna nada.
-        Ela não é mais pré-requisito de nada e pode ser apagada — decisão da
-        Natália, que é quem mantém o repositório
-      - o **IAM dela já está na `main`** (`7a22750`, `AdministratorAccess`
-        no lugar das 4 policies granulares). Era a pendência que fazia um
-        `apply` sem alvo ser perigoso
-      - a `main` também já tem o bump do `sync` (`01dc9cd`), e o que está no
-        ar bate: a task definition `cockpit-prod-sync` roda `2d00178`
-      - a nossa branch está **5 commits atrás** da `main`. O preparo é
-        `git merge origin/main` dentro da `feat/infra-jarvis`. **Merge de
-        teste feito e descartado em 2026-09-21: sem conflito**, e o
-        resultado preserva o `sync` dela em `2d00178`, o IAM com
-        `AdministratorAccess` e o nosso Jarvis em `2ea453d`
-      - **quem faz o merge na `main` é ela.** Os 8 merges mais recentes da
-        `main` são commits `merge: incorpora <branch> em main` feitos pela
-        conta `easelabs-analytics`. Os documentos de infra
-        (`PASSO_A_PASSO_DEPLOY_TERRAFORM.md`, `infra/README.md`,
-        `CLAUDE.md`) mandam branch + commit + push **antes do apply**, e o
-        passo a passo encerra no "daí em diante, qualquer mudança de imagem
-        repete só o passo 9" — nenhum deles descreve merge para a `main`,
-        então vale a convenção do repositório, que é ela
+- [x] **Merge na `main` feito em 2026-09-21**, no padrão dela (commit
+      `merge: incorpora feat/infra-jarvis em main`, `951618b`), por pedido
+      do Rubens. Só adições: 13 arquivos, 588 linhas, zero remoções — o
+      `sync` dela seguiu em `2d00178` e o `iam_deploy_rubens.tf` ficou
+      intocado (`git diff` do merge nesse arquivo é vazio). Antes do merge a
+      `main` tinha ganhado um commit novo dela (`e6c343e`), que entrou na
+      base. Depois do merge, `terraform plan` completo (sem alvo) diz **No
+      changes** — a `main` agora bate com o que está no ar, e ninguém mais
+      vê um plano propondo destruir o Jarvis.
+      - a `feat/permissoes-rubens-deploy` já estava mesclada na `main` (topo
+        `01dc9cd`) e já havia sido apagada no GitHub; removi a cópia local e
+        limpei as referências
+      - a `feat/infra-jarvis` continua no GitHub como histórico do que foi
+        aplicado passo a passo
 
 **Produção começa sem histórico** (decidido em 2026-09-21). As 53 conversas
 do banco local — 20 do `rubens_filho`, herdadas da conta `demo`, e 33 de
