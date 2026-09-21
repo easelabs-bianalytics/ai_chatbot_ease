@@ -207,8 +207,8 @@ Commit só quando pedido.
       segunda chamada ao modelo. Investigar antes do deploy
 
 ## Fase 9 — Deploy
-**Status: ⏳ em andamento** · passos 0 a 8 fechados; próximo é o bump da
-imagem (passo 9) (2026-09-21)
+**Status: ⏳ em andamento** · passos 0 a 9 fechados; o Jarvis real está no
+ar, e o próximo é migrations e usuários (passo 10) (2026-09-21)
 
 ### Onde estamos
 
@@ -223,8 +223,8 @@ imagem (passo 9) (2026-09-21)
 | 6 — Certificado `ISSUED` | ✅ emitido e anexado ao listener HTTPS |
 | 7 — CNAME final | ✅ `jarvis.easelabs.app.br` → ALB no DNS público, certificado válido |
 | 8 — Imagem real | ✅ `cockpit-prod-jarvis:2ea453d` no ECR, linux/amd64, 83 MB |
-| 9 — Bump da imagem | 🔲 já pode |
-| 10 — Migrations e usuários | 🔲 depende do 9 |
+| 9 — Bump da imagem | ✅ task definition `cockpit-prod-jarvis:2` com `2ea453d`, alvo saudável no ALB |
+| 10 — Migrations e usuários | 🔲 **urgente**: até ele, pedir o código de acesso dá erro (falta `web_codigodeacesso`) |
 | 11 — Testar e fechar | 🔲 depende do 7 e do 10 |
 
 **A regra para daqui em diante, da Natália (2026-09-21): separar as nossas
@@ -905,6 +905,27 @@ terraform apply tfplan-bump
 O commit e o push vêm **antes** do `apply` (regra 3), e o `git add` é só do
 `variables.tf` — nada de `git add infra/` inteiro, que levaria junto o que
 outras frentes tiverem alterado.
+
+Feito em 2026-09-21: `plan` com `1 to add, 1 to change, 1 to destroy` (só a
+imagem mudou; as linhas `- mountPoints = []` e afins são o Terraform
+normalizando o JSON, não mudança real), commit `dcb2789` empurrado na
+`feat/infra-jarvis`, `apply` do `tfplan-bump`. A task nova subiu em ~1 min
+e ficou `healthy` no ALB; o worker conectou no Redis da própria task;
+`https://jarvis.easelabs.app.br` responde 200.
+
+Para acompanhar um deploy sem ficar esperando à toa: `aws ecs
+describe-services` (campo `deployments`) e `aws elbv2 describe-target-health`.
+O deploy só fica `COMPLETED` quando a task antiga termina de drenar no ALB —
+alguns minutos depois da nova já estar respondendo.
+
+Dois tropeços de máquina:
+- o `terraform` do winget não está no `PATH` do PowerShell que o Claude
+  usa: chamar por
+  `$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Hashicorp.Terraform_Microsoft.Winget.Source_8wekyb3d8bbwe	erraform.exe`
+- no Git Bash, `aws logs ... --log-group-name /aws/ecs/cockpit-prod` vira
+  caminho do Windows; usar `MSYS_NO_PATHCONV=1`. Os logs do Jarvis ficam no
+  grupo **`/aws/ecs/cockpit-prod`**, streams `jarvis-web/…`,
+  `jarvis-worker/…` e `jarvis-redis/…`
 
 #### Passo 10 — Migrations e usuários (acréscimo do Jarvis)
 
