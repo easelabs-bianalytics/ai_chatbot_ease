@@ -1286,6 +1286,71 @@ Rubens.
 
 ---
 
+## Fase 11 — Investigação de perguntas de porquê, e resposta em blocos
+**Status: ⏳ em andamento** · implementado e testado localmente com os
+modelos reais e o banco de produção; falta a validação do Rubens e ir ao ar
+junto com a Fase 10 (2026-09-21)
+
+Pedido do Rubens: "Porque a Ease Labs caiu em Sell Out em jul/26?" voltou em
+produção como tabela crua. O Jarvis tem de **investigar** — geral ou
+concentrada num GR; se geral, concorrente roubou share; se concentrada, setor
+vago ou performance; se performance, prescrição do painel e concorrente na
+prescrição — e responder com um racional, não com uma consulta. E a resposta
+não precisa ser sempre texto + tabela + gráfico. Decisão na **ADR-0025**.
+
+### O que o registro de produção mostrou
+
+- [x] **A análise existia e foi jogada fora.** Os dois rascunhos diziam, com
+      razão, que o sell-out não caiu (subiu 6,7%, puxado pelo CDD). A
+      checagem de números reprovou os dois porque o texto dizia "61" onde o
+      banco tinha -61: a expressão que acha número no texto ignora o sinal.
+      Corrigido — o valor sem sinal passa, número inventado continua
+      reprovado. Os dois rascunhos reais passam agora
+- [x] A conversa estava em **produção, conversa 4** ("Porque a Ease Labs caiu
+      em Sell Out em jul/26?"), não na de título "Quantas unidades a Ease
+      vendeu no total, mês a mês, em 2026?" — essa só tem a primeira pergunta
+
+### Como ficou
+
+- [x] **Investigação em rodadas** (`investigate` → hipóteses com consulta →
+      achados → aprofunda ou `conclude` → análise). Roteiro no `planner_v2`,
+      seção 13; como contar a investigação no `answerer_v2`, seção 8
+- [x] **Tetos:** 3 chamadas ao planejador, 4 consultas por rodada; consulta
+      que falha vai nos achados, sem correção própria
+- [x] **Pergunta de porquê leva sell-out, força de vendas e prescrição
+      completos** desde a primeira rodada — sem isso, o modelo pede o
+      documento inteiro
+- [x] **Resposta em blocos** (texto, tabela, texto, gráfico) na investigação e
+      na pergunta comum; tabela e gráfico desenhados pela tela com os números
+      do banco. Bloco que aponta dado inexistente cai
+- [x] **`ROUND(x, n)`** convertido para `numeric` pelo validador — derrubou a
+      rodada 1 inteira do primeiro teste. As 4 consultas reais que tinham
+      falhado por isso rodam agora
+- [x] **Tabela crua sem ruído** (`-234,88`, não `-234.87999999999982`) e **sem o
+      rótulo "Resultado da consulta"**
+- [x] **Progresso na espera** ("Testando: a queda foi concentrada?"), e o
+      painel "Ver fonte" lista todas as consultas da investigação
+- [x] Suíte: **616 testes**
+
+### Medido (modelos reais, banco de produção pelo túnel)
+
+| Pergunta | Rodadas / consultas | O que respondeu | Custo |
+|---|---|---|---|
+| Porque a Ease Labs caiu em Sell Out em jul/26? | 2 / 4 | "Não caiu: +6,7% contra junho e +5,4% contra jul/25"; por GR, só SEM REP recuou | US$ 0,19, 41 s |
+| Por que o sell out da Ease Labs caiu em junho de 2026? | 2 / 5 | CDD −679; queda disseminada nos 3 GRs; o mercado **cresceu** 2,2% e o share caiu de 8,53% para 7,52% — perda de participação | US$ 0,18, 52 s |
+
+Pergunta de porquê custa ~US$ 0,18 a 0,30, contra ~US$ 0,04 de uma pergunta
+de número.
+
+### Para ir ao ar (junto com a Fase 10)
+
+- [ ] **Validação do Rubens na tela**
+- [ ] Uma migration a mais (`ai_orchestrator.0004_rodada_de_investigacao`,
+      só `choices`) — entra no mesmo `migrate` da Fase 10
+- [ ] Nada muda na infraestrutura
+
+---
+
 ## Plano de testes
 
 Regra geral: a suíte (`uv run pytest`) nunca acessa rede, OpenAI ou o RDS.
