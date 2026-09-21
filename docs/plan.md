@@ -1042,7 +1042,10 @@ de retenção do histórico e restrição à rede corporativa.
       arquivo `infra/modules/alb/jarvis_alarmes.tf`, no mesmo padrão do
       alerta do sync: tópico SNS `cockpit-prod-jarvis-alerts` com assinatura
       por e-mail, mais dois alarmes do CloudWatch. `apply` com alvo nos
-      quatro recursos: `4 added, 0 changed, 0 destroyed`.
+      quatro recursos: `4 added, 0 changed, 0 destroyed`. Mesclada na
+      `main` no mesmo padrão (`2f03e64`), para que um `plan` a partir dela
+      não proponha destruir os alarmes; `plan` completo depois: **No
+      changes**. Os dois alarmes ficaram em `OK` avaliando dado real.
       - `cockpit-prod-jarvis-5xx`: `HTTPCode_Target_5XX_Count` do **target**
         (o container, não o ALB), soma em 5 min, limite zero — um único 500
         já avisa, porque em dezenas de perguntas por dia não existe "5xx
