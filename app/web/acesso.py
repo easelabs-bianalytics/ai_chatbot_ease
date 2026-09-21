@@ -20,6 +20,7 @@ As regras de segurança, e por que cada uma existe:
 import hashlib
 import hmac
 import logging
+import math
 import re
 import secrets
 from dataclasses import dataclass
@@ -90,7 +91,9 @@ def solicitar_codigo(email: str, ip: str | None = None, navegador: str = "") -> 
     ultimo = CodigoDeAcesso.objects.filter(email=email).first()
     if ultimo and agora - ultimo.criado_em < INTERVALO_REENVIO:
         falta = INTERVALO_REENVIO - (agora - ultimo.criado_em)
-        return Pedido("aguarde", aguarde_segundos=int(falta.total_seconds()) + 1)
+        # Arredonda para cima, e não `int() + 1`: com os dois pedidos no mesmo
+        # tique do relógio a falta é 60,0 exatos, e `int() + 1` mostrava 61.
+        return Pedido("aguarde", aguarde_segundos=math.ceil(falta.total_seconds()))
 
     if CodigoDeAcesso.objects.filter(email=email, criado_em__gte=uma_hora).count() >= MAX_POR_EMAIL_HORA:
         return Pedido("limite")

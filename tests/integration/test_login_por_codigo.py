@@ -345,3 +345,25 @@ def test_quem_entrou_pelo_codigo_abre_o_admin_se_for_da_equipe(cliente, django_u
     _entrar(cliente, _codigo_do_ultimo_email())
 
     assert cliente.get("/admin/").status_code == 200
+
+
+def test_contagem_de_reenvio_nunca_passa_de_60_segundos(monkeypatch):
+    """Com os dois pedidos no mesmo tique do relógio, a falta era 60,0 exatos
+    e `int() + 1` mostrava 61 s na tela (achado em 2026-09-21, teste que
+    falhava de vez em quando no Windows)."""
+    from django.utils import timezone
+
+    from web import acesso
+    from web.models import CodigoDeAcesso
+
+    congelado = timezone.now()
+    monkeypatch.setattr(acesso.timezone, "now", lambda: congelado)
+    # auto_now_add usa o mesmo `timezone.now` congelado: os dois pedidos
+    # caem no mesmo instante, que é o caso que dava 61.
+    CodigoDeAcesso.objects.create(
+        email="ana@easelabs.com.br", codigo_hash="x", expira_em=congelado + acesso.VALIDADE
+    )
+
+    pedido = acesso.solicitar_codigo("ana@easelabs.com.br", ip="10.0.0.1")
+
+    assert pedido.aguarde_segundos == 60
