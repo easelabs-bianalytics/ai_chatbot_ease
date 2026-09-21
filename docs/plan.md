@@ -201,10 +201,12 @@ Commit só quando pedido.
       trabalho do time de BI que sai pronta do relatório
 - [x] 13 testes fixam a aritmética: o que entra na janela, o que fica de
       fora, como o p95 é contado e o agrupamento diário no fuso local
-- [ ] **Primeira leitura (2026-09-18) acusou p95 de 28,2 s, acima da meta de
-      20 s do SPEC** — mediana de 11,9 s e uma pergunta de 102 s. A suspeita
-      é a pergunta que cruza áreas, que leva duas seções do documento e uma
-      segunda chamada ao modelo. Investigar antes do deploy
+- [x] **Primeira leitura (2026-09-18) acusou p95 de 28,2 s, acima da meta de
+      20 s do SPEC** — mediana de 11,9 s e uma pergunta de 102 s.
+      Investigado em 2026-09-21: o tempo é todo do modelo (banco com mediana
+      de 0,3 s), e o gargalo é a chamada de `fix` que carrega o documento
+      inteiro — 41,0 s de média contra 12,8 s sem ele. Números e o que
+      decidir estão em "Depois do deploy"
 
 ## Fase 9 — Deploy
 **Status: ⏳ em andamento** · passos 0 a 10 fechados; o Jarvis está no ar e
@@ -1040,35 +1042,76 @@ quando houver migration nova.
 
 ### Depois do deploy
 
-- [ ] Alarme de 5xx no ALB e de task derrubada pelo healthcheck
-- [ ] Metric filter para "Créditos da OpenAI esgotados" no log — hoje o usuário
-      vê o aviso discreto e ninguém do time é avisado
-- [ ] AWS Budgets com aviso em 80% do orçamento combinado
-- [ ] OpenAI: créditos pré-pagos com **recarga automática desligada** e limite
-      mensal ajustado ao volume. Estimativa de 2026-09-21, já com o cache
-      explícito e os preços oficiais, 30 dias por mês: ~US$ 12 (10
-      perguntas/dia), ~US$ 17 (15), ~US$ 27 (25), ~US$ 50 (50)
-- [x] Cache explícito no planejamento (2026-09-21): só o prefixo fixo é
-      gravado. Medido em duas chamadas reais: pergunta de outro tema leu
-      6.262 tokens do cache e gravou zero. E a tabela de preços corrigida — a
-      entrada do Terra estava em US$ 2,50, que é o preço de **gravação**; a
-      entrada é US$ 2,00
-- [x] ~~Definir como a senha nasce~~ — resolvido em 2026-09-21: não há senha,
-      o acesso é por código no e-mail `@easelabs.com.br` (ADR-0023)
-- [x] ~~Rodar `sincronizar_usuarios --desativar-ausentes` periodicamente~~ —
-      deixou de ser necessário: quem sai da empresa perde o e-mail, e sem
-      e-mail não recebe código. Para cortar alguém antes disso, desativar no
-      Admin
-- [ ] Acompanhar as respostas com regra `tentativa_de_injecao` (ADR-0021)
-- [ ] Investigar o p95 de 28,2 s medido em 2026-09-18, acima da meta de 20 s do
-      SPEC: separar o que é chamada ao modelo do que é banco
-- [ ] Política de retenção do histórico (O-08): ~15 a 35 MB/mês a 50
-      perguntas/dia, mais 50 a 100 MB/mês de `result_sample` das consultas com
-      gráfico
-- [ ] Decidir se a ferramenta fica restrita à rede corporativa — o ALB do
-      cockpit é público, então isso seria regra de listener por IP de origem,
-      não "ALB interno". Com o login só por e-mail `@easelabs.com.br`, o
-      ganho ficou menor: quem não é da empresa já não entra
+Enxugado em 2026-09-21 a pedido do Rubens: dos oito itens abertos ficaram só
+estes dois, e os dois foram feitos no mesmo dia. Saíram da lista, por decisão
+dele: metric filter de créditos da OpenAI esgotados, AWS Budgets, créditos
+pré-pagos da OpenAI, acompanhamento da regra `tentativa_de_injecao`, política
+de retenção do histórico e restrição à rede corporativa.
+
+- [x] **Alarme de 5xx no ALB e de task derrubada pelo health check**
+      (2026-09-21). Branch `feat/infra-jarvis-alarmes` no `sales_force_crm`,
+      arquivo `infra/modules/alb/jarvis_alarmes.tf`, no mesmo padrão do
+      alerta do sync: tópico SNS `cockpit-prod-jarvis-alerts` com assinatura
+      por e-mail, mais dois alarmes do CloudWatch. `apply` com alvo nos
+      quatro recursos: `4 added, 0 changed, 0 destroyed`.
+      - `cockpit-prod-jarvis-5xx`: `HTTPCode_Target_5XX_Count` do **target**
+        (o container, não o ALB), soma em 5 min, limite zero — um único 500
+        já avisa, porque em dezenas de perguntas por dia não existe "5xx
+        normal"
+      - `cockpit-prod-jarvis-sem-host-saudavel`: `HealthyHostCount` abaixo de
+        1 por **3 minutos seguidos**. Três períodos de 60 s de propósito: no
+        deploy a task nova fica alguns segundos sem passar no health check, e
+        alarmar nisso viraria alarme falso a cada bump de imagem.
+        `treat_missing_data = breaching`, porque métrica ausente significa
+        nenhum target registrado — exatamente o caso a avisar
+      - Métrica do próprio ALB, sem custo e sem depender de log da
+        aplicação. Container Insights está **desabilitado** no cluster, então
+        `RunningTaskCount` não existe; `HealthyHostCount` cobre o sintoma
+      - **Pendente do Rubens:** confirmar a assinatura do SNS no e-mail que a
+        AWS enviou (`PendingConfirmation` até clicar). Sem isso o alarme
+        dispara e não entrega
+
+- [x] **p95 acima da meta: investigado em 2026-09-21** — junta o item que
+      estava na Fase 8 ("primeira leitura de 28,2 s, mediana 11,9 s e uma
+      pergunta de 102 s"). Decomposto sobre as 73 respostas com tempo medido
+      no banco local, cruzando `AICall.latency_ms` por etapa com
+      `QueryRun.duration_ms`:
+
+      | Onde vai o tempo | Mediana | p95 | Máximo |
+      |---|---|---|---|
+      | Chamadas ao modelo | 10,9 s | 43,3 s | 102,1 s |
+      | Consulta no banco | 0,3 s | 3,9 s | ~4 s |
+
+      **O banco não é o problema: é o modelo, e é a segunda rodada de
+      planejamento.** Por etapa (n, média, máximo): `fix` 7, 24,9 s, 80,5 s ·
+      `plan` 71, 8,1 s, 34,1 s · `rewrite` 13, 6,5 s, 10,8 s · `answer` 51,
+      5,0 s, 15,9 s. Respostas com 3 ou mais chamadas ao modelo levam 29,3 s
+      em média.
+
+      O gargalo tem nome: o caminho em que a IA pede o **documento inteiro**
+      (`full_context`, `orchestrator.py`). Separando as chamadas de `fix`
+      pela flag `contexto_completo` do `request`: com documento inteiro são 3
+      chamadas, média **41,0 s** e ~46 mil tokens de entrada; sem ele, 4
+      chamadas, média **12,8 s** e ~18 mil tokens. A suspeita registrada em
+      18/09 ("a pergunta que cruza áreas, que leva duas seções e uma segunda
+      chamada") estava na direção certa, mas o custo não é a segunda chamada
+      em si — é ela carregando o documento todo, que também joga fora o
+      prefixo do cache. Esforço também pesa: `medium` (plan e fix) dá média
+      de 9,7 s contra 5,4 s do `low` (answer e rewrite).
+
+      **Achado de medição, que vale mais que o número:** `AIReply.latency_ms`
+      é a soma das chamadas ao modelo (`orchestrator.py:113`) — não inclui
+      banco, fila do Celery nem renderização. O p95 do `bi_report`, que é o
+      comparado com a meta de 20 s do SPEC, **subestima** o que a pessoa
+      sente. Em produção, a primeira pergunta real (2026-09-21) levou 21,1 s
+      por essa mesma conta.
+
+      Duas decisões que sobram, e são de produto, não de infra — cada uma
+      troca tempo por qualidade de resposta, então ficam para você:
+      1. limitar o caminho do documento inteiro (por exemplo, mandar mais
+         seções em vez de todas, ou permitir só em pergunta que cruza áreas)
+      2. medir de ponta a ponta, do POST à resposta pronta, em vez de somar
+         chamadas ao modelo
 
 ---
 
