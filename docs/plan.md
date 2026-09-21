@@ -209,8 +209,10 @@ Commit só quando pedido.
       decidir estão em "Depois do deploy"
 
 ## Fase 9 — Deploy
-**Status: ⏳ em andamento** · passos 0 a 10 fechados; o Jarvis está no ar e
-com o banco pronto. Falta só testar e fechar (passo 11) (2026-09-21)
+**Status: ✅ concluída (2026-09-21)** · os onze passos fechados. O Jarvis
+está em produção em `https://jarvis.easelabs.app.br`, com o schema `jarvis`
+no `easelabs`, alarme de 5xx e de task sem host saudável, e a infra mesclada
+na `main` do `sales_force_crm`
 
 ### Onde estamos
 
@@ -227,7 +229,7 @@ com o banco pronto. Falta só testar e fechar (passo 11) (2026-09-21)
 | 8 — Imagem real | ✅ `cockpit-prod-jarvis:2ea453d` no ECR, linux/amd64, 83 MB |
 | 9 — Bump da imagem | ✅ task definition `cockpit-prod-jarvis:2` com `2ea453d`, alvo saudável no ALB |
 | 10 — Migrations e usuários | ✅ 19 tabelas no `jarvis`, 4 administradores criados |
-| 11 — Testar e fechar | 🔲 já pode: falta entrar de verdade e fazer uma pergunta |
+| 11 — Testar e fechar | ✅ login por código, pergunta com número conferido, planilha e gráfico; merge feito |
 
 **A regra para daqui em diante, da Natália (2026-09-21): separar as nossas
 mudanças do resto e subir só as nossas.** Todo `apply` desta branch é com
@@ -320,7 +322,18 @@ São **dois repositórios**, e a maior parte das mudanças mexe só no primeiro.
 | Repositório | Onde | Branch | O que vai nele |
 |---|---|---|---|
 | **Jarvis** (`bi/`) | `easelabs-bianalytics/ai_chatbot_ease` | `main` — é a convenção do histórico até aqui | o app inteiro: código, tela, prompts, catálogo, migrations, docs, scripts SQL |
-| **`sales_force_crm`** | `easelabs-analytics/sales_force_crm` | `feat/infra-jarvis` até o merge do passo 11; depois, uma branch nova por mudança, **nunca a `main`** | só `infra/` — o que o Jarvis precisa na AWS |
+| **`sales_force_crm`** | `easelabs-analytics/sales_force_crm` | **sempre uma branch nova por mudança, nunca commit direto na `main`** | só `infra/` — o que o Jarvis precisa na AWS |
+
+**Sobre o merge na `main` do `sales_force_crm` (regra do Rubens,
+2026-09-21):** os dois merges do dia — a infra do Jarvis (`951618b`) e os
+alarmes (`2f03e64`) — foram pedidos por ele para tirar da frente o plano que
+propunha destruir o Jarvis. **Daqui em diante não commitamos nem mesclamos na
+`main` desse repositório:** o app ainda vai mudar de estrutura, e a `main` é
+compartilhada com o time do Cockpit. O nosso ciclo termina com a branch
+empurrada; o merge é decisão da Natália. O efeito colateral a aceitar é que,
+enquanto a branch não é mesclada, um `plan` feito por outra pessoa a partir
+da `main` mostra os recursos novos como sobra — então avisar ela ao abrir a
+branch.
 
 **Quando a mudança toca o `sales_force_crm`:**
 
@@ -382,9 +395,9 @@ Mesma tabela da seção 0 do passo a passo, com o nome do Jarvis no lugar:
 | Permissões e state remoto | ✅ `AdministratorAccess` no usuário `rubens` (2026-09-21); state em S3 com lock no DynamoDB |
 | Roles e schema no Postgres, secrets | ✅ criados à mão no passo 1 — não são Terraform |
 | ECR, security group, target group, certificado, regra de listener, task definition, service | ✅ criados no passo 4 |
-| Anexo do certificado ao listener | 🔲 passo 6, depois de o certificado ser emitido |
+| Anexo do certificado ao listener | ✅ passo 6, depois de o certificado ser emitido |
 | Redis | ✅ container dentro da própria task, rodando (ver abaixo) |
-| DNS no registro.br | 🔲 passos 5 e 7, à mão |
+| DNS no registro.br | ✅ passos 5 e 7, feitos à mão no registro.br |
 
 Custo do que o Jarvis acrescenta: **~US$ 25/mês de AWS** (ECR ~1, Fargate ~18,
 Secrets ~4, logs ~2) **+ US$ 10 a 30 de OpenAI**. ALB, ACM, banco e saída para
@@ -1098,12 +1111,16 @@ de retenção do histórico e restrição à rede corporativa.
       sente. Em produção, a primeira pergunta real (2026-09-21) levou 21,1 s
       por essa mesma conta.
 
-      Duas decisões que sobram, e são de produto, não de infra — cada uma
-      troca tempo por qualidade de resposta, então ficam para você:
-      1. limitar o caminho do documento inteiro (por exemplo, mandar mais
-         seções em vez de todas, ou permitir só em pergunta que cruza áreas)
-      2. medir de ponta a ponta, do POST à resposta pronta, em vez de somar
-         chamadas ao modelo
+      **Decidido pelo Rubens em 2026-09-21: não mexer.** Limitar o caminho
+      do documento inteiro é o que baixaria o tempo, e é justamente o caminho
+      que existe para a pergunta que cruza áreas — cortá-lo troca segundos
+      por resposta pior, e resposta pior não é negócio. A meta de 20 s do
+      SPEC fica como referência, não como razão para piorar a resposta. Duas
+      coisas continuam valendo saber:
+      - o tempo alto é sempre o modelo, nunca o banco (mediana de 0,3 s):
+        se um dia ficar lento, é lá que se olha
+      - o p95 do `bi_report` mede só as chamadas ao modelo, então o número
+        real sentido pela pessoa é um pouco maior
 
 ---
 
