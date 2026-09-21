@@ -1342,6 +1342,45 @@ não precisa ser sempre texto + tabela + gráfico. Decisão na **ADR-0025**.
 Pergunta de porquê custa ~US$ 0,18 a 0,30, contra ~US$ 0,04 de uma pergunta
 de número.
 
+### Perguntas tricky (2026-09-21)
+
+O Rubens testou em produção as perguntas de `chatbot_perguntas_teste.md`
+(conversa "perguntas tricky - testes", US$ 0,16 no total) e a maioria falhou.
+Pedido: deixar os casos claros no prompt, **de maneira generalista**, e
+**não gastar com novos testes na API**. E o roteiro de investigação não é
+receita: é exemplo de raciocínio.
+
+- [x] **Roteiro vira exemplo** (`planner_v2`, seção 13, "Pense, não siga
+      receita"): cada porquê pede pensar no que pode ter causado aquilo,
+      naquele contexto, juntando ou não as áreas
+- [x] **Seção 7.1 do `planner_v2`, "a pergunta cabe nos dados?"** — princípios,
+      não respostas decoradas: o grão de cada fonte (prescrição é mensal e só
+      Extrato × Canabidiol; extras/MP/SS não existem por PDV; concorrente só
+      no TD por brick), dado que não existe não é zero (meta, próxima visita,
+      estoque fora das redes), foto não é "hoje" (data da carga por rede),
+      período conta do fim da base, uma medida oficial e dita, duas leituras
+      oficiais → perguntar (painel × território, Mercado × Ease, varejo ×
+      público, ruptura por SKU sem somar), mês sem ano = o mais recente,
+      contagem distinta, SEM CAT, resposta curta completa a pergunta anterior
+- [x] **Redação** (`answerer_v2`): acima de dez linhas a tabela é sempre bloco,
+      nunca linhas escritas; cita a data da foto, a medida usada e o corte
+      da base
+- [x] **Três falhas que eram do sistema**, lidas no registro de produção:
+      - "Quais CDs estão em ruptura?" → "problema técnico" duas vezes: a
+        redação escrevia 50 linhas, estourava o limite e o JSON vinha cortado
+        — e o sistema **repetia a chamada três vezes**. Agora saída cortada é
+        `AIOutputTruncated`, não é repetida e cai para a tabela
+      - "2026" em resposta a "De qual ano é agosto?" → "não entendi a
+        pergunta". Agora resposta curta a um pedido de detalhe vai ao
+        planejador
+      - estoque da Raia virou tabela crua porque o texto citou "30" (de
+        "Isolado 30 mL", nome da coluna) e "21" (a data de hoje). A checagem
+        aceita a data de hoje e dose/volume no nome da coluna (só com a
+        unidade colada: `total_4500` continua sem valer)
+- [x] Suíte: **624 testes**. Nenhum teste novo na API
+- Custo: o `planner_v2` ficou ~1.100 tokens maior; como vai no prefixo com
+  cache, são frações de centavo por pergunta
+
 ### Para ir ao ar (junto com a Fase 10)
 
 - [ ] **Validação do Rubens na tela**
