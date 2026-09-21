@@ -119,6 +119,9 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # PRIMEIRO de propósito: responde o health check do ALB antes da checagem
+    # de ALLOWED_HOSTS, que recusaria o IP privado da task (ver o módulo).
+    "config.middleware.HealthCheckMiddleware",
     "django.middleware.security.SecurityMiddleware",
     # Serve os estáticos do Admin em produção (com DEBUG=0 o Django não serve).
     "whitenoise.middleware.WhiteNoiseMiddleware",

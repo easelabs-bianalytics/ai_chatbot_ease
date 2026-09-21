@@ -3,7 +3,7 @@
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 
-from config.env import assert_not_business_database, database_from_env, env_bool, env_list
+from config.env import database_from_env, env_bool, env_list, recusar_rds_nos_testes
 
 RDS_HOST = "ease-bi.c1abcdefgh.us-east-1.rds.amazonaws.com"
 
@@ -49,17 +49,51 @@ def test_variaveis_genericas_de_banco_sao_ignoradas():
 
 
 @pytest.mark.parametrize("host", [RDS_HOST, RDS_HOST.upper()])
-def test_banco_da_aplicacao_nunca_aponta_para_o_rds(host):
-    """ADR-0002: o RDS nunca entra em DATABASES. Se alguém colar a URL dele em
-    APP_DATABASE_URL, a aplicação se recusa a subir em vez de rodar migrate
-    no banco de negócio."""
+def test_testes_nunca_apontam_para_o_rds(host):
+    """ADR-0002, revista em 2026-09-21: o banco da aplicação passou a ser o
+    schema `jarvis` no RDS, mas a suíte continua proibida de apontar para lá
+    — o pytest-django cria e apaga bancos test_* no servidor configurado."""
     with pytest.raises(ImproperlyConfigured):
-        database_from_env({"APP_DATABASE_URL": f"postgresql://u:p@{host}:5432/bi"})
+        database_from_env({"APP_DATABASE_URL": f"postgresql://u:p@{host}:5432/bi"}, para_testes=True)
 
 
-def test_hosts_da_aplicacao_sao_aceitos():
-    for host in ("localhost", "127.0.0.1", "db", "postgres.railway.internal"):
-        assert_not_business_database(host)
+def test_hosts_locais_sao_aceitos_nos_testes():
+    for host in ("localhost", "127.0.0.1", "db"):
+        recusar_rds_nos_testes(host)
+
+
+def test_rds_em_producao_fica_preso_ao_schema_do_jarvis():
+    """Até 2026-09-21 a aplicação se recusava a subir com host de RDS. Agora
+    esse é o banco dela — e a conexão fica presa ao schema `jarvis` pelo
+    search_path, repetindo o que a role já fixa no banco."""
+    config = database_from_env({"APP_DB_HOST": RDS_HOST, "APP_DB_NAME": "easelabs"})
+
+    assert config["HOST"] == RDS_HOST
+    assert config["OPTIONS"] == {"options": "-c search_path=jarvis"}
+
+
+def test_pelo_tunel_o_schema_vem_da_variavel():
+    """Pelo túnel o host é 127.0.0.1 e não dá para reconhecer o RDS pelo nome."""
+    config = database_from_env({"APP_DB_HOST": "127.0.0.1", "APP_DB_SCHEMA": "jarvis"})
+
+    assert config["OPTIONS"] == {"options": "-c search_path=jarvis"}
+
+
+def test_postgres_local_fica_no_public():
+    assert "OPTIONS" not in database_from_env({})
+
+
+def test_schema_invalido_e_recusado():
+    """O nome vai parar num parâmetro de conexão."""
+    with pytest.raises(ImproperlyConfigured):
+        database_from_env({"APP_DB_SCHEMA": "jarvis; DROP"})
+
+
+def test_conexao_e_reaproveitada():
+    config = database_from_env({})
+
+    assert config["CONN_MAX_AGE"] == 60
+    assert config["CONN_HEALTH_CHECKS"] is True
 
 
 @pytest.mark.parametrize(

@@ -17,6 +17,40 @@ def test_health_responde_sem_login_e_sem_banco():
     assert response.json() == {"status": "ok"}
 
 
+def test_health_responde_ao_alb_pelo_ip_privado_da_task():
+    """O ALB testa a saúde batendo no IP privado da task, e o Host chega como
+    `10.0.1.23:8000` — fora do ALLOWED_HOSTS, que é feito de domínios. Sem o
+    HealthCheckMiddleware na frente, o Django responde 400 e o alvo fica
+    "unhealthy" para sempre, com a aplicação perfeita."""
+    response = APIClient().get("/api/health/", HTTP_HOST="10.0.1.23:8000")
+
+    assert response.status_code == 200
+
+
+def test_ip_privado_continua_recusado_fora_do_health_check():
+    """O atalho vale só para o caminho de saúde: o resto da aplicação segue
+    exigindo um host conhecido."""
+    response = APIClient().get("/", HTTP_HOST="10.0.1.23:8000")
+
+    assert response.status_code == 400
+
+
+def test_estaticos_passam_pelo_manifest_como_no_build_da_imagem(tmp_path, settings):
+    """A suíte usa o armazenamento simples de estáticos; o build da imagem usa
+    o com manifest, que segue as referências de dentro dos arquivos. Em
+    2026-09-21 o build quebrou: o Chart.js vendorizado apontava para um
+    `chart.umd.js.map` que nunca foi incluído. Aqui roda do jeito do build."""
+    settings.STATIC_ROOT = tmp_path
+    settings.STORAGES = {
+        **settings.STORAGES,
+        "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+    }
+
+    call_command("collectstatic", "--noinput", verbosity=0)
+
+    assert (tmp_path / "staticfiles.json").exists()
+
+
 class _ViewSemPermissaoDeclarada(APIView):
     def get(self, request):
         return Response({"dado": "de negócio"})

@@ -27,7 +27,7 @@ Commit só quando pedido.
 
 - [x] `pyproject.toml` com uv, Python 3.12 (Django 5.2 LTS, DRF, Celery[redis], gunicorn, whitenoise, psycopg2-binary, python-dotenv, openai, sqlglot, PyYAML; dev: pytest, pytest-django) e `uv.lock`
 - [x] Projeto Django em `app/config` (settings por variável de ambiente, proxy SSL, CSRF, Celery com `acks_late`)
-- [x] **Banco da aplicação só lê `APP_*`** e recusa subir apontando para `*.rds.amazonaws.com` (`config/env.py`, ADR-0002) — o `bi/.env` já tinha credenciais da AWS com nomes desconhecidos
+- [x] **Banco da aplicação só lê `APP_*`** e recusa subir apontando para `*.rds.amazonaws.com` (`config/env.py`, ADR-0002) — o `bi/.env` já tinha credenciais da AWS com nomes desconhecidos. *Revisto na Fase 9 (passo 8): a trava por host vale só sob teste; em produção a garantia é o schema `jarvis` e o privilégio da role*
 - [x] `config.settings_test`: suíte não carrega o `.env` e usa sempre o Postgres local
 - [x] DRF com `SessionAuthentication` e `IsAuthenticated` por padrão
 - [x] `docker-compose.yml`: `db` (5434), `redis` (6381), `analytics_db` (5435, sintético, com usuário `bi_readonly`) — portas fora das da referência
@@ -207,8 +207,8 @@ Commit só quando pedido.
       segunda chamada ao modelo. Investigar antes do deploy
 
 ## Fase 9 — Deploy
-**Status: ⏳ em andamento** · passos 0 a 6 fechados; próximo é o CNAME final
-(passo 7) e, em paralelo, a imagem real (passo 8) (2026-09-21)
+**Status: ⏳ em andamento** · passos 0 a 7 fechados; passo 8 (imagem real)
+em andamento (2026-09-21)
 
 ### Onde estamos
 
@@ -221,7 +221,7 @@ Commit só quando pedido.
 | 4 — `apply` com alvo | ✅ 11 recursos criados + `rds-sg` alterado; a task está no ar com o nginx |
 | 5 — CNAME de validação | ✅ criado no registro.br; conferido no DNS público |
 | 6 — Certificado `ISSUED` | ✅ emitido e anexado ao listener HTTPS |
-| 7 — CNAME final | 🔲 **com você**, no registro.br — já pode |
+| 7 — CNAME final | ✅ `jarvis.easelabs.app.br` → ALB no DNS público, certificado válido |
 | 8 — Imagem real | 🔲 pode andar já: não depende de DNS |
 | 9 — Bump da imagem | 🔲 depende do 8 |
 | 10 — Migrations e usuários | 🔲 depende do 9 |
@@ -237,7 +237,6 @@ do passo em que acontece, não aqui:
 
 | Pendência | Quem | O que destrava |
 |---|---|---|
-| Criar o CNAME final (`jarvis` → ALB) no registro.br | Rubens | passo 7 |
 | Empurrar o código de IAM aplicado em 2026-09-21 (`rubens_admin`): está no state, mas em nenhuma branch, e a nossa base ainda tem as policies antigas | Natália | um `apply` sem alvo deixar de ser perigoso, e o merge do passo 11 |
 | Confirmar se o Poetry do Dockerfile é exigência literal | Natália | o Dockerfile do passo 8 |
 
@@ -787,26 +786,32 @@ listener HTTPS do ALB.
 
 #### Passo 7 — CNAME final
 
-- [ ] No registro.br, mesmo caminho do passo 5: `CNAME`, nome **`jarvis`**,
+- [x] No registro.br, mesmo caminho do passo 5: `CNAME`, nome **`jarvis`**,
       valor **`cockpit-prod-alb-1971305495.sa-east-1.elb.amazonaws.com.`**
       (o DNS do ALB, conferido com `terraform output -raw alb_dns_name`)
-- [ ] Só depois do passo 6: com o CNAME antes do certificado anexado, o
+- [x] Só depois do passo 6: com o CNAME antes do certificado anexado, o
       navegador mostra o aviso de site inseguro
+
+Conferido em 2026-09-21 em 8.8.8.8 e 1.1.1.1: `jarvis.easelabs.app.br` é
+CNAME do ALB; HTTPS apresenta o certificado do Jarvis; HTTP responde 301
+para HTTPS. O HTTPS devolve 502 até o passo 9 — é o nginx provisório do
+passo 4, não problema de DNS. O resolvedor da máquina pode demorar mais a
+enxergar o CNAME novo.
 
 #### Passo 8 — Build e push da imagem real
 
 Fora do Terraform, e **neste repositório** — o código do Jarvis está aqui, não
 no `sales_force_crm`. Antes do build, os ajustes de código:
 
-- [ ] `Dockerfile` no padrão multiestágio do `sales_force_crm/Dockerfile`:
+- [x] `Dockerfile` no padrão multiestágio do `sales_force_crm/Dockerfile`:
       estágio `builder` com `build-essential`/`libpq-dev`, estágio `runtime` só
       com `libpq5`, usuário `app` sem privilégio, `EXPOSE 8000`, gunicorn no
       `CMD`. Mantém o **uv** no lugar do Poetry porque o lock deste projeto é
       `uv.lock` — a estrutura é idêntica, só muda o instalador; confirmar com a
       Natália se a exigência do Poetry é literal
-- [ ] Tirar o `migrate` do `CMD` (vira task avulsa no passo 10) e trocar
+- [x] Tirar o `migrate` do `CMD` (vira task avulsa no passo 10) e trocar
       `--bind [::]:$PORT` por `--bind 0.0.0.0:8000` (o IPv6 era do Railway)
-- [ ] `app/config/env.py`: `assert_not_business_database` hoje recusa host
+- [x] `app/config/env.py`: `assert_not_business_database` hoje recusa host
       `*.rds.amazonaws.com` como banco da aplicação, que passa a ser a
       configuração correta. Vira: recusar RDS **sob teste** e exigir
       `search_path=jarvis` nas `OPTIONS` em runtime.
@@ -815,10 +820,21 @@ no `sales_force_crm`. Antes do build, os ajustes de código:
       protege menos do que o comentário dela promete, e quem de fato barrou
       escrita fora do lugar foi o privilégio de banco. Mais um motivo para a
       reescrita ser por `search_path`, e não por nome de host
-- [ ] `database_from_env`: acrescentar `"OPTIONS": {"options": "-c search_path=jarvis"}`
+- [x] `database_from_env`: acrescentar `"OPTIONS": {"options": "-c search_path=jarvis"}`
       e `CONN_MAX_AGE`
-- [ ] Reescrever a **ADR-0002** para descrever a garantia nova
-- [ ] `uv run pytest` verde
+- [x] Reescrever a **ADR-0002** para descrever a garantia nova
+- [x] `uv run pytest` verde — 482 testes
+- [x] **Achados no caminho** (2026-09-21):
+      - health check do ALB bate no IP privado da task, fora do
+        `ALLOWED_HOSTS` → 400 e alvo "unhealthy" para sempre. Resolvido com
+        `config/middleware.py` (`HealthCheckMiddleware`, primeiro da lista,
+        mesmo padrão do Cockpit), com teste
+      - `collectstatic` do build quebrava: o Chart.js vendorizado apontava
+        para um `chart.umd.js.map` que nunca foi incluído. Referência
+        removida, e um teste roda o `collectstatic` com manifest como o build
+      - teste do container: health com `Host: 10.0.1.23:8000` → 200, `/`
+        com o mesmo host → 400, estáticos → 200, processo como `app`, sem
+        `.env` na imagem, `celery` importa
 - [ ] **Tudo commitado no repositório do Jarvis** (ver "Como commitar daqui
       em diante"). A tag da imagem é o hash do commit: com arquivo alterado
       fora de commit, a imagem leva código que não está em commit nenhum, e

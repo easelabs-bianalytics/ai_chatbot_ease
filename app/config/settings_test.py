@@ -24,7 +24,8 @@ DEBUG = False
 
 DATABASES = {
     "default": database_from_env(
-        {"APP_DATABASE_URL": os.environ.get("TEST_APP_DATABASE_URL", "")}
+        {"APP_DATABASE_URL": os.environ.get("TEST_APP_DATABASE_URL", "")},
+        para_testes=True,
     )
 }
 
