@@ -78,6 +78,41 @@ def pontuar(pergunta: str) -> dict:
     return notas
 
 
+_PORQUE = re.compile(
+    r"\bpor\s*que\b|\bporque\b|\bpor qual motivo\b|\bo que explica\b|\bo que (?:causou|levou)\b|"
+    r"\bqual (?:a|foi a) causa\b|\bmotivo d[aoe]\b|\bexplica(?:r)? (?:a|o|essa|esse)\b",
+    re.I,
+)
+
+# Os temas que o roteiro de investigação atravessa (ADR-0025): a queda é
+# medida no sell-out, localizada na força de vendas (GR, regional, setor
+# vago) e explicada na prescrição do painel. Mandar os três completos custa
+# centavos a mais; faltar um leva à chamada com o documento inteiro.
+TEMAS_DA_INVESTIGACAO = ("sell_out", "forca_vendas", "prescricao")
+
+# Tetos da investigação: são o que segura o custo. No pior caso, três
+# chamadas ao planejador (a primeira e duas rodadas de aprofundamento) e
+# quatro consultas por rodada. Uma pergunta de porquê sai por ~US$ 0,15 a
+# 0,30, contra ~US$ 0,04 de uma pergunta de número.
+MAX_RODADAS = 3
+MAX_PASSOS_POR_RODADA = 4
+
+
+def e_pergunta_de_porque(texto: str) -> bool:
+    """"Por que caiu", "o que explica", "qual a causa" — pergunta que pede
+    um racional, não um número."""
+    return bool(_PORQUE.search(_sem_acento(texto or "")))
+
+
+def escolher_secoes_da_investigacao(pergunta: str, historico=()) -> tuple:
+    """O tema da pergunta primeiro, depois os do roteiro, até o limite."""
+    ordem = list(escolher_secoes(pergunta, historico))
+    for tema in TEMAS_DA_INVESTIGACAO:
+        if tema not in ordem:
+            ordem.append(tema)
+    return tuple(ordem[:MAX_SECOES])
+
+
 def escolher_secoes(pergunta: str, historico=()) -> tuple:
     """Temas da pergunta, do mais provável para o menos.
 
@@ -159,7 +194,8 @@ def _prefixo_fixo(documento) -> str:
 
 
 def montar_contexto_do_plano(
-    catalog, pergunta: str, historico=(), completo: bool = False, temas_completos: int = MAX_COMPLETAS
+    catalog, pergunta: str, historico=(), completo: bool = False, temas_completos: int = MAX_COMPLETAS,
+    investigacao: bool = False,
 ) -> Contexto:
     """Contexto da chamada que escreve o SQL.
 
@@ -170,7 +206,13 @@ def montar_contexto_do_plano(
     fração a mais por mandar o terceiro tema completo."""
     documento = get_document(catalog)
     fixo = _prefixo_fixo(documento)
-    escolhidas = () if completo else escolher_secoes(pergunta, historico)
+    if completo:
+        escolhidas = ()
+    elif investigacao:
+        escolhidas = escolher_secoes_da_investigacao(pergunta, historico)
+        temas_completos = MAX_SECOES
+    else:
+        escolhidas = escolher_secoes(pergunta, historico)
 
     if completo:
         texto = (

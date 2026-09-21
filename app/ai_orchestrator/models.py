@@ -66,6 +66,9 @@ class AICall(models.Model):
         ANSWER = "answer", "Redação"
         REWRITE = "rewrite", "Reescrita da resposta"
         IMAGE = "image", "Leitura de imagem"
+        # Rodada de aprofundamento de uma investigação (ADR-0025): o
+        # planejador lê os achados e decide o próximo ramo.
+        INVESTIGATE = "investigate", "Rodada de investigação"
 
     ai_reply = models.ForeignKey(AIReply, on_delete=models.CASCADE, related_name="calls")
     stage = models.CharField(max_length=20, choices=Stage.choices)

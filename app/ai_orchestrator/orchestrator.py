@@ -13,14 +13,16 @@ se a resposta cita número sem suporte, ela reescreve uma vez com o motivo
 honesto, em vez de insistir.
 """
 
+import json
 import logging
 import os
 import re
 from dataclasses import dataclass, field, replace
+from types import SimpleNamespace
 
-from ai_orchestrator import ajuste_grafico, budget, canned
-from ai_orchestrator.context import PEDIDO_DE_SECAO
-from ai_orchestrator.grounding import check_grounding
+from ai_orchestrator import ajuste_grafico, budget, canned, progresso
+from ai_orchestrator.context import MAX_PASSOS_POR_RODADA, MAX_RODADAS, PEDIDO_DE_SECAO
+from ai_orchestrator.grounding import check_grounding, check_grounding_varias
 from ai_orchestrator.models import AICall, AIReply, CatalogGap
 from ai_orchestrator.providers.base import (
     AIProviderError,
@@ -60,6 +62,12 @@ MAX_LINHAS_NA_TABELA = 20
 # resultado vai direto para as células —, e uma planilha de 20 mil linhas
 # precisa de 20 mil chaves. É o mesmo limite da planilha de download.
 LINHAS_DO_PREENCHIMENTO = 50_000
+
+# Investigação (ADR-0025). Linhas de cada consulta que vão para a rodada
+# seguinte e para a redação (as consultas são agregadas; isto é teto), e
+# linhas guardadas para a tela desenhar as tabelas e gráficos dos blocos.
+LINHAS_DOS_ACHADOS = 30
+LINHAS_DOS_BLOCOS = 100
 
 
 def _max_history_messages() -> int:
@@ -143,10 +151,26 @@ def _tabela(resultado) -> str:
     (ADR-0010)."""
     cabecalho = " | ".join(resultado.columns)
     linhas = [
-        " | ".join("" if v is None else str(v) for v in linha)
+        " | ".join(formatar_valor(v) for v in linha)
         for linha in resultado.rows[:MAX_LINHAS_NA_TABELA]
     ]
     return "\n".join([cabecalho, *linhas])
+
+
+def formatar_valor(valor) -> str:
+    """Valor do banco para ler, no padrão brasileiro.
+
+    Sem isto a tabela mostrava `7233.0` e `-234.87999999999982` — ruído de
+    ponto flutuante que ninguém escreveu (caso real de 2026-09-21). Inteiro
+    sem casa decimal; o resto com até duas casas, como a redação faz."""
+    if valor is None:
+        return ""
+    if isinstance(valor, bool) or not isinstance(valor, (int, float)):
+        return str(valor)
+    if float(valor).is_integer():
+        return f"{int(valor):,}".replace(",", ".")
+    texto = f"{valor:,.2f}".rstrip("0").rstrip(".")
+    return texto.replace(",", "_").replace(".", ",").replace("_", ".")
 
 
 def _nota_de_truncamento(resultado, max_rows: int) -> str:
@@ -424,6 +448,17 @@ def _redigir(plano, resultado, message, provider, catalog, auditoria, historico,
     if grafico:
         extras["grafico"] = grafico
         _guardar_dados_do_grafico(auditoria, resultado)
+
+    if resposta.blocos and not verificacao:
+        # Resposta em blocos (ADR-0025): o gráfico vem de dentro deles, e a
+        # tela desenha tabela e gráfico com os dados da consulta.
+        blocos, dados = _validar_blocos(
+            resposta.blocos, [(resultado, plano.sql)], message
+        )
+        if blocos:
+            extras.pop("grafico", None)
+            extras["blocos"] = blocos
+            extras["dados_blocos"] = dados
 
     conferencia = check_grounding(
         resposta.reply, resultado.columns, resultado.rows, message.content, plano.sql,
@@ -728,6 +763,246 @@ def _preencher_planilha(message, plano, executor, catalog, auditoria) -> str:
     return _nota_do_preenchimento(preenchida, preenchida.nome)
 
 
+# ---------------------------------------------------------------- investigação
+
+
+def _investigar(plano, message, provider, executor, catalog, auditoria, historico) -> _Decisao:
+    """Pergunta de porquê (ADR-0025): hipóteses em rodadas, depois a análise.
+
+    Rodada 1: as hipóteses que o planejador escreveu. A cada rodada o
+    planejador lê os achados e decide se aprofunda o ramo que eles
+    apontaram ou se já dá para concluir. No máximo MAX_RODADAS chamadas ao
+    planejador e MAX_PASSOS_POR_RODADA consultas por rodada: é o teto do
+    custo. Consulta que falha não ganha correção própria — o erro vai nos
+    achados, e o planejador reescreve na rodada seguinte se ela importar.
+    """
+    passos = []
+    atual, rodada = plano, 1
+    while True:
+        for passo in atual.investigacao[:MAX_PASSOS_POR_RODADA]:
+            passos.append(_testar_hipotese(passo, rodada, message, executor, catalog, auditoria))
+        if rodada >= MAX_RODADAS:
+            break
+        progresso.definir(message.pk, "Lendo o que as consultas mostraram e decidindo o próximo passo")
+        seguinte = provider.plan(PlanRequest(
+            question=message.content,
+            history=historico,
+            planilha=_planilha(message),
+            achados=_achados(passos),
+            rodada=rodada + 1,
+        ))
+        auditoria.chamada(AICall.Stage.INVESTIGATE, seguinte.usage)
+        if seguinte.intent != Plan.Intent.INVESTIGATE or not seguinte.investigacao:
+            break
+        atual, rodada = seguinte, rodada + 1
+
+    registro = [
+        {
+            "rodada": p["rodada"],
+            "hipotese": p["hipotese"],
+            "sql": p["sql"],
+            "linhas": p["resultado"].row_count if p["resultado"] is not None else None,
+            "erro": p["erro"],
+        }
+        for p in passos
+    ]
+    com_dado = [p for p in passos if p["resultado"] is not None and p["resultado"].row_count > 0]
+    if not com_dado:
+        progresso.limpar(message.pk)
+        return _Decisao(
+            decision=AIReply.Decision.UNKNOWN,
+            reply=canned.INVESTIGACAO_SEM_DADO,
+            rule="investigacao_sem_dado",
+            raw={"investigacao": registro},
+            gap_reason="investigação sem consulta com dado: " + "; ".join(p["erro"] or "vazia" for p in passos),
+        )
+
+    progresso.definir(message.pk, "Escrevendo a análise")
+    texto, raw = _redigir_analise(com_dado, message, provider, auditoria, historico)
+    progresso.limpar(message.pk)
+    return _Decisao(
+        decision=AIReply.Decision.ANSWERED,
+        reply=texto,
+        rule=raw.pop("rule", ""),
+        raw={**raw, "investigacao": registro, "rodadas": rodada},
+    )
+
+
+def _testar_hipotese(passo, rodada, message, executor, catalog, auditoria) -> dict:
+    """Valida e executa a consulta de uma hipótese. Registra sempre."""
+    hipotese = passo.get("hipotese") or ""
+    progresso.definir(message.pk, f"Testando: {hipotese}" if hipotese else "Consultando os dados")
+    feito = {"rodada": rodada, "hipotese": hipotese, "sql": passo["sql"], "resultado": None, "erro": ""}
+    registro = {
+        "attempt": len(auditoria.consultas) + 1,
+        "sql": passo["sql"],
+        "reference_query_id": passo.get("reference_query_id", ""),
+    }
+
+    guard = validate_sql(passo["sql"], catalog, max_rows=catalog.max_rows)
+    if not guard.approved:
+        auditoria.consulta(
+            **registro,
+            guard_result=QueryRun.GuardResult.REJECTED,
+            guard_reason=guard.reason,
+            status=QueryRun.Status.NOT_EXECUTED,
+        )
+        feito["erro"] = f"recusada pelo validador: {guard.reason}"
+        return feito
+
+    Message.objects.filter(pk=message.pk).update(status=Message.Status.PROCESSING)
+    try:
+        resultado = executor.run(guard.sql, max_rows=catalog.max_rows)
+    except QueryExecutionError as exc:
+        auditoria.consulta(
+            **registro,
+            guard_result=QueryRun.GuardResult.APPROVED,
+            status=QueryRun.Status.TIMEOUT if isinstance(exc, QueryTimeout) else QueryRun.Status.ERROR,
+            error=str(exc),
+        )
+        feito["erro"] = str(exc)
+        return feito
+
+    auditoria.consulta(
+        **registro,
+        guard_result=QueryRun.GuardResult.APPROVED,
+        status=QueryRun.Status.SUCCESS,
+        row_count=resultado.row_count,
+        truncated=resultado.truncated,
+        duration_ms=resultado.duration_ms,
+        result_sample={
+            "columns": list(resultado.columns),
+            "rows": [list(linha) for linha in resultado.rows[:5]],
+            "hipotese": hipotese,
+        },
+    )
+    feito["resultado"] = resultado
+    return feito
+
+
+def _achados(passos) -> str:
+    """O que cada consulta mostrou, compacto, para a próxima rodada decidir."""
+    partes = []
+    for i, p in enumerate(passos):
+        cabecalho = f"## Consulta {i} (rodada {p['rodada']}): {p['hipotese'] or 'sem hipótese declarada'}"
+        if p["resultado"] is None:
+            partes.append(f"{cabecalho}\nNão rodou: {p['erro']}")
+            continue
+        r = p["resultado"]
+        linhas = [dict(zip(r.columns, linha)) for linha in r.rows[:LINHAS_DOS_ACHADOS]]
+        partes.append(
+            f"{cabecalho}\nColunas: {', '.join(r.columns)}\n"
+            f"Linhas ({len(linhas)} de {r.row_count}): "
+            f"{json.dumps(linhas, ensure_ascii=False, default=str)}"
+        )
+    return "\n\n".join(partes)
+
+
+def _redigir_analise(com_dado, message, provider, auditoria, historico) -> tuple:
+    """A análise que cruza as consultas, conferida contra TODAS elas."""
+    consultas = tuple(
+        {
+            "hipotese": p["hipotese"],
+            "sql": p["sql"],
+            "columns": p["resultado"].columns,
+            "rows": p["resultado"].rows[:LINHAS_DOS_ACHADOS],
+            "total_rows": p["resultado"].row_count,
+        }
+        for p in com_dado
+    )
+    pedido = AnswerRequest(
+        question=message.content, sql="", columns=(), rows=(), truncated=False,
+        history=historico, consultas=consultas,
+    )
+    suporte = [(p["resultado"].columns, p["resultado"].rows, p["sql"], p["resultado"].row_count) for p in com_dado]
+    fontes = [(p["resultado"], p["sql"]) for p in com_dado]
+
+    rascunhos, motivos = [], []
+    for tentativa in (1, 2):
+        nota = motivos[-1] if motivos else ""
+        resposta = provider.answer(replace(pedido, revision_note=nota) if nota else pedido)
+        auditoria.chamada(AICall.Stage.ANSWER if tentativa == 1 else AICall.Stage.REWRITE, resposta.usage)
+        conferencia = check_grounding_varias(resposta.reply, suporte, message.content)
+        if conferencia.ok:
+            blocos, dados = _validar_blocos(resposta.blocos, fontes, message)
+            extras = {"caveats": list(resposta.caveats)}
+            sugestoes = _sugestoes(resposta.followups, message)
+            if sugestoes:
+                extras["sugestoes"] = sugestoes
+            if blocos:
+                extras["blocos"] = blocos
+                extras["dados_blocos"] = dados
+            if rascunhos:
+                extras["rascunho_reprovado"] = rascunhos
+                extras["motivos_ancoragem"] = motivos
+            return resposta.reply, extras
+        rascunhos.append(resposta.reply)
+        motivos.append(conferencia.reason)
+
+    # Duas reprovações: sem narrativa, mas com as evidências — cada hipótese
+    # com a tabela que a testou, desenhada pela tela com os números do banco.
+    logger.warning("Análise reprovada duas vezes na ancoragem; enviando as consultas sem narrativa")
+    blocos, dados = [], {}
+    for i, p in enumerate(com_dado):
+        titulo = p["hipotese"]
+        if titulo and not check_grounding(titulo, (), (), message.content, "").ok:
+            titulo = ""
+        blocos.append({"tipo": "tabela", "consulta": i, "colunas": list(p["resultado"].columns), "titulo": titulo})
+        dados[str(i)] = _dados_da_consulta(p["resultado"])
+    texto = "Não consegui escrever a análise com segurança; estas são as consultas que fiz para investigar:"
+    return texto, {
+        "rule": "analise_sem_narrativa",
+        "blocos": [{"tipo": "texto", "texto": texto}, *blocos],
+        "dados_blocos": dados,
+        "rascunho_reprovado": rascunhos,
+        "motivos_ancoragem": motivos,
+    }
+
+
+def _dados_da_consulta(resultado) -> dict:
+    return {
+        "columns": list(resultado.columns),
+        "rows": [list(linha) for linha in resultado.rows[:LINHAS_DOS_BLOCOS]],
+    }
+
+
+def _validar_blocos(blocos, fontes, message) -> tuple:
+    """Confere cada bloco contra as consultas de verdade (ADR-0025).
+
+    `fontes` é [(resultado, sql)], na ordem dos índices que a redação usou.
+    Tabela e gráfico que apontam consulta inexistente, coluna que não existe
+    ou série que não é número caem — melhor um bloco a menos do que um
+    errado. Devolve (blocos, dados das consultas que eles usam)."""
+    validos, dados = [], {}
+    for bloco in blocos or ():
+        tipo = bloco.get("tipo")
+        if tipo == "texto":
+            validos.append({"tipo": "texto", "texto": bloco["texto"]})
+            continue
+        indice = bloco.get("consulta")
+        if not isinstance(indice, int) or not 0 <= indice < len(fontes):
+            continue
+        resultado, sql = fontes[indice]
+        if tipo == "tabela":
+            if resultado.row_count < 1:
+                continue
+            colunas = [c for c in bloco.get("colunas") or [] if c in resultado.columns] or list(resultado.columns)
+            validos.append({"tipo": "tabela", "consulta": indice, "colunas": colunas})
+        elif tipo == "grafico":
+            grafico = _grafico(bloco.get("grafico"), resultado, message, SimpleNamespace(sql=sql))
+            if not grafico:
+                continue
+            validos.append({"tipo": "grafico", "consulta": indice, "grafico": grafico})
+        else:
+            continue
+        dados.setdefault(str(indice), _dados_da_consulta(resultado))
+
+    # Sem texto nenhum não é resposta: a redação comum volta ao formato antigo.
+    if not any(b["tipo"] == "texto" for b in validos):
+        return [], {}
+    return validos, dados
+
+
 def _conversa(plano, message, historico) -> _Decisao:
     """Resposta sem consulta (ADR-0019): cumprimento, o que o assistente
     faz, conceito do negócio ou leitura do que já apareceu na conversa.
@@ -909,6 +1184,9 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
 
     if plano.intent == Plan.Intent.CONVERSATION:
         return _conversa(plano, message, historico)
+
+    if plano.intent == Plan.Intent.INVESTIGATE and plano.investigacao:
+        return _investigar(plano, message, provider, executor, catalog, auditoria, historico)
 
     if plano.intent == Plan.Intent.CLARIFY:
         return _Decisao(

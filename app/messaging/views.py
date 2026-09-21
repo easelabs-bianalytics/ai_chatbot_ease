@@ -11,6 +11,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from ai_orchestrator import progresso
 from ai_orchestrator.tasks import process_message
 from conversations.models import Conversation, Project
 from catalog.loader import get_catalog
@@ -115,6 +116,21 @@ def _fonte(resposta, mostrar_custo: bool):
     sugestoes = (reply.raw_response or {}).get("sugestoes")
     if sugestoes:
         fonte["sugestoes"] = sugestoes
+
+    raw = reply.raw_response or {}
+    if raw.get("blocos"):
+        # Resposta em blocos (ADR-0025): a tela desenha na ordem, com os
+        # dados de cada consulta citada. O gráfico solto dá lugar aos blocos.
+        fonte["blocos"] = raw["blocos"]
+        fonte["dados_blocos"] = raw.get("dados_blocos") or {}
+        fonte.pop("grafico", None)
+        fonte.pop("dados", None)
+    if raw.get("investigacao"):
+        # Uma investigação roda várias consultas: o painel de fonte mostra
+        # todas, cada uma com a hipótese que testou. A planilha de download
+        # sairia de uma só delas, escolhida ao acaso — melhor não oferecer.
+        fonte["investigacao"] = raw["investigacao"]
+        fonte["excel"] = False
     if mostrar_custo:
         fonte["custo_usd"] = float(reply.cost_estimate or 0)
         fonte["tokens"] = (reply.tokens_input or 0) + (reply.tokens_output or 0)
@@ -143,6 +159,14 @@ def _message_json(message, mostrar_custo: bool = False):
             dados["anexo"]["miniatura"] = (
                 f"/api/conversations/{message.conversation_id}/messages/{message.pk}/miniatura/"
             )
+    if message.direction == message.Direction.INBOUND and message.status in (
+        message.Status.RECEIVED, message.Status.PROCESSING,
+    ):
+        # O que o Jarvis está fazendo agora ("Testando: a queda foi
+        # concentrada?"), para a tela não ficar em "Pensando…" por minutos.
+        andamento = progresso.ler(message.pk)
+        if andamento:
+            dados["progresso"] = andamento
     if message.direction == message.Direction.OUTBOUND:
         dados["in_reply_to"] = message.in_reply_to_id
         dados["fonte"] = _fonte(message, mostrar_custo)

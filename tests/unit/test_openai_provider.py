@@ -20,6 +20,7 @@ from ai_orchestrator.providers.openai_provider import (
     RespostaEstruturada,
     _custo,
 )
+from ai_orchestrator.prompts import PROMPT_VERSION
 from catalog.loader import load_catalog
 
 
@@ -119,7 +120,7 @@ def test_chave_de_cache_do_plano_nao_carrega_o_tema(catalogo):
     provider.plan(PlanRequest(question="Quantas prescrições tivemos em agosto?"))
 
     chaves = [c["prompt_cache_key"] for c in provider._client.chamadas]
-    assert chaves == ["plano:planner_v1", "plano:planner_v1"]
+    assert chaves == [f"plano:{PROMPT_VERSION}", f"plano:{PROMPT_VERSION}"]
 
 
 def test_data_de_hoje_vai_junto(catalogo):

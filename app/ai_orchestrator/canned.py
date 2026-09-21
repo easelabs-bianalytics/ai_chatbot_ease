@@ -115,3 +115,9 @@ BANCO_INDISPONIVEL = (
     "O banco de dados não respondeu agora. Não é problema na sua pergunta — "
     "tente de novo em alguns minutos. Se continuar, avise o time de BI."
 )
+
+INVESTIGACAO_SEM_DADO = (
+    "Tentei investigar, mas nenhuma das consultas trouxe dado para sustentar "
+    "uma explicação. Tente com o período e o recorte mais específicos — por "
+    "exemplo, o mês, o canal ou a regional."
+)

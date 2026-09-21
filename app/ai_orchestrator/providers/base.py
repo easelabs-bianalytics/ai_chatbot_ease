@@ -59,6 +59,12 @@ class PlanRequest:
     # Contexto recortado por tema é o normal (ADR-0015); esta bandeira pede
     # o documento inteiro, quando o recorte se mostrou insuficiente.
     full_context: bool = False
+    # Investigação (ADR-0025): o que as consultas das rodadas anteriores
+    # mostraram, em texto compacto, e em que rodada estamos. Com achados, o
+    # planejador decide se aprofunda (novas hipóteses) ou se já dá para
+    # concluir.
+    achados: str = ""
+    rodada: int = 1
 
 
 @dataclass(frozen=True)
@@ -71,6 +77,13 @@ class Plan:
         # Resposta direta, sem consultar o banco: cumprimento, "quem é você",
         # conceito do negócio ou interpretação do que já está na conversa.
         CONVERSATION = "conversation"
+        # Pergunta de porquê (ADR-0025): várias consultas, uma por hipótese,
+        # em rodadas — "a queda foi geral ou concentrada?", "algum
+        # concorrente ganhou share?". O planejador escreve as hipóteses.
+        INVESTIGATE = "investigate"
+        # Só depois de achados: o que foi consultado já explica, hora de
+        # escrever a análise.
+        CONCLUDE = "conclude"
 
     intent: str
     sql: str = ""
@@ -90,6 +103,9 @@ class Plan:
     # banco. Formato: {"coluna_chave", "chave_no_resultado",
     # "colunas": [{"coluna_destino", "valor_no_resultado"}, ...]}.
     preenchimento: dict = field(default_factory=dict)
+    # Em `investigate`: as hipóteses desta rodada, cada uma com a consulta
+    # que a testa — ({"hipotese", "sql", "reference_query_id"}, ...).
+    investigacao: tuple = ()
     usage: AIUsage = field(default_factory=AIUsage)
 
 
@@ -113,6 +129,11 @@ class AnswerRequest:
     # O resultado abaixo é de uma consulta de verificação (a da pergunta
     # voltou vazia): a resposta explica o que aconteceu, não o número.
     verification: bool = False
+    # Investigação (ADR-0025): o resultado de cada hipótese consultada, na
+    # ordem — ({"hipotese", "sql", "columns", "rows", "total_rows"}, ...).
+    # Com isto preenchido, `sql`, `columns` e `rows` ficam vazios e a
+    # redação escreve a análise que cruza as consultas.
+    consultas: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -126,6 +147,13 @@ class Answer:
     # Continuações prováveis da investigação, para a tela oferecer em um
     # clique. Texto de pergunta, não de resposta: não passa pela ancoragem.
     followups: tuple = ()
+    # Resposta em blocos, na ordem de leitura (ADR-0025): texto, tabela,
+    # texto, gráfico — quando isso lê melhor que texto + tabela. Tabela e
+    # gráfico apontam uma consulta pelo índice; quem desenha é a tela, com
+    # os números do banco. Vazio: vale `reply` com `chart`, como antes.
+    # ({"tipo": "texto", "texto"} | {"tipo": "tabela", "consulta", "colunas"}
+    #  | {"tipo": "grafico", "consulta", "grafico"}, ...)
+    blocos: tuple = ()
     usage: AIUsage = field(default_factory=AIUsage)
 
 

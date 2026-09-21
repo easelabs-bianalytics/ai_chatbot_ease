@@ -1003,14 +1003,15 @@
       <article class="cartao-ia ${tipo.classe}">
         <div class="cartao-ia-corpo">
           ${tipo.rotulo ? `<div class="cartao-ia-rotulo">${ICONES[tipo.icone] || ''}${esc(tipo.rotulo)}</div>` : ''}
-          ${semNarrativa ? '<div class="cartao-ia-rotulo" style="color:var(--gray-600)">' + ICONES.info + 'Resultado da consulta</div>' : ''}
-          <div class="md">${semNarrativa ? tabelaCrua(m.text) : markdown(m.text)}</div>
+          ${fonte.blocos?.length
+            ? corpoEmBlocos(fonte, m.id)
+            : `<div class="md">${semNarrativa ? tabelaCrua(m.text) : markdown(m.text)}</div>`}
           ${m.planilha_preenchida ? `
             <button class="planilha-preenchida" type="button" data-planilha="${m.planilha_preenchida.pergunta}">${ICONES.planilha}<span>Baixar planilha preenchida</span></button>` : ''}
         </div>
         ${fonte.decisao === 'failed' && !semCredito && m.in_reply_to ? `
           <div class="msg-erro-acao"><button class="btn btn-ghost" type="button" data-refazer="${m.in_reply_to}">Perguntar de novo</button></div>` : ''}
-        ${blocoGrafico(fonte, m.id)}
+        ${fonte.blocos?.length ? '' : blocoGrafico(fonte, m.id)}
         ${blocoFonte(fonte, m.id)}
       </article>
       ${blocoContinuacoes(fonte)}
@@ -1018,6 +1019,42 @@
     if (fonte.grafico && fonte.dados) GRAFICOS.set(String(m.id), { grafico: fonte.grafico, dados: fonte.dados });
     return el;
   };
+
+  // ---------------------------------------------------------- blocos
+  // Resposta em blocos (ADR-0025): texto, tabela, texto, gráfico, na ordem
+  // que a redação escolheu. Tabela e gráfico são desenhados aqui, com os
+  // números do banco — a redação só apontou a consulta e as colunas.
+  const rotuloColuna = (nome) => String(nome || '').replace(/_/g, ' ');
+
+  const fmtCelula = (v) => {
+    if (v === null || v === undefined) return '';
+    if (typeof v === 'number') {
+      return v.toLocaleString('pt-BR', { maximumFractionDigits: Number.isInteger(v) ? 0 : 2 });
+    }
+    return String(v);
+  };
+
+  const blocoTabela = (bloco, dados) => {
+    if (!dados) return '';
+    const indices = (bloco.colunas?.length ? bloco.colunas : dados.columns)
+      .map((c) => dados.columns.indexOf(c)).filter((i) => i >= 0);
+    const cabecalho = indices.map((i) => rotuloColuna(dados.columns[i]));
+    const linhas = dados.rows.map((linha) => indices.map((i) => fmtCelula(linha[i])));
+    const titulo = bloco.titulo ? `<div class="bloco-titulo">${esc(bloco.titulo)}</div>` : '';
+    return `<div class="md bloco bloco-tabela">${titulo}${tabelaHtml(cabecalho, linhas)}</div>`;
+  };
+
+  const corpoEmBlocos = (fonte, id) => fonte.blocos.map((bloco, k) => {
+    const dados = fonte.dados_blocos?.[String(bloco.consulta)];
+    if (bloco.tipo === 'texto') return `<div class="md bloco">${markdown(bloco.texto)}</div>`;
+    if (bloco.tipo === 'tabela') return blocoTabela(bloco, dados);
+    if (bloco.tipo === 'grafico' && dados) {
+      const chave = `${id}-b${k}`;
+      GRAFICOS.set(chave, { grafico: bloco.grafico, dados });
+      return `<div class="bloco">${blocoGrafico({ grafico: bloco.grafico, dados }, chave)}</div>`;
+    }
+    return '';
+  }).join('');
 
   // Continuações: a investigação raramente termina na primeira pergunta, e
   // digitar "e por rede?" de novo é atrito à toa.
@@ -1316,6 +1353,7 @@
   };
 
   const blocoFonte = (fonte, id) => {
+    if (fonte.investigacao?.length) return blocoFonteDaInvestigacao(fonte);
     const consulta = fonte.consulta;
     if (!consulta) return '';
     const equipe = state.usuario?.equipe;
@@ -1348,6 +1386,46 @@
               <button class="btn-copiar" type="button">${ICONES.copiar}Copiar</button>
               <pre><code>${realcarSql(consulta.sql)}</code></pre>
             </div>
+          </div>
+        </div>
+      </div>`;
+  };
+
+  // Investigação: uma consulta por hipótese, na ordem em que foram testadas.
+  // É o que permite ao time de BI conferir o raciocínio, não só o número.
+  const blocoFonteDaInvestigacao = (fonte) => {
+    const equipe = state.usuario?.equipe;
+    const passos = fonte.investigacao;
+    const meta = [
+      ['Consultas', fmtNum(passos.length)],
+      ['Rodadas', fmtNum(Math.max(...passos.map((p) => p.rodada || 1)))],
+      ['Respondida', new Date(fonte.respondida_em).toLocaleString('pt-BR')],
+    ];
+    if (equipe && fonte.custo_usd != null) {
+      meta.push(['Custo', `US$ ${fonte.custo_usd.toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`]);
+      meta.push(['Tempo total', fonte.tempo_ms ? `${(fonte.tempo_ms / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} s` : '—']);
+    }
+    const consultas = passos.map((p, i) => `
+      <div class="fonte-hipotese">
+        <div class="fonte-hipotese-titulo">${i + 1}. ${esc(p.hipotese || 'Consulta')}
+          <span class="fonte-hipotese-meta">${p.erro ? 'não rodou' : `${fmtNum(p.linhas ?? 0)} linhas`}</span></div>
+        ${p.erro ? `<div class="fonte-hipotese-erro">${esc(p.erro)}</div>` : ''}
+        <div class="codigo">
+          <button class="btn-copiar" type="button">${ICONES.copiar}Copiar</button>
+          <pre><code>${realcarSql(p.sql)}</code></pre>
+        </div>
+      </div>`).join('');
+    return `
+      <div class="fonte">
+        <div class="fonte-barra">
+          <button class="fonte-toggle" type="button" aria-expanded="false">${ICONES.banco}<span class="fonte-toggle-texto">Ver fonte e consulta</span><span class="chevron">${ICONES.chevron}</span></button>
+        </div>
+        <div class="fonte-detalhe">
+          <div class="fonte-detalhe-inner">
+            <div class="fonte-meta">${meta.map(([rotulo, valor]) => `
+              <div><div class="fonte-meta-label">${esc(rotulo)}</div><div class="fonte-meta-valor">${esc(valor)}</div></div>`).join('')}
+            </div>
+            ${consultas}
           </div>
         </div>
       </div>`;
@@ -1521,6 +1599,14 @@
       if (state.conversaId !== conversaId || state.aguardando !== aguardando) return;
       state.falhasSeguidas = 0;
       const pendente = messages.find((m) => m.id === aguardando.id);
+      // Investigação: o servidor diz em que hipótese está (ADR-0025).
+      if (pendente?.progresso && pendente.progresso !== aguardando.progresso) {
+        aguardando.progresso = pendente.progresso;
+        aguardando.consultando = true;
+        const texto = $('#pensandoTexto');
+        if (texto) texto.innerHTML = `<strong>Investigando</strong> — ${esc(pendente.progresso)}`;
+        $('#jarvisEspera .jarvis')?.classList.replace('jarvis--pensando', 'jarvis--consultando');
+      }
       if (pendente?.status === 'processing' && !aguardando.consultando) {
         aguardando.consultando = true;
         const texto = $('#pensandoTexto');

@@ -24,7 +24,10 @@ from pydantic import BaseModel, Field
 
 from ai_orchestrator.context import (
     MAX_COMPLETAS,
+    MAX_PASSOS_POR_RODADA,
+    MAX_RODADAS,
     MAX_SECOES,
+    e_pergunta_de_porque,
     montar_contexto_da_resposta,
     montar_contexto_do_plano,
 )
@@ -80,11 +83,20 @@ _INTENCOES = frozenset(
         Plan.Intent.UNKNOWN,
         Plan.Intent.OUT_OF_SCOPE,
         Plan.Intent.CONVERSATION,
+        Plan.Intent.INVESTIGATE,
+        Plan.Intent.CONCLUDE,
     }
 )
 
 MAX_TOKENS_PLANO = 8000
 MAX_TOKENS_RESPOSTA = 2000
+# A análise de uma investigação conta a cadeia de evidências em blocos; com
+# 2000 ela saía cortada no meio. Continua no modelo barato.
+MAX_TOKENS_ANALISE = 3500
+# Linhas de cada consulta que vão para a próxima rodada e para a redação.
+# As consultas da investigação são agregadas (o prompt pede ~30 linhas);
+# isto é o teto, para uma consulta mal escrita não virar volume de token.
+LINHAS_POR_ACHADO = 30
 # A leitura de imagem sai curta de propósito: é uma análise do que está no
 # print, não um relatório.
 MAX_TOKENS_IMAGEM = 1500
@@ -106,8 +118,17 @@ class PreenchimentoEstruturado(BaseModel):
     )
 
 
+class PassoEstruturado(BaseModel):
+    hipotese: str = Field(description="a hipótese que esta consulta testa, em uma frase")
+    sql: str = Field(description="a consulta que testa a hipótese")
+    reference_query_id: str = Field(default="", description="referência usada como base")
+
+
 class PlanoEstruturado(BaseModel):
-    intent: str = Field(description="answer_with_data, conversation, clarify, unknown ou out_of_scope")
+    intent: str = Field(
+        description="answer_with_data, investigate, conversation, clarify, unknown ou out_of_scope; "
+        "conclude só nas rodadas com achados"
+    )
     sql: str = Field(default="", description="a consulta, vazia quando não houver")
     reference_query_id: str = Field(default="", description="id da referência usada como base")
     clarification_question: str = Field(default="", description="pergunta ao usuário")
@@ -117,6 +138,9 @@ class PlanoEstruturado(BaseModel):
     preenchimento: PreenchimentoEstruturado = Field(
         default_factory=PreenchimentoEstruturado,
         description="preencher só quando houver planilha anexada para completar",
+    )
+    investigacao: list[PassoEstruturado] = Field(
+        default_factory=list, description="em investigate: as hipóteses desta rodada"
     )
 
 
@@ -151,12 +175,23 @@ class LeituraEstruturada(BaseModel):
     )
 
 
+class BlocoEstruturado(BaseModel):
+    tipo: str = Field(description="texto, tabela ou grafico")
+    texto: str = Field(default="", description="em texto: Markdown curto, sem tabela")
+    consulta: int = Field(default=0, description="em tabela e grafico: índice da consulta")
+    colunas: list[str] = Field(default_factory=list, description="em tabela: colunas, na ordem")
+    grafico: GraficoEstruturado = Field(default_factory=GraficoEstruturado)
+
+
 class RespostaEstruturada(BaseModel):
     reply: str = Field(description="a resposta ao usuário, em Markdown")
     resolution: str = Field(default="answered", description="answered ou partial")
     caveats: list[str] = Field(default_factory=list, description="ressalvas feitas no texto")
     grafico: GraficoEstruturado = Field(default_factory=GraficoEstruturado)
     sugestoes: list[str] = Field(default_factory=list, description="2 a 3 continuações curtas")
+    blocos: list[BlocoEstruturado] = Field(
+        default_factory=list, description="a resposta em blocos, na ordem de leitura; vazia sem blocos"
+    )
 
 
 def _historico(mensagens) -> str:
@@ -187,6 +222,12 @@ def _creditos_esgotados(exc) -> bool:
     return "exceeded your current quota" in str(exc)
 
 
+def _texto_dos_blocos(blocos) -> str:
+    """O texto da resposta em blocos: é o que a ancoragem confere, o que fica
+    gravado e o que um canal sem tela (e-mail, Teams) mostraria."""
+    return "\n\n".join(b["texto"] for b in blocos if b["tipo"] == "texto")
+
+
 def _entrada_com_cache(fixo: str, resto: str) -> list:
     """Uma mensagem, dois blocos de texto: o prefixo fixo, com o breakpoint do
     cache no fim, e o resto. Para o modelo é o mesmo texto de antes, emendado.
@@ -204,6 +245,49 @@ def _entrada_com_cache(fixo: str, resto: str) -> list:
         })
     blocos.append({"type": "input_text", "text": resto})
     return [{"role": "user", "content": blocos}]
+
+
+def _investigacao(conteudo) -> tuple:
+    """As hipóteses da rodada, só as que vieram com consulta. No máximo
+    MAX_PASSOS_POR_RODADA: o custo de uma rodada não depende do entusiasmo
+    do modelo."""
+    passos = []
+    for passo in getattr(conteudo, "investigacao", None) or []:
+        sql = (passo.sql or "").strip()
+        if sql:
+            passos.append({
+                "hipotese": (passo.hipotese or "").strip(),
+                "sql": sql,
+                "reference_query_id": (passo.reference_query_id or "").strip(),
+            })
+    return tuple(passos[:MAX_PASSOS_POR_RODADA])
+
+
+def _blocos(conteudo) -> tuple:
+    blocos = []
+    for bloco in getattr(conteudo, "blocos", None) or []:
+        tipo = (bloco.tipo or "").strip()
+        if tipo == "texto" and (bloco.texto or "").strip():
+            blocos.append({"tipo": "texto", "texto": bloco.texto.strip()})
+        elif tipo == "tabela":
+            blocos.append({"tipo": "tabela", "consulta": int(bloco.consulta or 0),
+                           "colunas": [c for c in (bloco.colunas or []) if c]})
+        elif tipo == "grafico" and bloco.grafico is not None:
+            blocos.append({"tipo": "grafico", "consulta": int(bloco.consulta or 0),
+                           "grafico": bloco.grafico.model_dump()})
+    return tuple(blocos)
+
+
+def _achado_em_texto(indice: int, consulta: dict) -> str:
+    """Uma consulta da investigação, compacta: hipótese, colunas e linhas."""
+    linhas = [dict(zip(consulta["columns"], linha)) for linha in consulta["rows"][:LINHAS_POR_ACHADO]]
+    total = consulta.get("total_rows", len(consulta["rows"]))
+    partes = [
+        f"## Consulta {indice}: {consulta.get('hipotese') or 'sem hipótese declarada'}",
+        f"Colunas: {', '.join(consulta['columns'])}",
+        f"Linhas ({len(linhas)} de {total}): {json.dumps(linhas, ensure_ascii=False, default=str)}",
+    ]
+    return "\n".join(partes)
 
 
 def _preenchimento(conteudo, *, pedido: bool) -> dict:
@@ -351,6 +435,10 @@ class OpenAIProvider(AIProvider):
             request.history,
             completo=request.full_context,
             temas_completos=MAX_SECOES if request.planilha else MAX_COMPLETAS,
+            # Pergunta de porquê atravessa sell-out, força de vendas e
+            # prescrição (ADR-0025): os três vão completos desde a primeira
+            # rodada, e continuam iguais nas seguintes — o cache agradece.
+            investigacao=e_pergunta_de_porque(request.question),
         )
 
         entrada = contexto.texto[len(contexto.fixo):] + _historico(request.history)
@@ -365,6 +453,14 @@ class OpenAIProvider(AIProvider):
             entrada += (
                 "\n\n# Correção\n\nA consulta anterior não pôde ser usada: "
                 f"{request.error_note}\n\nCorrija exatamente esse ponto."
+            )
+        if request.achados:
+            entrada += (
+                f"\n\n# Investigação até aqui — rodada {request.rodada} de {MAX_RODADAS}\n\n"
+                + request.achados
+                + "\n\nLeia os achados e decida (seção 13): aprofunde o ramo que eles "
+                "apontaram com 1 a 3 consultas novas (`investigate`), sem repetir o que já foi "
+                "consultado, ou responda `conclude` se já dá para explicar."
             )
         if request.planilha:
             # Sobe a FORMA da planilha, nunca o conteúdo (ADR-0024). O
@@ -427,10 +523,13 @@ class OpenAIProvider(AIProvider):
             reason=(conteudo.reason or "").strip(),
             excel=bool(getattr(conteudo, "excel", False)),
             preenchimento=_preenchimento(conteudo, pedido=bool(request.planilha)),
+            investigacao=_investigacao(conteudo) if intent == Plan.Intent.INVESTIGATE else (),
             usage=usage,
         )
 
     def answer(self, request: AnswerRequest) -> Answer:
+        if request.consultas:
+            return self._analise(request)
         contexto = montar_contexto_da_resposta(self._catalog)
         linhas = [dict(zip(request.columns, linha)) for linha in request.rows]
 
@@ -494,7 +593,9 @@ class OpenAIProvider(AIProvider):
             cache_key=f"resposta:{ANSWER_PROMPT_VERSION}",
         )
 
-        texto = (conteudo.reply or "").strip()
+        blocos = _blocos(conteudo)
+        # Com blocos o `reply` pode vir vazio: o texto é o dos blocos.
+        texto = (conteudo.reply or "").strip() or _texto_dos_blocos(blocos)
         if not texto:
             raise AIProviderError("o modelo devolveu uma resposta vazia")
 
@@ -505,6 +606,51 @@ class OpenAIProvider(AIProvider):
             caveats=tuple(conteudo.caveats or ()),
             chart=grafico.model_dump() if grafico is not None else {},
             followups=tuple(getattr(conteudo, "sugestoes", ()) or ()),
+            blocos=blocos,
+            usage=usage,
+        )
+
+    def _analise(self, request: AnswerRequest) -> Answer:
+        """Redação da investigação (ADR-0025): várias consultas, uma análise.
+
+        Mesmo modelo barato da redação comum. As consultas vão compactas
+        (até LINHAS_POR_ACHADO linhas cada); tabela e gráfico da resposta são
+        desenhados pela tela com os dados completos."""
+        contexto = montar_contexto_da_resposta(self._catalog)
+        entrada = contexto.texto + _historico(request.history)
+        entrada += f"\n\n# Hoje\n\n{date.today():%d/%m/%Y}"
+        entrada += f"\n\n# Pergunta do usuário\n\n{request.question}"
+        entrada += (
+            "\n\n# Investigação\n\nA pergunta pede uma causa. O sistema testou as hipóteses "
+            "abaixo, cada uma com uma consulta. Escreva a análise (seção 8), em blocos (seção 7); "
+            "os índices das consultas são os números abaixo.\n\n"
+        )
+        entrada += "\n\n".join(_achado_em_texto(i, c) for i, c in enumerate(request.consultas))
+        if request.revision_note:
+            entrada += (
+                "\n\n# Revisão\n\nA sua resposta anterior citou número sem suporte nas "
+                f"consultas: {request.revision_note}\n\nReescreva sem esse número."
+            )
+
+        conteudo, usage = self._chamar(
+            modelo=self.answer_model,
+            instrucoes=load_prompt(ANSWER_PROMPT_VERSION),
+            entrada=entrada,
+            formato=RespostaEstruturada,
+            esforco=self.answer_effort,
+            max_tokens=MAX_TOKENS_ANALISE,
+            cache_key=f"resposta:{ANSWER_PROMPT_VERSION}",
+        )
+        blocos = _blocos(conteudo)
+        texto = (conteudo.reply or "").strip() or _texto_dos_blocos(blocos)
+        if not texto:
+            raise AIProviderError("o modelo devolveu uma análise vazia")
+        return Answer(
+            reply=texto,
+            resolution=(conteudo.resolution or "answered").strip(),
+            caveats=tuple(conteudo.caveats or ()),
+            followups=tuple(getattr(conteudo, "sugestoes", ()) or ()),
+            blocos=blocos,
             usage=usage,
         )
 
