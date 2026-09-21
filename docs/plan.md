@@ -921,7 +921,7 @@ alguns minutos depois da nova já estar respondendo.
 Dois tropeços de máquina:
 - o `terraform` do winget não está no `PATH` do PowerShell que o Claude
   usa: chamar por
-  `$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Hashicorp.Terraform_Microsoft.Winget.Source_8wekyb3d8bbwe	erraform.exe`
+  `$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Hashicorp.Terraform_Microsoft.Winget.Source_8wekyb3d8bbwe\terraform.exe`
 - no Git Bash, `aws logs ... --log-group-name /aws/ecs/cockpit-prod` vira
   caminho do Windows; usar `MSYS_NO_PATHCONV=1`. Os logs do Jarvis ficam no
   grupo **`/aws/ecs/cockpit-prod`**, streams `jarvis-web/…`,
