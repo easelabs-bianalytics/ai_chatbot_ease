@@ -43,18 +43,24 @@ logger = logging.getLogger(__name__)
 MODELO_PLANO = "gpt-5.6-terra"
 MODELO_RESPOSTA = "gpt-5.6-luna"
 
-# US$ por milhão de tokens: entrada, entrada em cache, saída.
+# US$ por milhão de tokens: entrada, leitura do cache, gravação no cache, saída.
+# Tabela oficial da OpenAI, conferida em 2026-09-21.
 #
-# Calibrado contra a fatura, não contra a tabela publicada: em 2026-09-17 a
-# página de preços dava US$ 2,00 de entrada para o Terra, e com esse valor o
-# total calculado deu US$ 0,955 enquanto o painel da OpenAI marcava US$ 1,16.
-# Com US$ 2,50 de entrada a conta fecha em US$ 1,159. Preço subestimado é
-# pior que preço ausente: ele vira teto de gasto que não segura nada.
-# Reconferir sempre que a fatura divergir do relatório.
+# Na família GPT-5.6 gravar no cache custa MAIS que a entrada comum (1,25×) e
+# ler custa um décimo. Em 2026-09-17 a conta daqui não fechava com a fatura
+# (US$ 0,955 contra US$ 1,16) e a entrada do Terra foi "calibrada" para
+# US$ 2,50 — que é exatamente o preço de gravação, não o de entrada. A conta
+# fechava por acaso, porque no modo implícito quase toda entrada é gravada.
+# Com o cache explícito isso deixou de ser verdade, e o preço de gravação
+# precisa ser contado à parte.
+#
+# São preços de contexto curto. A página não publica onde começa o longo (o
+# dobro, mais ou menos); as chamadas daqui vão até ~47 mil tokens. Se a fatura
+# divergir do relatório de novo, é o primeiro lugar a olhar.
 PRECOS = {
-    "gpt-5.6-sol": (4.00, 0.40, 20.00),
-    "gpt-5.6-terra": (2.50, 0.25, 12.00),
-    "gpt-5.6-luna": (0.20, 0.02, 1.20),
+    "gpt-5.6-sol": (4.00, 0.40, 5.00, 20.00),
+    "gpt-5.6-terra": (2.00, 0.20, 2.50, 12.00),
+    "gpt-5.6-luna": (0.20, 0.02, 0.25, 1.20),
 }
 
 _INTENCOES = frozenset(
@@ -124,14 +130,37 @@ def _creditos_esgotados(exc) -> bool:
     return "exceeded your current quota" in str(exc)
 
 
-def _custo(modelo: str, entrada: int, cache: int, saida: int) -> float:
+def _entrada_com_cache(fixo: str, resto: str) -> list:
+    """Uma mensagem, dois blocos de texto: o prefixo fixo, com o breakpoint do
+    cache no fim, e o resto. Para o modelo é o mesmo texto de antes, emendado.
+
+    Sem prefixo fixo (contexto completo, na segunda tentativa) vai um bloco só
+    e sem breakpoint: nada é gravado, e aquele documento de ~45 mil tokens
+    deixa de pagar o ágio de gravação — ele nunca era reaproveitado mesmo.
+    """
+    blocos = []
+    if fixo:
+        blocos.append({
+            "type": "input_text",
+            "text": fixo,
+            "prompt_cache_breakpoint": {"mode": "explicit"},
+        })
+    blocos.append({"type": "input_text", "text": resto})
+    return [{"role": "user", "content": blocos}]
+
+
+def _custo(modelo: str, entrada: int, cache: int, saida: int, gravado: int = 0) -> float:
+    """`entrada` é o total; `cache` (lido) e `gravado` são partes dele, e o
+    resto paga o preço comum."""
     preco = PRECOS.get(modelo)
     if preco is None:
         return 0.0
-    por_entrada, por_cache, por_saida = preco
-    nao_cacheada = max(entrada - cache, 0)
+    por_entrada, por_leitura, por_gravacao, por_saida = preco
+    comum = max(entrada - cache - gravado, 0)
     return round(
-        (nao_cacheada * por_entrada + cache * por_cache + saida * por_saida) / 1_000_000, 6
+        (comum * por_entrada + cache * por_leitura + gravado * por_gravacao + saida * por_saida)
+        / 1_000_000,
+        6,
     )
 
 
@@ -169,8 +198,14 @@ class OpenAIProvider(AIProvider):
             self._client = OpenAI(api_key=chave, timeout=120.0, max_retries=0)
         return self._client
 
-    def _chamar(self, *, modelo, instrucoes, entrada, formato, esforco, max_tokens, cache_key):
+    def _chamar(self, *, modelo, instrucoes, entrada, formato, esforco, max_tokens, cache_key,
+                cache_explicito=False):
         inicio = time.monotonic()
+        extras = {}
+        if cache_explicito:
+            # Só grava no cache o que tiver breakpoint marcado na entrada.
+            # Ver o comentário em `plan`.
+            extras["prompt_cache_options"] = {"mode": "explicit"}
         try:
             resposta = self.cliente.responses.parse(
                 model=modelo,
@@ -180,6 +215,7 @@ class OpenAIProvider(AIProvider):
                 reasoning={"effort": esforco},
                 max_output_tokens=max_tokens,
                 prompt_cache_key=cache_key,
+                **extras,
             )
         except Exception as exc:  # o SDK tem uma árvore própria de erros
             if _creditos_esgotados(exc):
@@ -194,18 +230,26 @@ class OpenAIProvider(AIProvider):
         uso = getattr(resposta, "usage", None)
         entrada_tokens = getattr(uso, "input_tokens", 0) or 0
         saida_tokens = getattr(uso, "output_tokens", 0) or 0
-        cache_tokens = getattr(getattr(uso, "input_tokens_details", None), "cached_tokens", 0) or 0
+        detalhes_entrada = getattr(uso, "input_tokens_details", None)
+        cache_tokens = getattr(detalhes_entrada, "cached_tokens", 0) or 0
+        gravados = getattr(detalhes_entrada, "cache_write_tokens", 0) or 0
         raciocinio = getattr(getattr(uso, "output_tokens_details", None), "reasoning_tokens", 0) or 0
 
         usage = AIUsage(
             model=modelo,
             tokens_input=entrada_tokens,
             tokens_output=saida_tokens,
-            cost_estimate=_custo(modelo, entrada_tokens, cache_tokens, saida_tokens),
+            cost_estimate=_custo(modelo, entrada_tokens, cache_tokens, saida_tokens, gravados),
             latency_ms=latencia,
-            request={"cache_key": cache_key, "effort": esforco, "tokens_enviados": entrada_tokens},
+            request={
+                "cache_key": cache_key,
+                "effort": esforco,
+                "tokens_enviados": entrada_tokens,
+                "cache_explicito": cache_explicito,
+            },
             response={
                 "tokens_em_cache": cache_tokens,
+                "tokens_gravados_no_cache": gravados,
                 "tokens_de_raciocinio": raciocinio,
                 "conteudo": json.loads(conteudo.model_dump_json()),
             },
@@ -220,7 +264,7 @@ class OpenAIProvider(AIProvider):
             completo=request.full_context,
         )
 
-        entrada = contexto.texto + _historico(request.history)
+        entrada = contexto.texto[len(contexto.fixo):] + _historico(request.history)
         entrada += f"\n\n# Hoje\n\n{date.today():%d/%m/%Y}"
         if request.empty_note:
             entrada += (
@@ -238,17 +282,24 @@ class OpenAIProvider(AIProvider):
         conteudo, usage = self._chamar(
             modelo=self.model,
             instrucoes=load_prompt(PROMPT_VERSION),
-            entrada=entrada,
+            entrada=_entrada_com_cache(contexto.fixo, entrada),
             formato=PlanoEstruturado,
             esforco=self.effort,
             max_tokens=MAX_TOKENS_PLANO,
-            # Chave única, sem o tema: ela roteia a requisição, e uma chave
-            # por tema fragmentava o roteamento — a pergunta de estoque nunca
-            # reaproveitava o prefixo comum (prompt + núcleo, ~5,8 mil tokens
-            # iguais em toda pergunta) que a de sell-out tinha acabado de
-            # aquecer. Medido em 2026-09-18: plano com chave por tema cacheava
-            # 20% da entrada; a redação, com chave fixa, cacheava 42%.
+            # No GPT-5.6 o roteamento do cache é automático e a chave não
+            # muda mais nada nele (documentação da OpenAI, 2026-09-21). Fica
+            # porque separa a contabilidade de cache do plano e da redação.
             cache_key=f"plano:{PROMPT_VERSION}",
+            # Cache explícito. No modo implícito a OpenAI grava o prompt
+            # INTEIRO a cada chamada, e no GPT-5.6 gravar custa 1,25× a
+            # entrada. Só as instruções e o prefixo fixo (~5,6 mil tokens) se
+            # repetem entre perguntas; o tema, o schema e o histórico (~10 mil)
+            # quase nunca voltam e pagavam o ágio à toa. Medido em
+            # 2026-09-21: 57% das chamadas chegavam com cache zerado.
+            #
+            # O modelo lê exatamente o mesmo texto, na mesma ordem — só muda o
+            # que a OpenAI guarda. Nenhum efeito na resposta.
+            cache_explicito=True,
         )
 
         usage.request["secoes"] = list(contexto.secoes)

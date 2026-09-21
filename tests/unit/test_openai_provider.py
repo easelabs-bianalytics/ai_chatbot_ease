@@ -30,11 +30,24 @@ class _Detalhes:
 
 
 class _Uso:
-    def __init__(self, entrada, saida, cache=0, raciocinio=0):
+    def __init__(self, entrada, saida, cache=0, raciocinio=0, gravado=0):
         self.input_tokens = entrada
         self.output_tokens = saida
-        self.input_tokens_details = _Detalhes(cached_tokens=cache)
+        self.input_tokens_details = _Detalhes(cached_tokens=cache, cache_write_tokens=gravado)
         self.output_tokens_details = _Detalhes(reasoning_tokens=raciocinio)
+
+
+def _texto(chamada):
+    """O que o modelo lê, em texto corrido. O planejamento manda a entrada em
+    blocos (por causa do breakpoint do cache); a redação, como string."""
+    entrada = chamada["input"]
+    if isinstance(entrada, str):
+        return entrada
+    return "".join(bloco["text"] for msg in entrada for bloco in msg["content"])
+
+
+def _blocos(chamada):
+    return [bloco for msg in chamada["input"] for bloco in msg["content"]]
 
 
 class _Resposta:
@@ -87,9 +100,9 @@ def test_planejamento_manda_prompt_contexto_recortado_e_pergunta(catalogo):
     enviado = provider._client.chamadas[0]
     assert enviado["model"] == "gpt-5.6-terra"
     assert "Jarvis, copiloto de dados da Ease Labs" in enviado["instructions"]
-    assert "Quais CDs estão em ruptura de Extrato?" in enviado["input"]
-    assert "vw_forecast_projecao_cd" in enviado["input"]
-    assert "fato_pbm_adesoes" not in enviado["input"]
+    assert "Quais CDs estão em ruptura de Extrato?" in _texto(enviado)
+    assert "vw_forecast_projecao_cd" in _texto(enviado)
+    assert "fato_pbm_adesoes" not in _texto(enviado)
     assert plano.intent == Plan.Intent.ANSWER_WITH_DATA
     assert plano.reference_query_id == "B13"
 
@@ -117,7 +130,7 @@ def test_data_de_hoje_vai_junto(catalogo):
 
     provider.plan(PlanRequest(question="Quantas prescrições tivemos no último trimestre?"))
 
-    assert f"{date.today():%d/%m/%Y}" in provider._client.chamadas[0]["input"]
+    assert f"{date.today():%d/%m/%Y}" in _texto(provider._client.chamadas[0])
 
 
 def test_correcao_leva_o_erro_anterior(catalogo):
@@ -127,7 +140,7 @@ def test_correcao_leva_o_erro_anterior(catalogo):
         PlanRequest(question="quantas unidades?", error_note="a coluna 'und2' não existe")
     )
 
-    assert "a coluna 'und2' não existe" in provider._client.chamadas[0]["input"]
+    assert "a coluna 'und2' não existe" in _texto(provider._client.chamadas[0])
 
 
 def test_historico_entra_no_contexto(catalogo):
@@ -140,7 +153,7 @@ def test_historico_entra_no_contexto(catalogo):
         )
     )
 
-    assert "Quanto o Hermes vendeu em julho?" in provider._client.chamadas[0]["input"]
+    assert "Quanto o Hermes vendeu em julho?" in _texto(provider._client.chamadas[0])
 
 
 def test_custo_usa_o_preco_de_cache_para_o_que_veio_do_cache(catalogo):
@@ -148,8 +161,8 @@ def test_custo_usa_o_preco_de_cache_para_o_que_veio_do_cache(catalogo):
 
     plano = provider.plan(PlanRequest(question="Quais CDs estão em ruptura de Extrato?"))
 
-    # 6k a US$2,50, 14k a US$0,25 e 900 a US$12, por milhão.
-    assert plano.usage.cost_estimate == pytest.approx(0.0293, abs=1e-6)
+    # 6k a US$2,00, 14k a US$0,20 e 900 a US$12, por milhão.
+    assert plano.usage.cost_estimate == pytest.approx(0.0256, abs=1e-6)
     assert plano.usage.tokens_input == 20000
     assert plano.usage.response["tokens_em_cache"] == 14000
     assert plano.usage.response["tokens_de_raciocinio"] == 600
@@ -159,12 +172,92 @@ def test_conta_de_custo_sem_cache():
     assert _custo("gpt-5.6-luna", 3000, 0, 500) == pytest.approx(0.0012, abs=1e-6)
 
 
-def test_preco_do_planejador_e_o_da_fatura():
-    """A tabela publicada dava US$ 2,00 de entrada para o Terra e a fatura
-    cobrou como US$ 2,50 (conferido em 2026-09-17, US$ 1,16 no painel contra
-    US$ 0,955 calculados). Preço subestimado vira teto de gasto que não
-    segura nada."""
-    assert _custo("gpt-5.6-terra", 1_000_000, 0, 0) == 2.50
+def test_gravar_no_cache_custa_mais_que_a_entrada_comum():
+    """No GPT-5.6 a gravação custa 1,25× a entrada.
+
+    Em 2026-09-17 a conta daqui não fechava com a fatura e a entrada do Terra
+    foi "calibrada" para US$ 2,50 — que era o preço de gravação. A conta
+    fechava por acaso, porque no modo implícito quase toda entrada é gravada.
+    Com o cache explícito só o prefixo fixo é gravado, e as duas coisas
+    precisam ser contadas separadas para o relatório bater com a fatura."""
+    assert _custo("gpt-5.6-terra", 1_000_000, 0, 0) == 2.00
+    assert _custo("gpt-5.6-terra", 1_000_000, 0, 0, gravado=1_000_000) == 2.50
+    # 10k comuns, 5k lidos do cache, 5k gravados e 500 de saída:
+    # 10k×2,00 + 5k×0,20 + 5k×2,50 + 500×12 = 20000+1000+12500+6000
+    assert _custo("gpt-5.6-terra", 20_000, 5_000, 500, gravado=5_000) == pytest.approx(0.0395, abs=1e-6)
+
+
+def test_custo_registra_o_que_foi_gravado_no_cache(catalogo):
+    provider = _provider(catalogo, [
+        _Resposta(PlanoEstruturado(intent="answer_with_data", sql="SELECT 1 FROM cddd.pdvs",
+                                   reference_query_id="B13", reason="x"),
+                  _Uso(20000, 500, cache=0, gravado=5000)),
+    ])
+
+    plano = provider.plan(PlanRequest(question="Quais CDs estão em ruptura de Extrato?"))
+
+    # 15k×2,00 + 5k×2,50 + 500×12
+    assert plano.usage.cost_estimate == pytest.approx(0.0485, abs=1e-6)
+    assert plano.usage.response["tokens_gravados_no_cache"] == 5000
+
+
+def test_planejamento_grava_no_cache_so_o_prefixo_fixo(catalogo):
+    """No modo implícito a OpenAI gravava o prompt inteiro a cada chamada, a
+    1,25× o preço da entrada, e só as instruções e o prefixo fixo se repetem
+    entre perguntas. Medido em 2026-09-21: 57% das chamadas chegavam com o
+    cache zerado, pagando o ágio de gravação em ~10 mil tokens de tema e
+    schema que nunca voltavam."""
+    provider = _provider(catalogo, [_plano()])
+
+    provider.plan(PlanRequest(question="Quais CDs estão em ruptura de Extrato?"))
+
+    enviado = provider._client.chamadas[0]
+    assert enviado["prompt_cache_options"] == {"mode": "explicit"}
+    blocos = _blocos(enviado)
+    marcados = [b for b in blocos if "prompt_cache_breakpoint" in b]
+    assert len(marcados) == 1
+    assert blocos[0] is marcados[0], "o breakpoint fecha o primeiro bloco, o fixo"
+    assert "Temas do documento" in blocos[0]["text"]
+    assert "Quais CDs estão em ruptura de Extrato?" not in blocos[0]["text"]
+    assert "Tema da pergunta" not in blocos[0]["text"]
+
+
+def test_prefixo_gravado_e_o_mesmo_para_perguntas_diferentes(catalogo):
+    """É o que faz valer a pena: a pergunta de estoque reaproveita o que a de
+    prescrição acabou de gravar."""
+    provider = _provider(catalogo, [_plano(), _plano()])
+
+    provider.plan(PlanRequest(question="Quais CDs estão em ruptura de Extrato?"))
+    provider.plan(PlanRequest(question="Quantas prescrições tivemos em agosto?"))
+
+    primeiro, segundo = (_blocos(c)[0]["text"] for c in provider._client.chamadas)
+    assert primeiro == segundo
+
+
+def test_dividir_em_blocos_nao_muda_o_que_o_modelo_le(catalogo):
+    """O cache explícito só muda o que a OpenAI guarda. Se o texto emendado
+    dos blocos diferisse do contexto de antes, a resposta poderia mudar."""
+    from ai_orchestrator.context import montar_contexto_do_plano
+
+    provider = _provider(catalogo, [_plano()])
+    pergunta = "Quais CDs estão em ruptura de Extrato?"
+
+    provider.plan(PlanRequest(question=pergunta))
+
+    contexto = montar_contexto_do_plano(catalogo, pergunta)
+    assert _texto(provider._client.chamadas[0]).startswith(contexto.texto)
+
+
+def test_contexto_completo_nao_grava_nada_no_cache(catalogo):
+    """Os ~45 mil tokens do documento inteiro nunca foram reaproveitados (0% de
+    cache nas três vezes medidas). Gravar só pagaria o ágio."""
+    provider = _provider(catalogo, [_plano()])
+
+    provider.plan(PlanRequest(question="Quais CDs estão em ruptura de Extrato?", full_context=True))
+
+    blocos = _blocos(provider._client.chamadas[0])
+    assert len(blocos) == 1
+    assert "prompt_cache_breakpoint" not in blocos[0]
 
 
 def test_modelo_desconhecido_nao_inventa_custo():
@@ -369,7 +462,7 @@ def test_consulta_vazia_pede_a_verificacao_no_plano(catalogo):
     provider.plan(PlanRequest(question="sell out do Ricardo em ago/26",
                               empty_note="A consulta rodou sem erro e não retornou nenhuma linha."))
 
-    entrada = provider._client.chamadas[0]["input"]
+    entrada = _texto(provider._client.chamadas[0])
     assert "não retornou nenhuma linha" in entrada
     assert "verificação" in entrada
 

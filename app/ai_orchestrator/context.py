@@ -129,6 +129,10 @@ class Contexto:
     secoes: tuple = ()
     completo: bool = False
     detalhes: dict = field(default_factory=dict)
+    # Começo de `texto` que é igual em toda pergunta (`texto` sempre começa
+    # com ele). Vazio no contexto completo: ali o documento vai inteiro, em
+    # outra ordem, e não há o que reaproveitar entre perguntas.
+    fixo: str = ""
 
     @property
     def tokens_estimados(self) -> int:
@@ -141,9 +145,23 @@ def _bloco(titulo: str, corpo: str) -> str:
     return f"\n\n# {titulo}\n\n{corpo.strip()}" if corpo.strip() else ""
 
 
+def _prefixo_fixo(documento) -> str:
+    """O trecho igual em toda pergunta: regras gerais, índice e núcleo.
+
+    É onde a chamada ao modelo marca o fim do cache (ver
+    `OpenAIProvider.plan`). Tudo que vem depois — tema, schema, histórico,
+    pergunta — muda de uma pergunta para outra e quase nunca é reaproveitado.
+    """
+    return (
+        _bloco("Regras gerais do documento de referência", documento.preambulo)
+        + _bloco("Temas do documento", documento.indice + "\n\n" + load_prompt(NUCLEO))
+    )
+
+
 def montar_contexto_do_plano(catalog, pergunta: str, historico=(), completo: bool = False) -> Contexto:
     """Contexto da chamada que escreve o SQL."""
     documento = get_document(catalog)
+    fixo = _prefixo_fixo(documento)
     escolhidas = () if completo else escolher_secoes(pergunta, historico)
 
     if completo:
@@ -159,11 +177,7 @@ def montar_contexto_do_plano(catalog, pergunta: str, historico=(), completo: boo
         # "obrigado"). Mandar o documento inteiro custava ~34 mil tokens por
         # um cumprimento. Vai o mínimo; se a pergunta precisar de dado, a IA
         # pede a seção (PRECISO DA SEÇÃO) e o sistema reenvia completo.
-        texto = (
-            _bloco("Regras gerais do documento de referência", documento.preambulo)
-            + _bloco("Temas do documento", documento.indice + "\n\n" + load_prompt(NUCLEO))
-        )
-        return Contexto(texto=texto.strip(), secoes=(), completo=False,
+        return Contexto(texto=fixo.strip(), secoes=(), completo=False, fixo=fixo.strip(),
                         detalhes={"motivo": "tema não identificado"})
 
     secoes = [documento.por_chave(c) for c in escolhidas]
@@ -172,8 +186,7 @@ def montar_contexto_do_plano(catalog, pergunta: str, historico=(), completo: boo
         tabelas |= secao.tabelas
 
     partes = [
-        _bloco("Regras gerais do documento de referência", documento.preambulo),
-        _bloco("Temas do documento", documento.indice + "\n\n" + load_prompt(NUCLEO)),
+        fixo,
         _bloco(f"Tema da pergunta: {secoes[0].titulo}", secoes[0].texto),
     ]
     # Dois temas vão inteiros porque pergunta que cruza áreas é frequente e
@@ -191,6 +204,7 @@ def montar_contexto_do_plano(catalog, pergunta: str, historico=(), completo: boo
         texto="".join(partes).strip(),
         secoes=escolhidas,
         completo=False,
+        fixo=fixo.strip(),
         detalhes={"tabelas": len(tabelas), "notas": pontuar(pergunta)},
     )
 
