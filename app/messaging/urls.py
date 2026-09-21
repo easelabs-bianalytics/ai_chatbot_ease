@@ -3,6 +3,7 @@ from django.urls import path
 from messaging.views import (
     ConversationDetailView,
     ConversationListCreateView,
+    ConversationOrderView,
     MessageExcelView,
     MessageListCreateView,
     ProjectDetailView,
@@ -11,6 +12,8 @@ from messaging.views import (
 
 urlpatterns = [
     path("conversations/", ConversationListCreateView.as_view(), name="conversations"),
+    # Antes da rota com <int:...> por clareza; "ordem" nunca casaria com ela.
+    path("conversations/ordem/", ConversationOrderView.as_view(), name="conversation-order"),
     path(
         "conversations/<int:conversation_id>/",
         ConversationDetailView.as_view(),

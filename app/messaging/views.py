@@ -30,6 +30,7 @@ def _conversation_json(conversation):
         "title": conversation.title,
         "status": conversation.status,
         "project": conversation.project_id,
+        "position": conversation.position,
         "created_at": conversation.created_at.isoformat(),
         "updated_at": conversation.updated_at.isoformat(),
     }
@@ -76,8 +77,13 @@ def _fonte(resposta, mostrar_custo: bool):
             "cortada": executada.truncated,
             "duracao_ms": executada.duration_ms,
         }
-        fonte["excel"] = True
-        fonte["excel_pedido"] = bool((reply.raw_response or {}).get("excel"))
+        pedido = bool((reply.raw_response or {}).get("excel"))
+        # Uma linha só é um número, e ele já está no texto da resposta: um
+        # botão de planilha ali só promete algo que não acrescenta nada.
+        # Com duas ou mais, a planilha é o jeito de levar o resultado inteiro,
+        # mesmo quando a resposta é só texto. Pedido explícito sempre vence.
+        fonte["excel"] = pedido or (executada.row_count or 0) > 1
+        fonte["excel_pedido"] = pedido
         grafico = (reply.raw_response or {}).get("grafico")
         amostra = executada.result_sample or {}
         if grafico and amostra.get("rows"):
@@ -146,6 +152,41 @@ class ConversationListCreateView(APIView):
         title = str(request.data.get("title") or "").strip()[:200]
         conversation = Conversation.objects.create(user=request.user, title=title)
         return Response(_conversation_json(conversation), status=status.HTTP_201_CREATED)
+
+
+class ConversationOrderView(APIView):
+    """Grava a ordem que o usuário montou arrastando a lista.
+
+    Recebe os ids na ordem em que ficaram na tela e escreve 1, 2, 3… em
+    `position`. Ids de outra pessoa são ignorados em silêncio — o filtro por
+    usuário resolve isso antes de escrever qualquer coisa, e responder
+    "não existe" confirmaria que existe.
+    """
+
+    def patch(self, request):
+        ids = request.data.get("ids")
+        if not isinstance(ids, list):
+            return Response(
+                {"error": "envie a lista de ids em `ids`"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        posicao = {}
+        for i, bruto in enumerate(ids[:500], start=1):
+            try:
+                posicao[int(bruto)] = i
+            except (TypeError, ValueError):
+                return Response({"error": "id inválido"}, status=status.HTTP_400_BAD_REQUEST)
+
+        conversas = list(
+            Conversation.objects.visiveis().filter(user=request.user, pk__in=posicao)
+        )
+        for conversa in conversas:
+            conversa.position = posicao[conversa.pk]
+        # Só `position`: arrastar é organizar, não conversar. Se `updated_at`
+        # fosse junto, reordenar a lista faria toda conversa mexida parecer
+        # de agora e embaralharia o próprio critério de "recentes".
+        Conversation.objects.bulk_update(conversas, ["position"])
+        return Response({"ordenadas": len(conversas)})
 
 
 class ConversationDetailView(APIView):

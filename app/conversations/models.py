@@ -58,6 +58,11 @@ class Conversation(models.Model):
         on_delete=models.SET_NULL,
         related_name="conversations",
     )
+    # Ordem escolhida à mão, arrastando na lista. Zero é "nunca foi
+    # posicionada": a conversa nova nasce assim e aparece no topo, acima do
+    # que já foi arrumado, sem que ninguém precise reordenar de novo a cada
+    # pergunta. Quem arrasta recebe 1, 2, 3… na ordem em que ficou na tela.
+    position = models.IntegerField(default=0)
     # Exclusão lógica (ADR-0018): some da tela do usuário, mas a pergunta, a
     # consulta executada e o custo continuam na auditoria (FR-15). Apagar de
     # verdade é decisão da política de retenção (O-08), não de um clique.
@@ -68,7 +73,10 @@ class Conversation(models.Model):
     objects = ConversationQuerySet.as_manager()
 
     class Meta:
-        ordering = ["-updated_at"]
+        # A ordem da mão vem primeiro; o resto continua pela última atividade.
+        # Com todas em `position = 0` — o estado até alguém arrastar — isto é
+        # exatamente o comportamento antigo.
+        ordering = ["position", "-updated_at"]
         verbose_name = "conversa"
         verbose_name_plural = "conversas"
 

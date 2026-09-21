@@ -160,12 +160,36 @@ def _mensagens(cliente, mensagem):
 
 
 def test_resposta_com_dado_oferece_a_planilha(cliente, resposta):
-    """O botão aparece em toda resposta que rodou consulta; quando o usuário
-    pediu Excel, a tela destaca o botão."""
+    """Com duas ou mais linhas o botão aparece, mesmo que a resposta seja só
+    texto: é o jeito de levar o resultado inteiro. Quando o usuário pediu
+    Excel, a tela destaca o botão."""
     fonte = _mensagens(cliente, resposta)[resposta.pk]["fonte"]
 
     assert fonte["excel"] is True
     assert fonte["excel_pedido"] is False
+
+
+def test_resultado_de_uma_linha_nao_oferece_planilha(cliente, resposta):
+    """Uma linha é um número, e ele já está no texto. Em 2026-09-21 a tela
+    mostrava "Baixar Excel" embaixo de "O sell out cresceu de 17.709 para…",
+    prometendo uma planilha que não acrescentava nada."""
+    QueryRun.objects.filter(ai_reply__message=resposta.in_reply_to).update(row_count=1)
+
+    fonte = _mensagens(cliente, resposta)[resposta.pk]["fonte"]
+
+    assert fonte["excel"] is False
+
+
+def test_pedido_explicito_de_excel_vence_a_regra_da_linha_unica(cliente, resposta):
+    QueryRun.objects.filter(ai_reply__message=resposta.in_reply_to).update(row_count=1)
+    reply = AIReply.objects.get(message=resposta.in_reply_to)
+    reply.raw_response = {"excel": True}
+    reply.save()
+
+    fonte = _mensagens(cliente, resposta)[resposta.pk]["fonte"]
+
+    assert fonte["excel"] is True
+    assert fonte["excel_pedido"] is True
 
 
 def test_grafico_e_dados_chegam_juntos_para_a_tela_desenhar(cliente, resposta):

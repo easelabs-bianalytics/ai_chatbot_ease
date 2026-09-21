@@ -249,3 +249,73 @@ def test_conversa_excluida_nao_volta_na_busca(cliente, ana):
     cliente.delete(f"/api/conversations/{conversa.pk}/")
 
     assert cliente.get("/api/conversations/?q=ruptura").json()["conversations"] == []
+
+
+# --- ordem escolhida à mão (arrastar na lista) ----------------------------
+
+
+def test_ordem_arrastada_manda_na_listagem(cliente, ana):
+    """Arrastar precisa valer mais que a última atividade.
+
+    Sem isto a lista volta para a ordem cronológica no próximo F5 e o gesto
+    de arrastar vira enfeite."""
+    primeira = _conversa(ana, "primeira")
+    segunda = _conversa(ana, "segunda")
+    terceira = _conversa(ana, "terceira")
+
+    resposta = cliente.patch(
+        "/api/conversations/ordem/",
+        {"ids": [terceira.pk, primeira.pk, segunda.pk]},
+        format="json",
+    )
+
+    assert resposta.status_code == 200
+    assert resposta.json() == {"ordenadas": 3}
+    listadas = [c["id"] for c in cliente.get("/api/conversations/").json()["conversations"]]
+    assert listadas == [terceira.pk, primeira.pk, segunda.pk]
+
+
+def test_conversa_nova_nasce_no_topo_do_que_ja_foi_arrumado(cliente, ana):
+    """`position = 0` é "nunca posicionada", e vem antes de 1, 2, 3…
+
+    Se a conversa nova caísse no fim, quem organizou a lista uma vez teria de
+    reorganizar a cada pergunta."""
+    antiga = _conversa(ana, "antiga")
+    cliente.patch("/api/conversations/ordem/", {"ids": [antiga.pk]}, format="json")
+
+    nova = cliente.post("/api/conversations/", {"title": "recém-criada"}, format="json").json()
+
+    listadas = [c["id"] for c in cliente.get("/api/conversations/").json()["conversations"]]
+    assert listadas == [nova["id"], antiga.pk]
+
+
+def test_ordenar_nao_mexe_na_ultima_atividade(cliente, ana):
+    """Organizar não é conversar.
+
+    Se `updated_at` subisse junto, arrastar faria toda conversa mexida parecer
+    de agora — e "Recentes" deixaria de querer dizer alguma coisa."""
+    conversa = _conversa(ana, "vendas")
+    antes = Conversation.objects.get(pk=conversa.pk).updated_at
+
+    cliente.patch("/api/conversations/ordem/", {"ids": [conversa.pk]}, format="json")
+
+    assert Conversation.objects.get(pk=conversa.pk).updated_at == antes
+
+
+def test_ordem_ignora_conversa_de_outro_usuario(cliente, ana, bruno):
+    """Mandar o id de outra pessoa não pode reordenar a lista dela."""
+    dele = Conversation.objects.create(user=bruno, title="do Bruno", position=7)
+    minha = _conversa(ana, "minha")
+
+    resposta = cliente.patch(
+        "/api/conversations/ordem/", {"ids": [dele.pk, minha.pk]}, format="json"
+    )
+
+    assert resposta.json() == {"ordenadas": 1}
+    assert Conversation.objects.get(pk=dele.pk).position == 7
+
+
+def test_ordem_sem_lista_de_ids_responde_400(cliente):
+    resposta = cliente.patch("/api/conversations/ordem/", {"ids": "1,2"}, format="json")
+
+    assert resposta.status_code == 400
