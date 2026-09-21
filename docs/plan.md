@@ -1142,9 +1142,8 @@ de retenção do histórico e restrição à rede corporativa.
 ---
 
 ## Fase 10 — Anexos: planilha para preencher e imagem para ler
-**Status: ⏳ em andamento** · implementado e testado localmente, com a API
-real; segunda rodada feita depois do teste do Rubens na tela; falta a
-validação dele e ir ao ar (2026-09-21)
+**Status: ✅ no ar (2026-09-21)** · imagem `c49595b`, task definition
+`cockpit-prod-jarvis:3`, junto com a Fase 11
 
 Pedido do Rubens: mandar um xlsx/csv e pedir que o Jarvis preencha com dado
 de sell-out, ou um print para ele analisar — **com todos os cuidados para
@@ -1264,32 +1263,39 @@ Rubens.
       dava 61. Trocado por arredondar para cima, com teste que falhava antes.
       Era o teste do login que falhava de vez em quando
 
-### Para ir ao ar (repete os passos 8, 9 e 10 da Fase 9)
+### No ar (2026-09-21, junto com a Fase 11)
 
-- [ ] Commit no Jarvis, **árvore limpa** (passo 8)
-- [ ] Imagem nova com `docker buildx ... --provenance=false` — ela passa a
-      levar o **Pillow**
-- [ ] Bump de `jarvis_container_image` na **`feat/infra-jarvis`** do
-      `sales_force_crm` (antes, `git merge origin/main` nela), `plan` com
-      alvo mostrando só a imagem
-- [ ] **Validação do Rubens na tela** (em andamento): print de tabela vazia,
-      planilha com várias colunas, prévia da imagem
-- [ ] **Três migrations novas** (`messaging.0003_anexo_sem_arquivo`,
-      `messaging.0004_miniatura_da_imagem`,
-      `ai_orchestrator.0003_leitura_de_imagem`): snapshot do RDS antes, depois
-      `migrate` como task avulsa (passo 10). São só colunas novas com valor
-      padrão e mudança de `choices` — nada é reescrito
-- [ ] Nada muda na infraestrutura: o Redis já está na task, e o cache usa o
-      banco `/1` dele. Memória fica em 1 GB; o limite de 5 MiB foi escolhido
-      para caber nela
-- [ ] Testar em produção: um print colado com Ctrl+V e uma planilha pequena
+A pedido do Rubens ("suba, para que já reflita no app"), sem teste a mais na
+API. Passos 8, 9 e 10 da Fase 9, com **uma mudança de ordem** para não haver
+erro durante a troca — as migrations antes do serviço trocar de imagem (o
+código novo precisa das colunas novas; o antigo convive com elas):
+
+| Etapa | Resultado |
+|---|---|
+| Commits no Jarvis (`main`) e árvore limpa | `c49595b` no GitHub |
+| Imagem (`buildx`, sem atestado) | `cockpit-prod-jarvis:c49595b`, manifesto Docker v2, 91 MB |
+| Bump na `feat/infra-jarvis` (depois de trazer a `main`) | `d81283a deploy: bump jarvis_container_image pra c49595b`, empurrado antes do `apply` |
+| Snapshot do RDS | `cockpit-prod-db-antes-jarvis-anexos-20260921`, `available` |
+| `apply` só da task definition | revisão 3 criada; o serviço seguiu na 2 |
+| `migrate` (task avulsa, revisão 3) | `ai_orchestrator.0003`, `0004`, `messaging.0003`, `0004` — OK, exit 0 |
+| `apply` só do serviço | revisão 2 → 3, rollout `COMPLETED`, alvo `healthy` |
+| Conferência | site 200, JavaScript novo servido, `/api/anexos/` responde (403 sem login), worker `ready`, zero 500 no log |
+
+**Tropeço:** o `apply` do serviço foi passado por `Select-Object -First 3` no
+PowerShell, que encerra o pipeline e matou o Terraform depois de mudar a AWS
+— o lock do state (compartilhado com a Natália) ficou preso. Conferido que o
+lock era desta máquina e deste apply, e que o state já tinha a revisão 3; só
+então `force-unlock`. `plan` depois: **No changes**. Regra para o futuro:
+nunca cortar a saída de um `apply`; filtrar com `Select-String` sem `-First`.
+
+- [ ] Validação do Rubens na tela, em produção: print colado, planilha,
+      pergunta de porquê
 
 ---
 
 ## Fase 11 — Investigação de perguntas de porquê, e resposta em blocos
-**Status: ⏳ em andamento** · implementado e testado localmente com os
-modelos reais e o banco de produção; falta a validação do Rubens e ir ao ar
-junto com a Fase 10 (2026-09-21)
+**Status: ✅ no ar (2026-09-21)** · junto com a Fase 10, imagem `c49595b`
+(ver "No ar" na Fase 10)
 
 Pedido do Rubens: "Porque a Ease Labs caiu em Sell Out em jul/26?" voltou em
 produção como tabela crua. O Jarvis tem de **investigar** — geral ou
@@ -1381,12 +1387,11 @@ receita: é exemplo de raciocínio.
 - Custo: o `planner_v2` ficou ~1.100 tokens maior; como vai no prefixo com
   cache, são frações de centavo por pergunta
 
-### Para ir ao ar (junto com a Fase 10)
+### No ar
 
-- [ ] **Validação do Rubens na tela**
-- [ ] Uma migration a mais (`ai_orchestrator.0004_rodada_de_investigacao`,
-      só `choices`) — entra no mesmo `migrate` da Fase 10
-- [ ] Nada muda na infraestrutura
+- [x] Publicado com a Fase 10 (imagem `c49595b`, migration
+      `ai_orchestrator.0004_rodada_de_investigacao` aplicada)
+- [ ] Validação do Rubens na tela, em produção
 
 ---
 
