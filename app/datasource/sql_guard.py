@@ -8,9 +8,12 @@ e não sobre o texto, para não depender de casar strings — é assim que
 
 O SQL executado é o original, não o reescrito a partir da árvore: reemitir
 poderia mudar sutilmente um cast ou um FILTER e alterar o resultado sem
-ninguém perceber.
+ninguém perceber. A única mudança no texto é textual e cirúrgica: o
+primeiro argumento de `ROUND(x, n)` ganha `::numeric` (ver
+`_round_com_numeric`), porque sem isso o Postgres recusa a consulta.
 """
 
+import re
 from dataclasses import dataclass
 
 import sqlglot
@@ -117,6 +120,77 @@ def _nome_da_tabela(tabela: exp.Table) -> str:
     schema = (tabela.db or "").lower()
     nome = (tabela.name or "").lower()
     return f"{schema}.{nome}" if schema else nome
+
+
+_ROUND = re.compile(r"\bround\s*\(", re.I)
+
+
+def _fora_de_string(sql: str) -> list:
+    """Máscara: True onde o caractere está fora de literal '...'."""
+    fora, dentro = [], False
+    for i, c in enumerate(sql):
+        if c == "'":
+            # '' dentro de literal é aspa escapada, não fim do literal
+            dentro = not dentro
+        fora.append(not dentro and c != "'")
+    return fora
+
+
+def _round_com_numeric(sql: str) -> str:
+    """`ROUND(x, n)` vira `ROUND((x)::numeric, n)`.
+
+    No Postgres, ROUND com casas decimais só existe para numeric; com
+    double precision a consulta falha ("function round(double precision,
+    integer) does not exist"). O modelo escreve assim o tempo todo: derrubou
+    a primeira rodada inteira de uma investigação em 2026-09-21 e custou uma
+    correção na pergunta do sell-out de jul/26. Corrigir aqui não gasta token
+    nenhum e não muda o resultado — só o tipo que o Postgres usa na conta.
+
+    Textual de propósito: só o primeiro argumento de cada ROUND ganha o
+    cast; o resto da consulta sai exatamente como veio.
+    """
+    # Uma troca por vez, reescaneando: com ROUND dentro de ROUND, trocar o
+    # de dentro desloca a vírgula do de fora. O teto só existe para uma
+    # consulta patológica não prender o validador.
+    for _ in range(50):
+        troca = _proximo_round_sem_numeric(sql)
+        if troca is None:
+            break
+        inicio, fim, novo = troca
+        sql = sql[:inicio] + novo + sql[fim:]
+    return sql
+
+
+def _proximo_round_sem_numeric(sql: str):
+    """(início, fim, texto novo) do primeiro argumento a converter, ou None."""
+    fora = _fora_de_string(sql)
+    for achado in _ROUND.finditer(sql):
+        if not fora[achado.start()]:
+            continue
+        inicio_arg = achado.end()
+        nivel, virgula, fim = 0, None, None
+        for i in range(inicio_arg, len(sql)):
+            if not fora[i]:
+                continue
+            c = sql[i]
+            if c == "(":
+                nivel += 1
+            elif c == ")":
+                if nivel == 0:
+                    fim = i
+                    break
+                nivel -= 1
+            elif c == "," and nivel == 0 and virgula is None:
+                virgula = i
+        if fim is None or virgula is None:
+            continue  # ROUND(x) sem casas funciona com double
+        primeiro = sql[inicio_arg:virgula].strip()
+        if re.search(r"::\s*numeric\s*$", primeiro, re.I) or re.match(
+            r"cast\s*\(.*\bas\s+(numeric|decimal)", primeiro, re.I | re.S
+        ):
+            continue
+        return inicio_arg, virgula, f"({primeiro})::numeric"
+    return None
 
 
 def _aplicar_limite(sql: str, max_rows: int) -> str:
@@ -231,7 +305,7 @@ def validate_sql(sql: str, catalog: Catalog, max_rows: int | None = None) -> Gua
             return _recusa(f"a função {nome}() não é permitida")
 
     limite = catalog.max_rows if max_rows is None else max_rows
-    return GuardResult(approved=True, sql=_aplicar_limite(texto, limite))
+    return GuardResult(approved=True, sql=_aplicar_limite(_round_com_numeric(texto), limite))
 
 
 def tables_in(sql: str) -> set:

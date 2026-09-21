@@ -298,3 +298,42 @@ def test_schema_previsto_passa_no_validador(catalogo):
     assert validate_sql(
         "SELECT mes, fat_alvo_bonus FROM remuneracao_fv.fato_remuneracao", catalogo
     ).approved
+
+
+# ROUND com casas decimais só existe para numeric no Postgres. O modelo
+# escreve ROUND(double, n) o tempo todo: derrubou a primeira rodada de uma
+# investigação em 2026-09-21. O validador converte, sem gastar token.
+
+
+@pytest.mark.parametrize(
+    "original, esperado",
+    [
+        ("SELECT ROUND(100.0 * a / NULLIF(b, 0), 1) FROM cddd.pdvs",
+         "SELECT ROUND((100.0 * a / NULLIF(b, 0))::numeric, 1) FROM cddd.pdvs"),
+        ("SELECT ROUND(ROUND(a, 2) * 100, 1) FROM cddd.pdvs",
+         "SELECT ROUND((ROUND((a)::numeric, 2) * 100)::numeric, 1) FROM cddd.pdvs"),
+    ],
+)
+def test_round_com_casas_ganha_numeric(catalogo, original, esperado):
+    resultado = validate_sql(original, catalogo)
+
+    assert resultado.approved
+    assert esperado in resultado.sql
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT ROUND(a) FROM cddd.pdvs",
+        "SELECT ROUND(a::numeric, 2) FROM cddd.pdvs",
+        "SELECT ROUND(CAST(a AS NUMERIC), 2) FROM cddd.pdvs",
+    ],
+)
+def test_round_que_ja_funciona_fica_como_esta(catalogo, sql):
+    assert sql in validate_sql(sql, catalogo).sql
+
+
+def test_round_escrito_dentro_de_texto_nao_e_tocado(catalogo):
+    sql = "SELECT 'round(1, 2)' AS nome FROM cddd.pdvs"
+
+    assert sql in validate_sql(sql, catalogo).sql
