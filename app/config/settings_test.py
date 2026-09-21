@@ -9,6 +9,8 @@ Diferenças deliberadas em relação a `config.settings`:
   `APP_DATABASE_URL`, porque o pytest-django cria e apaga bancos `test_*` no
   servidor configurado;
 - Celery em modo eager, sem Redis nem worker;
+- cache em memória: o depósito de anexos (ADR-0024) é o cache do Django, e a
+  suíte não pode exigir Redis no ar;
 - estáticos sem manifest, para o Admin renderizar sem `collectstatic`.
 """
 
@@ -38,3 +40,5 @@ STORAGES = {
 
 CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True
+
+CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}

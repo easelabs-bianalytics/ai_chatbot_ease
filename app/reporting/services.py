@@ -29,6 +29,9 @@ DECISOES = {
     AIReply.Decision.CLARIFY: "Pediu esclarecimento",
     AIReply.Decision.UNKNOWN: "Não sabe",
     AIReply.Decision.OUT_OF_SCOPE: "Fora de escopo",
+    # Anexo de imagem (ADR-0024): respondeu, mas sem banco — fica separado
+    # de "Respondeu com dado" para o relatório não misturar as duas coisas.
+    AIReply.Decision.IMAGE_READING: "Leu uma imagem",
     AIReply.Decision.FAILED: "Falhou",
 }
 

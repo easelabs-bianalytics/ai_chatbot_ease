@@ -28,6 +28,8 @@
     conversaId: null,
     ultimoId: 0,
     aguardando: null,     // { id, inicio, texto } — pergunta sem resposta ainda
+    anexo: null,          // etiqueta do anexo já validado no servidor (ADR-0024)
+    anexoEnviando: false,
     pollTimer: null,
     relogio: null,
     falhasSeguidas: 0,
@@ -56,6 +58,8 @@
     unknown:      { classe: 'tipo-sem-dado',        rotulo: 'Dado não disponível',   icone: 'info' },
     out_of_scope: { classe: 'tipo-sem-dado',        rotulo: 'Fora do que eu faço',   icone: 'info' },
     failed:       { classe: 'tipo-falha',           rotulo: 'Não consegui responder', icone: 'alerta' },
+    // A única resposta que não passou pelo banco (ADR-0024): o rótulo diz isso.
+    image_reading: { classe: '',                    rotulo: 'Leitura da imagem',     icone: 'imagem' },
   };
 
   const ICONES = {
@@ -73,6 +77,9 @@
     pasta: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>',
     lapis: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z"/></svg>',
     arquivo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 002 2h12a2 2 0 002-2V8M10 12h4"/></svg>',
+    imagem: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>',
+    tabela: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>',
+    fechar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
     lixeira: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>',
     lista: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
     relogio: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
@@ -961,7 +968,19 @@
     const el = document.createElement('div');
     el.className = 'msg msg-usuario';
     if (m.id) el.dataset.id = m.id;
-    el.innerHTML = `<div class="bolha-usuario">${esc(m.text)}<span class="msg-hora">${esc(fmtHora(m.created_at || new Date().toISOString()))}</span></div>`;
+    // Imagem aparece como prévia, como nas outras IAs: a miniatura que fica
+    // na conversa (ou, logo depois do envio, a própria imagem local). A
+    // planilha aparece pelo nome — o arquivo foi descartado (ADR-0024).
+    let anexo = '';
+    if (m.anexo?.tipo === 'imagem') {
+      const src = m.anexo.miniatura || m.anexo.previa;
+      anexo = src
+        ? `<a class="bolha-imagem" href="${esc(m.anexo.miniatura || src)}" target="_blank" rel="noopener"><img src="${esc(src)}" alt="Imagem enviada"></a>`
+        : `<div class="bolha-anexo">${ICONES.imagem}<span>Imagem enviada</span></div>`;
+    } else if (m.anexo) {
+      anexo = `<div class="bolha-anexo">${ICONES.tabela}<span>${esc(m.anexo.nome)}</span></div>`;
+    }
+    el.innerHTML = `<div class="bolha-usuario">${anexo}${esc(m.text)}<span class="msg-hora">${esc(fmtHora(m.created_at || new Date().toISOString()))}</span></div>`;
     return el;
   };
 
@@ -986,6 +1005,8 @@
           ${tipo.rotulo ? `<div class="cartao-ia-rotulo">${ICONES[tipo.icone] || ''}${esc(tipo.rotulo)}</div>` : ''}
           ${semNarrativa ? '<div class="cartao-ia-rotulo" style="color:var(--gray-600)">' + ICONES.info + 'Resultado da consulta</div>' : ''}
           <div class="md">${semNarrativa ? tabelaCrua(m.text) : markdown(m.text)}</div>
+          ${m.planilha_preenchida ? `
+            <button class="planilha-preenchida" type="button" data-planilha="${m.planilha_preenchida.pergunta}">${ICONES.planilha}<span>Baixar planilha preenchida</span></button>` : ''}
         </div>
         ${fonte.decisao === 'failed' && !semCredito && m.in_reply_to ? `
           <div class="msg-erro-acao"><button class="btn btn-ghost" type="button" data-refazer="${m.in_reply_to}">Perguntar de novo</button></div>` : ''}
@@ -1358,6 +1379,8 @@
     }
     const excel = ev.target.closest('[data-excel]');
     if (excel) { await baixarExcel(excel); return; }
+    const preenchida = ev.target.closest('[data-planilha]');
+    if (preenchida) { await baixarPreenchida(preenchida); return; }
 
     const sugestao = ev.target.closest('.sugestao, .continuacao');
     if (sugestao) enviar(sugestao.dataset.texto);
@@ -1393,6 +1416,38 @@
     } finally {
       botao.disabled = false;
       rotulo.textContent = original;
+    }
+  };
+
+  // A planilha preenchida fica disponível por pouco tempo e depois some — de
+  // propósito, o arquivo é da pessoa (ADR-0024). Vencida, o botão vira aviso.
+  const baixarPreenchida = async (botao) => {
+    if (botao.disabled) return;
+    botao.disabled = true;
+    try {
+      const r = await fetch(`/api/conversations/${state.conversaId}/messages/${botao.dataset.planilha}/planilha/`, {
+        credentials: 'same-origin',
+      });
+      if (!r.ok) {
+        const erro = await r.json().catch(() => ({}));
+        if (r.status === 404) {
+          botao.querySelector('span').textContent = 'Planilha expirada — envie de novo';
+          toast(erro.error || 'A planilha preenchida expirou.', true);
+          return;
+        }
+        throw new Error(erro.error || 'não consegui baixar a planilha');
+      }
+      const nome = (r.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/);
+      const url = URL.createObjectURL(await r.blob());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = nome ? nome[1] : 'jarvis_preenchida.xlsx';
+      link.click();
+      URL.revokeObjectURL(url);
+      botao.disabled = false;
+    } catch (e) {
+      botao.disabled = false;
+      toast(`Não consegui baixar a planilha: ${e.message}`, true);
     }
   };
 
@@ -1512,17 +1567,30 @@
     agendarPoll(POLL_MS * Math.min(1 + state.falhasSeguidas, 4));
   };
 
+  // Anexo sem texto: a pergunta padrão diz o que fazer com ele. Para a
+  // planilha ela é genérica de propósito — o modelo pede o detalhe que faltar.
+  const PERGUNTA_PADRAO = {
+    imagem: 'Analise esta imagem.',
+    planilha: 'Preencha esta planilha com os dados que faltam.',
+  };
+
   const enviar = async (textoBruto) => {
-    const texto = String(textoBruto || '').trim();
-    if (!texto || state.aguardando) return;
+    const anexo = state.anexo;
+    const texto = String(textoBruto || '').trim() || (anexo ? PERGUNTA_PADRAO[anexo.tipo] : '');
+    if (!texto || state.aguardando || state.anexoEnviando) return;
 
     const campo = $('#campoPergunta');
     campo.value = '';
     ajustarCampo();
+    limparAnexo();
     atualizarBotao();
 
     // pergunta aparece na hora; o id real chega com a resposta do POST
-    const provisoria = elementoPergunta({ text: texto, created_at: new Date().toISOString() });
+    const provisoria = elementoPergunta({
+      text: texto,
+      created_at: new Date().toISOString(),
+      anexo: anexo ? { tipo: anexo.tipo, nome: anexo.nome, previa: anexo.previa } : null,
+    });
     $('#boasVindas')?.remove();
     $('#mensagens').appendChild(provisoria);
     rolarParaFim();
@@ -1538,7 +1606,12 @@
       }
       const r = await api(`/api/conversations/${state.conversaId}/messages/`, {
         method: 'POST',
-        body: { client_message_id: novoId(), text: texto },
+        // Só a etiqueta que o servidor devolveu; a prévia local fica no navegador.
+        body: {
+          client_message_id: novoId(),
+          text: texto,
+          ...(anexo ? { anexo: { token: anexo.token, tipo: anexo.tipo, nome: anexo.nome, resumo: anexo.resumo } } : {}),
+        },
       });
       provisoria.dataset.id = r.message_id;
       definirCabecalho(state.conversas.find((c) => c.id === state.conversaId)?.title || texto.slice(0, 60), 'Consultando…');
@@ -1548,6 +1621,9 @@
       state.aguardando = null;
       provisoria.remove();
       campo.value = texto;
+      // O anexo volta para o compositor: o token continua valendo no prazo,
+      // e perder o arquivo por falha de rede obrigaria a subir de novo.
+      if (anexo) mostrarAnexo(anexo);
       ajustarCampo();
       atualizarBotao();
       toast(`Não consegui enviar: ${e.message}`, true);
@@ -1562,9 +1638,125 @@
   };
 
   const atualizarBotao = () => {
-    const vazio = !$('#campoPergunta').value.trim();
-    $('#btnEnviar').disabled = vazio || !!state.aguardando;
+    const vazio = !$('#campoPergunta').value.trim() && !state.anexo;
+    $('#btnEnviar').disabled = vazio || !!state.aguardando || state.anexoEnviando;
+    $('#btnAnexar').disabled = !!state.aguardando || state.anexoEnviando;
   };
+
+  // ---------------------------------------------------------- anexo
+  // O arquivo sobe assim que é escolhido: validação e resumo acontecem no
+  // servidor, e quem mandou algo grande demais descobre na hora, antes de
+  // escrever a pergunta. Volta só uma etiqueta; o arquivo não é guardado.
+  const LIMITE_DO_ANEXO = 5 * 1024 * 1024;
+  const EXTENSOES_ACEITAS = /\.(xlsx|xlsm|csv|png|jpe?g|webp)$/i;
+
+  const fmtBytes = (n) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+
+  const BOTAO_REMOVER = `<button class="anexo-chip-remover" type="button" aria-label="Remover anexo">${ICONES.fechar}</button>`;
+
+  // Imagem: só a prévia, como nas outras IAs — sem nome de arquivo (um
+  // print colado nem tem nome). Planilha: nome, linhas e colunas, que é o
+  // que diz se o arquivo certo foi escolhido.
+  const desenharChip = ({ nome, tipo, detalhe, enviando, previa }) => {
+    const chip = $('#anexoChip');
+    chip.hidden = false;
+    chip.classList.toggle('enviando', !!enviando);
+    chip.classList.toggle('imagem', tipo === 'imagem' && !!previa);
+    if (tipo === 'imagem' && previa) {
+      chip.innerHTML = `
+        <div class="anexo-previa">
+          <img src="${esc(previa)}" alt="Prévia da imagem">
+          ${enviando ? '<span class="anexo-previa-enviando" aria-label="Enviando"></span>' : BOTAO_REMOVER}
+        </div>`;
+      return;
+    }
+    chip.innerHTML = `
+      <span class="anexo-chip-icone">${tipo === 'imagem' ? ICONES.imagem : ICONES.tabela}</span>
+      <div class="anexo-chip-texto">
+        <div class="anexo-chip-nome">${esc(nome)}</div>
+        <div class="anexo-chip-detalhe">${esc(detalhe)}</div>
+      </div>
+      ${enviando ? '' : BOTAO_REMOVER}`;
+  };
+
+  const mostrarAnexo = (etiqueta) => {
+    state.anexo = etiqueta;
+    const d = etiqueta.detalhe || {};
+    const detalhe = etiqueta.tipo === 'imagem'
+      ? 'Imagem'
+      : `${fmtNum(d.linhas || 0)} linhas · ${fmtNum((d.colunas || []).length)} colunas · diga o que preencher`;
+    desenharChip({ nome: etiqueta.nome, tipo: etiqueta.tipo, detalhe, previa: etiqueta.previa });
+    atualizarBotao();
+  };
+
+  const limparAnexo = ({ liberarPrevia = false } = {}) => {
+    // A prévia local continua valendo depois do envio: é ela que aparece na
+    // bolha até a miniatura do servidor chegar. Só é liberada ao remover.
+    if (liberarPrevia && state.anexo?.previa) URL.revokeObjectURL(state.anexo.previa);
+    state.anexo = null;
+    const chip = $('#anexoChip');
+    chip.hidden = true;
+    chip.classList.remove('imagem', 'enviando');
+    chip.innerHTML = '';
+    $('#campoAnexo').value = '';
+  };
+
+  const subirAnexo = async (arquivo) => {
+    if (!arquivo || state.aguardando || state.anexoEnviando) return;
+    if (!EXTENSOES_ACEITAS.test(arquivo.name || '')) {
+      toast('Envie uma planilha (.xlsx, .csv) ou uma imagem (.png, .jpg, .webp).', true);
+      return;
+    }
+    // Checagem prévia só para poupar a subida; quem decide é o servidor.
+    if (arquivo.size > LIMITE_DO_ANEXO) {
+      toast(`O arquivo tem ${fmtBytes(arquivo.size)}; o limite é 5 MB. Envie um recorte menor.`, true);
+      return;
+    }
+
+    const tipo = arquivo.type.startsWith('image/') ? 'imagem' : 'planilha';
+    // Prévia na hora, do próprio arquivo: não depende da subida terminar.
+    const previa = tipo === 'imagem' ? URL.createObjectURL(arquivo) : null;
+    state.anexoEnviando = true;
+    atualizarBotao();
+    desenharChip({ nome: arquivo.name, tipo, detalhe: `Enviando ${fmtBytes(arquivo.size)}…`, enviando: true, previa });
+
+    try {
+      const corpo = new FormData();
+      corpo.append('arquivo', arquivo, arquivo.name);
+      const r = await fetch('/api/anexos/', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json', 'X-CSRFToken': decodeURIComponent(csrf()) },
+        body: corpo,
+      });
+      const dados = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(dados.error || `Erro ${r.status}`);
+      state.anexoEnviando = false;
+      mostrarAnexo({ ...dados, previa });
+      $('#campoPergunta').focus();
+    } catch (e) {
+      state.anexoEnviando = false;
+      if (previa) URL.revokeObjectURL(previa);
+      limparAnexo();
+      atualizarBotao();
+      toast(e.message, true);
+    }
+  };
+
+  $('#btnAnexar').addEventListener('click', () => $('#campoAnexo').click());
+  $('#campoAnexo').addEventListener('change', (ev) => subirAnexo(ev.target.files[0]));
+  $('#anexoChip').addEventListener('click', (ev) => {
+    if (ev.target.closest('.anexo-chip-remover')) { limparAnexo({ liberarPrevia: true }); atualizarBotao(); }
+  });
+  // Print colado com Ctrl+V: é o jeito mais comum de alguém "mandar um print".
+  $('#campoPergunta').addEventListener('paste', (ev) => {
+    const item = [...(ev.clipboardData?.items || [])].find((i) => i.kind === 'file' && i.type.startsWith('image/'));
+    if (!item) return;
+    ev.preventDefault();
+    const bruto = item.getAsFile();
+    const extensao = (bruto.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+    subirAnexo(new File([bruto], `print-colado.${extensao}`, { type: bruto.type }));
+  });
 
   $('#campoPergunta').addEventListener('input', () => { ajustarCampo(); atualizarBotao(); });
   $('#campoPergunta').addEventListener('keydown', (ev) => {

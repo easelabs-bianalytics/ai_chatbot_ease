@@ -27,6 +27,10 @@ class Message(models.Model):
         INBOUND = "in", "Pergunta"
         OUTBOUND = "out", "Resposta"
 
+    class Anexo(models.TextChoices):
+        PLANILHA = "planilha", "Planilha"
+        IMAGEM = "imagem", "Imagem"
+
     class Status(models.TextChoices):
         RECEIVED = "received", "Recebida"
         PROCESSING = "processing", "Em processamento"
@@ -52,6 +56,24 @@ class Message(models.Model):
         on_delete=models.SET_NULL,
         related_name="replies",
     )
+    # Anexo (ADR-0024). O arquivo NÃO fica aqui e não fica em lugar nenhum:
+    # os bytes vivem no depósito com prazo (`attachments/deposito.py`) e são
+    # descartados depois da resposta. Da mensagem guardamos o que a conversa
+    # precisa mostrar depois e o que a auditoria precisa saber: o tipo, o
+    # nome e o resumo que efetivamente subiu ao modelo.
+    anexo_tipo = models.CharField(max_length=10, choices=Anexo.choices, blank=True)
+    anexo_nome = models.CharField(max_length=255, blank=True)
+    anexo_resumo = models.TextField(blank=True)
+    # Token do depósito, para o worker achar os bytes. Vence junto com eles;
+    # guardado por ser só uma chave, nunca conteúdo.
+    anexo_token = models.CharField(max_length=64, blank=True)
+    # Prévia da imagem na conversa: JPEG de até 480 px (poucos KB), feita na
+    # hora da pergunta. É a única coisa do anexo que fica — a imagem que foi
+    # ao modelo é descartada. Sem ela, o print sumiria da conversa no F5.
+    anexo_miniatura = models.BinaryField(null=True, blank=True, editable=False)
+    # Token da planilha PREENCHIDA, para o botão de baixar. Também vence.
+    anexo_resposta_token = models.CharField(max_length=64, blank=True)
+    anexo_resposta_nome = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

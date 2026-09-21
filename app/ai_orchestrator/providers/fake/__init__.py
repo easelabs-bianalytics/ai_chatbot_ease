@@ -16,6 +16,8 @@ from ai_orchestrator.providers.base import (
     Answer,
     AnswerRequest,
     AIUsage,
+    ImageReading,
+    ImageRequest,
     Plan,
     PlanRequest,
 )
@@ -88,6 +90,17 @@ class FakeAIProvider(AIProvider):
         texto = "\n".join(linhas) if linhas else "Sem linhas."
         return Answer(reply=texto, resolution="answered", usage=AIUsage(model=MODELO))
 
+    def read_image(self, request: ImageRequest) -> ImageReading:
+        """Descreve a imagem pelo tamanho dela, que é o que o fake sabe.
+
+        Existe para o caminho da imagem (ADR-0024) ser exercitável de ponta a
+        ponta sem rede: a leitura de verdade é a do provedor real."""
+        return ImageReading(
+            leitura=f"imagem de {len(request.imagem_png)} bytes",
+            resposta="Recebi a imagem. Este é o provedor de mentira: ele não enxerga nada.",
+            usage=AIUsage(model=MODELO),
+        )
+
 
 class FailingAIProvider(AIProvider):
     """Simula a IA fora do ar, para o tratamento de falha ser testado sem
@@ -100,4 +113,7 @@ class FailingAIProvider(AIProvider):
         raise AIProviderError(self._mensagem)
 
     def answer(self, request: AnswerRequest) -> Answer:
+        raise AIProviderError(self._mensagem)
+
+    def read_image(self, request: ImageRequest) -> ImageReading:
         raise AIProviderError(self._mensagem)

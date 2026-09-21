@@ -25,10 +25,19 @@ class WebChannel(Channel):
         if len(text) > MAX_QUESTION_CHARS:
             raise ValueError(f"pergunta acima de {MAX_QUESTION_CHARS} caracteres")
 
+        # O anexo já foi validado e resumido na subida (ADR-0024). O que
+        # chega aqui é só a etiqueta dele: tipo, nome, resumo e o token que
+        # acha os bytes no depósito.
+        anexo = payload.get("anexo") or {}
+
         return InboundMessage(
             conversation_id=int(conversation_id),
             client_message_id=client_message_id,
             text=text,
+            anexo_tipo=str(anexo.get("tipo") or ""),
+            anexo_nome=str(anexo.get("nome") or "")[:255],
+            anexo_resumo=str(anexo.get("resumo") or ""),
+            anexo_token=str(anexo.get("token") or "")[:64],
         )
 
     def deliver(self, conversation, text: str) -> DeliveryResult:

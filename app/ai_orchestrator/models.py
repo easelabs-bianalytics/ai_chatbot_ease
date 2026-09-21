@@ -20,6 +20,10 @@ class AIReply(models.Model):
         UNKNOWN = "unknown", "Não sabe"
         OUT_OF_SCOPE = "out_of_scope", "Fora de escopo"
         CONVERSATION = "conversation", "Conversa sem consulta"
+        # Leitura de imagem anexada (ADR-0024): a única decisão em que a
+        # resposta NÃO passou pelo banco. Fica separada justamente para o
+        # relatório e a auditoria não confundirem as duas coisas.
+        IMAGE_READING = "image_reading", "Leitura de imagem"
         FAILED = "failed", "Falha da IA ou do banco"
 
     message = models.OneToOneField(Message, on_delete=models.CASCADE, related_name="ai_reply")
@@ -61,6 +65,7 @@ class AICall(models.Model):
         FIX = "fix", "Correção da consulta"
         ANSWER = "answer", "Redação"
         REWRITE = "rewrite", "Reescrita da resposta"
+        IMAGE = "image", "Leitura de imagem"
 
     ai_reply = models.ForeignKey(AIReply, on_delete=models.CASCADE, related_name="calls")
     stage = models.CharField(max_length=20, choices=Stage.choices)

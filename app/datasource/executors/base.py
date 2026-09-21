@@ -21,6 +21,15 @@ class QueryTimeout(QueryExecutionError):
     """A consulta passou do tempo permitido e foi cancelada pelo banco."""
 
 
+class QueryUnavailable(QueryExecutionError):
+    """O banco não respondeu: conexão recusada, perdida ou fora do ar.
+
+    Não é erro da consulta, então não vai para a correção da IA: reescrever
+    um SQL certo porque o banco caiu só gasta uma chamada de modelo — foram
+    US$ 0,094 no teste de 2026-09-21, quando o túnel caiu no meio.
+    """
+
+
 class QueryObjectMissing(QueryExecutionError):
     """A consulta cita tabela, view ou schema que não existe no banco.
 

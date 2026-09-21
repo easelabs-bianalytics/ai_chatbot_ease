@@ -158,8 +158,16 @@ def _prefixo_fixo(documento) -> str:
     )
 
 
-def montar_contexto_do_plano(catalog, pergunta: str, historico=(), completo: bool = False) -> Contexto:
-    """Contexto da chamada que escreve o SQL."""
+def montar_contexto_do_plano(
+    catalog, pergunta: str, historico=(), completo: bool = False, temas_completos: int = MAX_COMPLETAS
+) -> Contexto:
+    """Contexto da chamada que escreve o SQL.
+
+    `temas_completos` sobe quando há planilha anexada (ADR-0024): ela costuma
+    cruzar três temas de uma vez (PX, sell-out e força de vendas, no caso
+    real de 2026-09-21), e o terceiro em resumo fez o modelo pedir o
+    documento inteiro — 47 mil tokens e US$ 0,125, contra uns centavos de
+    fração a mais por mandar o terceiro tema completo."""
     documento = get_document(catalog)
     fixo = _prefixo_fixo(documento)
     escolhidas = () if completo else escolher_secoes(pergunta, historico)
@@ -194,9 +202,9 @@ def montar_contexto_do_plano(catalog, pergunta: str, historico=(), completo: boo
     # inteiro numa pergunta cruzada e a segunda chamada custou 44 mil tokens
     # e 80 segundos — mais caro que mandar a segunda seção completa desde o
     # início. Do terceiro tema em diante vai o resumo.
-    for secao in secoes[1:MAX_COMPLETAS]:
+    for secao in secoes[1:temas_completos]:
         partes.append(_bloco(f"Tema relacionado: {secao.titulo}", secao.texto))
-    for secao in secoes[MAX_COMPLETAS:]:
+    for secao in secoes[temas_completos:]:
         partes.append(_bloco(f"Tema relacionado (resumo): {secao.titulo}", secao.resumo))
     partes.append("\n\n" + filtrar_schema(catalog.schema_text, tabelas))
 

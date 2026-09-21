@@ -98,3 +98,20 @@ def ajuda(catalog) -> str:
         + "\n\nPergunte em português, dizendo o período e o recorte — por "
         "exemplo: *Quantas unidades a Pague Menos dispensou por mês em 2026?*"
     )
+
+ANEXO_VENCIDO = (
+    "O arquivo que você anexou já não está mais disponível — eles ficam guardados "
+    "por pouco tempo de propósito, e este venceu. Envie de novo com a pergunta, "
+    "que eu processo na hora."
+)
+
+PLANILHA_SEM_CASAMENTO = (
+    "Não consegui identificar qual coluna da sua planilha casa com o dado pedido. "
+    "Diga na pergunta qual coluna identifica cada linha (produto, rede, setor) e "
+    "qual coluna devo preencher."
+)
+
+BANCO_INDISPONIVEL = (
+    "O banco de dados não respondeu agora. Não é problema na sua pergunta — "
+    "tente de novo em alguns minutos. Se continuar, avise o time de BI."
+)

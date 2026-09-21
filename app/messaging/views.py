@@ -1,5 +1,7 @@
 """API do chat (ADR-0007). Tudo exige login (ADR-0011)."""
 
+from pathlib import Path
+
 from django.db.models import Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -20,6 +22,10 @@ from datasource.sql_guard import validate_sql
 from messaging.channels.web import WebChannel
 from messaging.models import Message
 from messaging.services import ingest_inbound_message
+from attachments import deposito
+from attachments.imagem import preparar as preparar_imagem
+from attachments.limites import EXTENSOES_DE_PLANILHA, MAX_BYTES, AnexoRecusado
+from attachments.planilha import ler_estrutura
 
 _channel = WebChannel()
 
@@ -124,9 +130,30 @@ def _message_json(message, mostrar_custo: bool = False):
         "status": message.status,
         "created_at": message.created_at.isoformat(),
     }
+    if message.anexo_tipo:
+        # O que a conversa guarda do anexo: tipo e nome. O arquivo em si não
+        # existe mais (ADR-0024); `planilha_pronta` diz se a preenchida ainda
+        # está no prazo de download.
+        dados["anexo"] = {
+            "tipo": message.anexo_tipo,
+            "nome": message.anexo_nome,
+            "planilha_pronta": bool(message.anexo_resposta_token),
+        }
+        if message.anexo_miniatura:
+            dados["anexo"]["miniatura"] = (
+                f"/api/conversations/{message.conversation_id}/messages/{message.pk}/miniatura/"
+            )
     if message.direction == message.Direction.OUTBOUND:
         dados["in_reply_to"] = message.in_reply_to_id
         dados["fonte"] = _fonte(message, mostrar_custo)
+        pergunta = message.in_reply_to
+        if pergunta is not None and pergunta.anexo_resposta_token:
+            # A planilha preenchida mora na pergunta, que é quem trouxe o
+            # arquivo; o botão de baixar fica na resposta, onde a pessoa lê.
+            dados["planilha_preenchida"] = {
+                "pergunta": pergunta.pk,
+                "nome": pergunta.anexo_resposta_nome,
+            }
     return dados
 
 
@@ -444,4 +471,122 @@ class MessageExcelView(APIView):
         nome = slugify(conversation.title or pergunta.content)[:50] or "consulta"
         http = HttpResponse(conteudo, content_type=XLSX)
         http["Content-Disposition"] = f'attachment; filename="jarvis_{nome}_{agora:%Y%m%d-%H%M}.xlsx"'
+        return http
+
+
+# ---------------------------------------------------------------- anexos
+
+CSV_CONTENT_TYPE = "text/csv; charset=utf-8"
+
+
+class AnexoView(APIView):
+    """Recebe o anexo, valida, resume e devolve uma etiqueta (ADR-0024).
+
+    O arquivo **não é salvo**: os bytes vão para o depósito com prazo
+    (`attachments/deposito.py`) e o que volta ao navegador é só o token e o
+    resumo. A validação acontece aqui, e não no worker, para a pessoa saber
+    na hora que o arquivo é grande demais — e para arquivo recusado nunca
+    chegar a custar uma chamada de modelo.
+
+    Não é por conversa de propósito: anexar é o primeiro gesto de uma
+    pergunta nova, e exigir conversa criaria uma vazia na lateral a cada
+    anexo desistido. O token é aleatório e só vira pergunta pelo POST de
+    mensagens, que já confere de quem é a conversa.
+    """
+
+    def post(self, request):
+        arquivo = request.FILES.get("arquivo")
+        if arquivo is None:
+            return Response({"error": "nenhum arquivo enviado"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if arquivo.size > MAX_BYTES:
+            limite = MAX_BYTES // (1024 * 1024)
+            return Response(
+                {"error": f"O arquivo tem mais de {limite} MB. Envie um recorte menor."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        nome = (arquivo.name or "arquivo")[:255]
+        dados = arquivo.read()
+
+        try:
+            if Path(nome).suffix.lower() in EXTENSOES_DE_PLANILHA:
+                estrutura = ler_estrutura(nome, dados)
+                resumo = estrutura.resumo
+                tipo = Message.Anexo.PLANILHA
+                detalhe = {"linhas": estrutura.linhas, "colunas": [c.nome for c in estrutura.colunas]}
+            else:
+                preparada = preparar_imagem(dados)
+                # Guarda a imagem REDUZIDA, não a original: é ela que vai ao
+                # modelo, e o original não serve para mais nada.
+                dados = preparada.dados
+                resumo = (
+                    f"Imagem {preparada.formato_original} de {preparada.largura}×{preparada.altura}"
+                    + (" (reduzida)" if preparada.reduzida else "")
+                )
+                tipo = Message.Anexo.IMAGEM
+                detalhe = {
+                    "largura": preparada.largura,
+                    "altura": preparada.altura,
+                    "tokens_estimados": preparada.tokens_estimados,
+                }
+        except AnexoRecusado as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        token = deposito.guardar(dados)
+        return Response(
+            {"token": token, "tipo": tipo, "nome": nome, "resumo": resumo, "detalhe": detalhe},
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class MessagePlanilhaView(APIView):
+    """Baixa a planilha que o Jarvis preencheu (ADR-0024).
+
+    Ela vive no depósito, com prazo: passado o prazo, some. É de propósito —
+    o arquivo é da pessoa, e guardar cópia dele aqui seria assumir uma
+    responsabilidade que ninguém pediu. A resposta em texto continua na
+    conversa para sempre.
+    """
+
+    def get(self, request, conversation_id, message_id):
+        conversation = get_object_or_404(
+            Conversation.objects.visiveis(), pk=conversation_id, user=request.user
+        )
+        pergunta = get_object_or_404(
+            Message, pk=message_id, conversation=conversation, direction=Message.Direction.INBOUND
+        )
+        dados = deposito.buscar(pergunta.anexo_resposta_token)
+        if dados is None:
+            return Response(
+                {"error": "a planilha preenchida já expirou; peça de novo com o arquivo anexado"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        nome = pergunta.anexo_resposta_nome or "planilha.xlsx"
+        tipo = CSV_CONTENT_TYPE if nome.lower().endswith(".csv") else XLSX
+        http = HttpResponse(dados, content_type=tipo)
+        http["Content-Disposition"] = f'attachment; filename="jarvis_preenchida_{slugify(Path(nome).stem)[:50]}{Path(nome).suffix}"'
+        return http
+
+
+class MessageMiniaturaView(APIView):
+    """A prévia da imagem de uma pergunta (ADR-0024).
+
+    Só a dona da conversa vê. Nunca muda depois de criada, então o navegador
+    guarda pelo tempo que quiser — cada rolagem da conversa não refaz o
+    download.
+    """
+
+    def get(self, request, conversation_id, message_id):
+        conversation = get_object_or_404(
+            Conversation.objects.visiveis(), pk=conversation_id, user=request.user
+        )
+        pergunta = get_object_or_404(
+            Message.objects.only("anexo_miniatura"), pk=message_id, conversation=conversation
+        )
+        if not pergunta.anexo_miniatura:
+            return Response({"error": "esta mensagem não tem imagem"}, status=status.HTTP_404_NOT_FOUND)
+        http = HttpResponse(bytes(pergunta.anexo_miniatura), content_type="image/jpeg")
+        http["Cache-Control"] = "private, max-age=31536000, immutable"
         return http

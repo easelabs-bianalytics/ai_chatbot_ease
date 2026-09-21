@@ -42,6 +42,10 @@ def ingest_inbound_message(conversation, inbound: InboundMessage) -> tuple[Messa
                 content=inbound.text,
                 client_message_id=inbound.client_message_id,
                 status=Message.Status.RECEIVED,
+                anexo_tipo=inbound.anexo_tipo,
+                anexo_nome=inbound.anexo_nome,
+                anexo_resumo=inbound.anexo_resumo,
+                anexo_token=inbound.anexo_token,
             )
     except IntegrityError:
         # Corrida entre duas requisições com o mesmo identificador: a
@@ -54,7 +58,31 @@ def ingest_inbound_message(conversation, inbound: InboundMessage) -> tuple[Messa
         )
 
     _ensure_title(conversation, inbound.text)
+    _guardar_miniatura(message)
     return message, True
+
+
+def _guardar_miniatura(message) -> None:
+    """Prévia da imagem para a conversa (ADR-0024).
+
+    Feita agora, enquanto a imagem ainda está no depósito: depois da resposta
+    ela é descartada, e a prévia é o que sobra para a conversa mostrar. Falhar
+    aqui não pode impedir a pergunta — sem prévia, a bolha mostra só o texto.
+    """
+    if message.anexo_tipo != Message.Anexo.IMAGEM:
+        return
+    from attachments import deposito
+    from attachments.imagem import miniatura
+
+    dados = deposito.buscar(message.anexo_token)
+    if dados is None:
+        return
+    try:
+        message.anexo_miniatura = miniatura(dados)
+    except Exception:
+        logger.warning("Não consegui gerar a prévia da imagem", exc_info=True)
+        return
+    message.save(update_fields=["anexo_miniatura"])
 
 
 def deliver_reply(channel: Channel, conversation, text: str, in_reply_to=None) -> Message:

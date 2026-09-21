@@ -46,6 +46,10 @@ class AIUsage:
 class PlanRequest:
     question: str
     history: tuple = ()
+    # Resumo da planilha que o usuário anexou (ADR-0024): cabeçalhos, tipos e
+    # amostra, nunca o conteúdo. Some junto a instrução de propor o
+    # casamento entre a coluna da planilha e a coluna do resultado.
+    planilha: str = ""
     # Preenchido só na correção única (ADR-0014): o motivo pelo qual a
     # consulta anterior foi recusada pelo validador ou pelo banco.
     error_note: str = ""
@@ -80,6 +84,12 @@ class Plan:
     # O usuário pediu os dados em planilha ("quero em Excel"): a resposta
     # fica curta e aponta para o download, em vez de despejar a lista.
     excel: bool = False
+    # Como preencher a planilha anexada (ADR-0024): a coluna-chave dos dois
+    # lados e, para cada coluna a preencher, de qual coluna do resultado vem
+    # o valor. Só nomes — o modelo nunca manda valor, porque valor vem do
+    # banco. Formato: {"coluna_chave", "chave_no_resultado",
+    # "colunas": [{"coluna_destino", "valor_no_resultado"}, ...]}.
+    preenchimento: dict = field(default_factory=dict)
     usage: AIUsage = field(default_factory=AIUsage)
 
 
@@ -119,6 +129,47 @@ class Answer:
     usage: AIUsage = field(default_factory=AIUsage)
 
 
+@dataclass(frozen=True)
+class ImageRequest:
+    """Uma imagem para ler e comentar (ADR-0024).
+
+    `imagem_png` já vem validada e reduzida por `attachments/imagem.py`: o
+    provedor não decide dimensão, porque dimensão é custo.
+    """
+
+    question: str
+    imagem_png: bytes
+    history: tuple = ()
+
+
+@dataclass(frozen=True)
+class ImageReading:
+    """O que o modelo leu na imagem, separado do que ele concluiu.
+
+    A separação é o que permite rotular a resposta: nada aqui passou pelo
+    banco, então nada aqui pode ser apresentado como dado da Ease Labs
+    (ADR-0010, ADR-0024).
+    """
+
+    leitura: str
+    resposta: str
+    # Instruções que vinham escritas dentro da imagem, quando houver: texto
+    # em imagem é dado, nunca ordem (ADR-0021). Fica registrado.
+    instrucoes_ignoradas: str = ""
+    # O pedido só se resolve com dado da empresa ("preencha esta tabela",
+    # "isso bate com o nosso sell-out?"). Aí a imagem deixa de ser a
+    # resposta e vira o ponto de partida de uma consulta ao banco.
+    precisa_do_banco: bool = False
+    # A tabela do print, transcrita: cabeçalhos e linhas como estão lá. Vira
+    # uma planilha em memória e segue o caminho do preenchimento.
+    tabela_colunas: tuple = ()
+    tabela_linhas: tuple = ()
+    # Pergunta autossuficiente para o banco, quando não há tabela a
+    # preencher: o que a pessoa quer saber, com os nomes lidos na imagem.
+    pergunta_ao_banco: str = ""
+    usage: AIUsage = field(default_factory=AIUsage)
+
+
 class AIProvider(ABC):
     @abstractmethod
     def plan(self, request: PlanRequest) -> Plan:
@@ -127,3 +178,12 @@ class AIProvider(ABC):
     @abstractmethod
     def answer(self, request: AnswerRequest) -> Answer:
         """Redige a resposta a partir do resultado da consulta."""
+
+    def read_image(self, request: ImageRequest) -> ImageReading:
+        """Lê a imagem anexada e comenta o que viu.
+
+        Concreto, e não abstrato, de propósito: os dublês dos testes e
+        qualquer provedor futuro continuam válidos sem saber ler imagem — o
+        orquestrador trata esta falha como "não consigo ler imagem agora".
+        """
+        raise AIProviderError("este provedor não lê imagem")

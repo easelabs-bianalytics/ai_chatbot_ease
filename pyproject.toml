@@ -10,6 +10,10 @@ dependencies = [
     "gunicorn>=23.0",
     "openai>=1.50",
     "openpyxl>=3.1.5",
+    # Só para validar e reduzir a imagem do anexo (ADR-0024): o custo da
+    # imagem é proporcional à área, e reduzir antes de enviar corta dois
+    # terços dos tokens.
+    "pillow>=11.0",
     "psycopg2-binary>=2.9.10",
     "python-dotenv>=1.0.1",
     "pyyaml>=6.0",

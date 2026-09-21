@@ -25,6 +25,7 @@ from datasource.executors.base import (
     QueryObjectMissing,
     QueryResult,
     QueryTimeout,
+    QueryUnavailable,
     jsonable,
 )
 
@@ -88,7 +89,7 @@ class PostgresReadOnlyExecutor(QueryExecutor):
         try:
             conexao = psycopg2.connect(**parametros)
         except psycopg2.Error as exc:
-            raise QueryExecutionError(f"não foi possível conectar ao banco: {_limpa(exc)}") from exc
+            raise QueryUnavailable(f"não foi possível conectar ao banco: {_limpa(exc)}") from exc
 
         try:
             # Camada 2 do ADR-0008: a transação é somente leitura mesmo que a
@@ -106,6 +107,13 @@ class PostgresReadOnlyExecutor(QueryExecutor):
                     ) from exc
                 except (pg_errors.UndefinedTable, pg_errors.InvalidSchemaName) as exc:
                     raise QueryObjectMissing(_limpa(exc)) from exc
+                except psycopg2.OperationalError as exc:
+                    # Sem código do servidor, ou conexão fechada: foi a rede
+                    # ou o banco, não o SQL. O cancelamento por tempo (também
+                    # OperationalError) já foi tratado acima.
+                    if exc.pgcode is None or conexao.closed:
+                        raise QueryUnavailable(f"a conexão com o banco caiu: {_limpa(exc)}") from exc
+                    raise QueryExecutionError(_limpa(exc)) from exc
                 except psycopg2.Error as exc:
                     raise QueryExecutionError(_limpa(exc)) from exc
 

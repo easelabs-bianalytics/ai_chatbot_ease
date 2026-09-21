@@ -11,6 +11,8 @@ from ai_orchestrator.providers.base import (
     AIUsage,
     Answer,
     AnswerRequest,
+    ImageReading,
+    ImageRequest,
     Plan,
     PlanRequest,
 )
@@ -38,15 +40,27 @@ def resposta(reply="foram 47 unidades", **campos) -> Answer:
     return Answer(**padrao)
 
 
+def leitura(resposta_texto="O print mostra vendas de 120 unidades.", **campos) -> ImageReading:
+    padrao = {
+        "leitura": "painel de vendas",
+        "resposta": resposta_texto,
+        "usage": AIUsage(model="stub", tokens_input=900, tokens_output=80, cost_estimate=0.0003, latency_ms=40),
+    }
+    padrao.update(campos)
+    return ImageReading(**padrao)
+
+
 class ScriptedAIProvider(AIProvider):
     """Devolve planos e respostas pré-definidos, em ordem, e guarda o que
     recebeu. Item que seja exceção é levantado."""
 
-    def __init__(self, planos=(), respostas=()):
+    def __init__(self, planos=(), respostas=(), leituras=()):
         self._planos = list(planos)
         self._respostas = list(respostas)
+        self._leituras = list(leituras)
         self.plan_requests = []
         self.answer_requests = []
+        self.image_requests = []
 
     def plan(self, request: PlanRequest) -> Plan:
         self.plan_requests.append(request)
@@ -55,6 +69,10 @@ class ScriptedAIProvider(AIProvider):
     def answer(self, request: AnswerRequest) -> Answer:
         self.answer_requests.append(request)
         return self._proximo(self._respostas, "resposta")
+
+    def read_image(self, request: ImageRequest) -> ImageReading:
+        self.image_requests.append(request)
+        return self._proximo(self._leituras, "leitura de imagem")
 
     @staticmethod
     def _proximo(fila, nome):

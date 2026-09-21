@@ -8,6 +8,10 @@ from pathlib import Path
 
 PROMPT_VERSION = "planner_v1"
 ANSWER_PROMPT_VERSION = "answerer_v1"
+# Leitura de imagem (ADR-0024). É um prompt curto de propósito: não leva
+# catálogo, schema nem consultas de referência, porque esse caminho não toca
+# o banco. São ~350 tokens contra os ~15 mil do planejamento.
+IMAGE_PROMPT_VERSION = "leitor_de_imagem_v1"
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 
 

@@ -16,7 +16,7 @@ honesto, em vez de insistir.
 import logging
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from ai_orchestrator import ajuste_grafico, budget, canned
 from ai_orchestrator.context import PEDIDO_DE_SECAO
@@ -27,14 +27,22 @@ from ai_orchestrator.providers.base import (
     AIQuotaExceeded,
     AnswerRequest,
     HistoryMessage,
+    ImageRequest,
     Plan,
     PlanRequest,
 )
 from ai_orchestrator.providers.fake import FakeAIProvider
 from ai_orchestrator.prompts import PROMPT_VERSION
 from ai_orchestrator.rules import apply_rules
+from attachments import deposito, planilha as planilha_anexada
+from attachments.limites import SEGUNDOS_DA_SAIDA, AnexoRecusado
 from catalog.loader import get_catalog
-from datasource.executors.base import QueryExecutionError, QueryObjectMissing, QueryTimeout
+from datasource.executors.base import (
+    QueryExecutionError,
+    QueryObjectMissing,
+    QueryTimeout,
+    QueryUnavailable,
+)
 from datasource.executors.fake import FakeQueryExecutor
 from datasource.models import QueryRun
 from datasource.sql_guard import validate_sql
@@ -46,6 +54,12 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_HISTORY_MESSAGES = 10
 MAX_LINHAS_NA_TABELA = 20
+
+# Linhas que a consulta do PREENCHIMENTO pode trazer. O limite normal do
+# catálogo é 500, feito para o que o modelo vai ler; aqui ninguém lê — o
+# resultado vai direto para as células —, e uma planilha de 20 mil linhas
+# precisa de 20 mil chaves. É o mesmo limite da planilha de download.
+LINHAS_DO_PREENCHIMENTO = 50_000
 
 
 def _max_history_messages() -> int:
@@ -97,6 +111,9 @@ class _Auditoria:
 
     chamadas: list = field(default_factory=list)
     consultas: list = field(default_factory=list)
+    # O que mais precisa ficar no registro da resposta, de etapas que não
+    # decidem sozinhas (ex.: a imagem que virou planilha).
+    extras: dict = field(default_factory=dict)
 
     def chamada(self, stage: str, usage) -> None:
         self.chamadas.append((stage, usage))
@@ -141,13 +158,27 @@ def _nota_de_truncamento(resultado, max_rows: int) -> str:
     )
 
 
+def _veio_do_documento_inteiro(plano) -> bool:
+    return bool((plano.usage.request or {}).get("contexto_completo"))
+
+
+def _planilha(message) -> str:
+    """Resumo da planilha anexada, para TODA chamada ao planejador.
+
+    Em 2026-09-21 a segunda chamada (documento inteiro) saía sem ele, e o
+    modelo respondeu "não há planilha anexada" — depois de custar US$ 0,097.
+    Um lugar só, para nenhuma chamada nova esquecer."""
+    return message.anexo_resumo if message.anexo_tipo == Message.Anexo.PLANILHA else ""
+
+
 def _executar_com_correcao(plano, message, provider, executor, catalog, auditoria, historico):
     """Valida e executa, com uma correção se der errado (ADR-0014).
 
-    Devolve (plano, resultado, erro, inexistente). Resultado None significa
-    que a consulta não saiu; `inexistente` diz que foi porque o banco não tem
-    a tabela ou o schema — caso em que não há correção: o documento de
-    referência manda não trocar por outra tabela parecida.
+    Devolve (plano, resultado, erro, falha). Resultado None significa que a
+    consulta não saiu. `falha` diz quando não há o que corrigir:
+    "inexistente" (o banco não tem a tabela ou o schema — o documento de
+    referência manda não trocar por outra tabela parecida) ou "indisponivel"
+    (o banco não respondeu — o SQL pode estar certo).
     """
     tentativa = 1
     while True:
@@ -184,7 +215,10 @@ def _executar_com_correcao(plano, message, provider, executor, catalog, auditori
                 )
                 erro = str(exc)
                 if isinstance(exc, QueryObjectMissing):
-                    return plano, None, erro, True
+                    return plano, None, erro, "inexistente"
+                if isinstance(exc, QueryUnavailable):
+                    # O SQL pode estar certo: não há o que a IA corrigir.
+                    return plano, None, erro, "indisponivel"
             else:
                 auditoria.consulta(
                     attempt=tentativa,
@@ -200,19 +234,27 @@ def _executar_com_correcao(plano, message, provider, executor, catalog, auditori
                         "rows": [list(linha) for linha in resultado.rows[:5]],
                     },
                 )
-                return plano, resultado, "", False
+                return plano, resultado, "", ""
 
         if tentativa == 2:
-            return plano, None, erro, False
+            return plano, None, erro, ""
 
         tentativa += 1
         plano = provider.plan(
-            PlanRequest(question=message.content, history=historico, error_note=erro)
+            PlanRequest(
+                question=message.content, history=historico, error_note=erro,
+                planilha=_planilha(message),
+                # A correção usa o MESMO contexto do plano que está corrigindo.
+                # Antes voltava ao recortado: um plano feito com o documento
+                # inteiro e recusado pelo validador era "corrigido" sem as
+                # regras que o produziram, e o modelo desistia (2026-09-21).
+                full_context=_veio_do_documento_inteiro(plano),
+            )
         )
         auditoria.chamada(AICall.Stage.FIX, plano.usage)
         if plano.intent != Plan.Intent.ANSWER_WITH_DATA or not plano.sql:
             # A IA desistiu na correção: não force uma terceira tentativa.
-            return plano, None, erro, False
+            return plano, None, erro, ""
 
 
 NOTA_DE_VAZIO = (
@@ -231,7 +273,10 @@ def _verificar_o_vazio(message, provider, executor, catalog, auditoria, historic
     a consulta volta vazia, o que é raro. Devolve (resultado, plano); o
     resultado é None quando a verificação também não esclareceu nada."""
     plano = provider.plan(
-        PlanRequest(question=message.content, history=historico, empty_note=NOTA_DE_VAZIO)
+        PlanRequest(
+            question=message.content, history=historico, empty_note=NOTA_DE_VAZIO,
+            planilha=_planilha(message),
+        )
     )
     auditoria.chamada(AICall.Stage.FIX, plano.usage)
     if plano.intent != Plan.Intent.ANSWER_WITH_DATA or not plano.sql:
@@ -418,6 +463,271 @@ def _redigir(plano, resultado, message, provider, catalog, auditoria, historico,
     }
 
 
+ROTULO_DA_IMAGEM = (
+    "**Li a imagem que você enviou.** O que vem abaixo sai do que está nela, "
+    "não do banco de dados da Ease Labs — não tenho como conferir esses "
+    "números na base.\n\n"
+)
+
+
+def _ler_imagem(message, provider, auditoria, historico) -> _Decisao | None:
+    """Caminho da imagem anexada (ADR-0024).
+
+    Dois desfechos:
+
+    - **A resposta está na imagem** (resumir, achar a maior queda, conferir
+      uma conta): uma chamada ao modelo barato e fim. Sem planejador, sem
+      banco, sem ancoragem — o que substitui a ancoragem é o rótulo, que diz
+      na primeira linha que aquilo veio da imagem.
+    - **A resposta está no banco** (preencher a tabela do print, conferir
+      com o sell-out da empresa): a leitura vira pedido e o caminho normal
+      segue. Devolve None nesse caso; a mensagem foi ajustada em memória por
+      `_imagem_vira_pedido`.
+    """
+    dados = deposito.buscar(message.anexo_token)
+    if dados is None:
+        return _Decisao(
+            decision=AIReply.Decision.FAILED,
+            reply=canned.ANEXO_VENCIDO,
+            rule="anexo_vencido",
+            message_status=Message.Status.FAILED,
+        )
+
+    try:
+        leitura = provider.read_image(
+            ImageRequest(question=message.content, imagem_png=dados, history=historico)
+        )
+    finally:
+        # Os bytes saem do depósito mesmo se a leitura falhar: nada de imagem
+        # sobrando por quinze minutos porque o modelo caiu.
+        deposito.descartar(message.anexo_token)
+
+    auditoria.chamada(AICall.Stage.IMAGE, leitura.usage)
+
+    if leitura.instrucoes_ignoradas:
+        # Texto dentro da imagem tentando dar ordens (ADR-0021). O prompt do
+        # leitor manda não obedecer; aqui fica o registro, que é o que
+        # permite alguém olhar isso depois.
+        logger.warning(
+            "A imagem anexada continha instruções, ignoradas: %r",
+            leitura.instrucoes_ignoradas[:200],
+        )
+
+    if leitura.precisa_do_banco and _imagem_vira_pedido(message, leitura, auditoria):
+        return None
+
+    texto = (leitura.resposta or "").strip()
+    if _vazou_instrucoes(texto):
+        logger.warning("A leitura da imagem repetiu o prompt; usando o texto de recusa")
+        return _Decisao(
+            decision=AIReply.Decision.OUT_OF_SCOPE,
+            reply=canned.TENTATIVA_DE_INJECAO,
+            rule="tentativa_de_injecao",
+            raw={"rascunho": texto, "leitura": leitura.leitura},
+        )
+
+    return _Decisao(
+        decision=AIReply.Decision.IMAGE_READING,
+        reply=ROTULO_DA_IMAGEM + texto,
+        raw={
+            "leitura": leitura.leitura,
+            "instrucoes_na_imagem": leitura.instrucoes_ignoradas,
+            "anexo": message.anexo_nome,
+        },
+    )
+
+
+# Nomes listados em cada grupo da nota. Uma planilha de 2 mil linhas sem
+# correspondência não pode virar uma resposta de 2 mil nomes.
+NOMES_NA_NOTA = 8
+
+
+def _lista_curta(nomes) -> str:
+    nomes = list(nomes)
+    texto = ", ".join(nomes[:NOMES_NA_NOTA])
+    if len(nomes) > NOMES_NA_NOTA:
+        texto += f" e mais {len(nomes) - NOMES_NA_NOTA}"
+    return texto
+
+
+NOME_DA_TABELA_DO_PRINT = "tabela_do_print.xlsx"
+
+# Quanto a planilha espera pela resposta a um "painel atual ou território?".
+# Contado a partir da pergunta do Jarvis, não do envio.
+SEGUNDOS_DA_PLANILHA_PENDENTE = 30 * 60
+
+
+def _deixar_planilha_pendente(message) -> dict:
+    """O Jarvis pediu um detalhe antes de preencher: a planilha espera.
+
+    Sem isto, a resposta da pessoa ("painel atual") chegava sem anexo e o
+    preenchimento nunca acontecia — achado no teste real de 2026-09-21. O
+    prazo é renovado, e a etiqueta vai para o registro da resposta, que é
+    onde a próxima mensagem procura (`_herdar_planilha_pendente`)."""
+    if message.anexo_tipo != Message.Anexo.PLANILHA:
+        return {}
+    if not deposito.prolongar(message.anexo_token, segundos=SEGUNDOS_DA_PLANILHA_PENDENTE):
+        return {}
+    return {"planilha_pendente": {
+        "nome": message.anexo_nome,
+        "resumo": message.anexo_resumo,
+        "token": message.anexo_token,
+    }}
+
+
+def _herdar_planilha_pendente(message, auditoria) -> None:
+    """Se a última resposta desta conversa foi um pedido de detalhe sobre uma
+    planilha, esta mensagem (a resposta da pessoa) herda a planilha.
+
+    Só a ÚLTIMA resposta conta: se a conversa andou para outro assunto, a
+    planilha não reaparece do nada. Herança em memória, como na imagem que
+    vira planilha — no banco, a mensagem continua sem anexo."""
+    anterior = (
+        AIReply.objects.filter(message__conversation=message.conversation, message__id__lt=message.id)
+        .order_by("-message__id")
+        .first()
+    )
+    if anterior is None or anterior.decision != AIReply.Decision.CLARIFY:
+        return
+    pendente = (anterior.raw_response or {}).get("planilha_pendente")
+    if not pendente or deposito.buscar(pendente.get("token", "")) is None:
+        return
+    message.anexo_tipo = Message.Anexo.PLANILHA
+    message.anexo_nome = pendente["nome"]
+    message.anexo_resumo = pendente["resumo"]
+    message.anexo_token = pendente["token"]
+    auditoria.extras["planilha_herdada_de"] = anterior.message_id
+
+
+def _imagem_vira_pedido(message, leitura, auditoria) -> bool:
+    """Transforma a leitura em pedido ao banco. False se não houver o que pedir.
+
+    Com tabela a completar, ela vira uma planilha EM MEMÓRIA
+    (`montar_de_tabela`) e o resto é o caminho da planilha: casamento de
+    colunas pelo planejador, números do banco, arquivo para baixar. Sem
+    tabela, a pergunta reformulada pela leitura vai ao planejador.
+
+    A mensagem é ajustada só em memória, e isso é seguro por construção: o
+    único `save` depois daqui é `update_fields=["status"]` (em
+    `handle_message`), e o preenchimento grava seus campos com `update`. No
+    banco, a pergunta continua sendo o que a pessoa escreveu, com a imagem —
+    o teste `test_imagem_convertida_nao_altera_a_pergunta_gravada` garante.
+    """
+    registro = {"leitura": leitura.leitura}
+
+    if leitura.tabela_colunas and leitura.tabela_linhas:
+        try:
+            dados = planilha_anexada.montar_de_tabela(leitura.tabela_colunas, leitura.tabela_linhas)
+            estrutura = planilha_anexada.ler_estrutura(NOME_DA_TABELA_DO_PRINT, dados)
+        except AnexoRecusado as exc:
+            logger.info("A tabela do print não virou planilha: %s", exc)
+        else:
+            message.anexo_tipo = Message.Anexo.PLANILHA
+            message.anexo_nome = NOME_DA_TABELA_DO_PRINT
+            message.anexo_resumo = estrutura.resumo
+            message.anexo_token = deposito.guardar(dados)
+            auditoria.extras["imagem"] = {**registro, "virou": "planilha"}
+            return True
+
+    if leitura.pergunta_ao_banco:
+        message.content = leitura.pergunta_ao_banco
+        message.anexo_tipo = ""
+        auditoria.extras["imagem"] = {**registro, "virou": "pergunta", "pergunta": leitura.pergunta_ao_banco}
+        return True
+
+    return False
+
+
+def _nota_do_preenchimento(relatorio, nome: str) -> str:
+    """Frase determinística sobre o preenchimento — escrita aqui, não pelo
+    modelo. Custa zero token e não tem como exagerar o resultado.
+
+    Diz, pelo nome, o que casou por aproximação (para conferir) e o que
+    ficou em branco (para corrigir na planilha e mandar de novo)."""
+    partes = [
+        f"\n\n---\n\nPreenchi **{relatorio.preenchidas} de {relatorio.total} linhas** "
+        f"de `{nome}`. Baixe pelo botão **Baixar planilha preenchida**."
+    ]
+    if relatorio.aproximadas:
+        pares = [f"{planilha} → {banco}" for planilha, banco in relatorio.aproximadas]
+        partes.append(
+            f"\n\n**Casei por nome parecido — confira:** {_lista_curta(pares)}."
+        )
+    if relatorio.sem_correspondencia_nomes:
+        partes.append(
+            "\n\n**Ficaram em branco, sem correspondência no banco:** "
+            f"{_lista_curta(relatorio.sem_correspondencia_nomes)}. Se algum for outro "
+            "nome da mesma rede, ajuste na planilha e envie de novo."
+        )
+    if relatorio.ambiguas:
+        partes.append(
+            f"\n\n{relatorio.ambiguas} apareciam mais de uma vez no resultado; deixei em "
+            "branco em vez de escolher uma."
+        )
+    return "".join(partes)
+
+
+def _preencher_planilha(message, plano, executor, catalog, auditoria) -> str:
+    """Preenche a planilha anexada com o resultado da consulta.
+
+    Roda a consulta DE NOVO, com o limite alto: a que respondeu traz no
+    máximo 500 linhas porque é o que o modelo lê, e a planilha pode ter vinte
+    mil. Devolve a frase a acrescentar na resposta, ou vazio quando não deu
+    para preencher — nesse caso a resposta em texto continua valendo.
+    """
+    dados = deposito.buscar(message.anexo_token)
+    if dados is None:
+        return "\n\n---\n\n" + canned.ANEXO_VENCIDO
+
+    pedido = planilha_anexada.PedidoDePreenchimento.do_plano(plano.preenchimento)
+    guard = validate_sql(plano.sql, catalog, max_rows=LINHAS_DO_PREENCHIMENTO)
+    if not guard.approved:
+        logger.warning("Consulta do preenchimento recusada pelo validador: %s", guard.reason)
+        return ""
+
+    try:
+        resultado = executor.run(guard.sql, max_rows=LINHAS_DO_PREENCHIMENTO)
+    except QueryExecutionError as exc:
+        logger.warning("Consulta do preenchimento falhou: %s", exc)
+        return ""
+
+    auditoria.consulta(
+        attempt=len(auditoria.consultas) + 1,
+        sql=plano.sql,
+        reference_query_id=plano.reference_query_id,
+        guard_result=QueryRun.GuardResult.APPROVED,
+        status=QueryRun.Status.SUCCESS,
+        row_count=resultado.row_count,
+        truncated=resultado.truncated,
+        duration_ms=resultado.duration_ms,
+        # Mesma forma da amostra das outras consultas: esta é a última da
+        # resposta, e o painel de fonte e o gráfico leem dela.
+        result_sample={
+            "columns": list(resultado.columns),
+            "rows": [list(linha) for linha in resultado.rows[:5]],
+            "preenchimento": plano.preenchimento,
+        },
+    )
+
+    try:
+        preenchida = planilha_anexada.preencher(
+            message.anexo_nome, dados, pedido, resultado.columns, resultado.rows
+        )
+    except AnexoRecusado as exc:
+        logger.info("Não deu para preencher a planilha: %s", exc)
+        return f"\n\n---\n\nNão consegui preencher a planilha: {exc}"
+    finally:
+        deposito.descartar(message.anexo_token)
+
+    token = deposito.guardar(preenchida.dados, segundos=SEGUNDOS_DA_SAIDA)
+    Message.objects.filter(pk=message.pk).update(
+        anexo_resposta_token=token, anexo_resposta_nome=preenchida.nome
+    )
+    message.anexo_resposta_token = token
+    message.anexo_resposta_nome = preenchida.nome
+    return _nota_do_preenchimento(preenchida, preenchida.nome)
+
+
 def _conversa(plano, message, historico) -> _Decisao:
     """Resposta sem consulta (ADR-0019): cumprimento, o que o assistente
     faz, conceito do negócio ou leitura do que já apareceu na conversa.
@@ -564,7 +874,25 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
         )
 
     historico = _historico(message)
-    plano = provider.plan(PlanRequest(question=message.content, history=historico))
+
+    if message.anexo_tipo == Message.Anexo.IMAGEM:
+        # Imagem é outro caminho, com um décimo do custo (ADR-0024) — a menos
+        # que o pedido precise do banco; aí ela vira pergunta ou planilha e
+        # o caminho normal segue daqui.
+        decisao = _ler_imagem(message, provider, auditoria, historico)
+        if decisao is not None:
+            return decisao
+    elif not message.anexo_tipo:
+        _herdar_planilha_pendente(message, auditoria)
+
+    plano = provider.plan(
+        PlanRequest(
+            question=message.content,
+            history=historico,
+            # Só a FORMA da planilha sobe ao modelo; o conteúdo fica aqui.
+            planilha=_planilha(message),
+        )
+    )
     auditoria.chamada(AICall.Stage.PLAN, plano.usage)
 
     if _pediu_o_documento_inteiro(plano):
@@ -572,7 +900,10 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
         # basta, a IA avisa em vez de inventar a regra que faltou.
         logger.info("A IA pediu o documento inteiro: %s", plano.reason)
         plano = provider.plan(
-            PlanRequest(question=message.content, history=historico, full_context=True)
+            PlanRequest(
+                question=message.content, history=historico, full_context=True,
+                planilha=_planilha(message),
+            )
         )
         auditoria.chamada(AICall.Stage.FIX, plano.usage)
 
@@ -583,7 +914,7 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
         return _Decisao(
             decision=AIReply.Decision.CLARIFY,
             reply=plano.clarification_question or canned.MENSAGEM_SEM_PERGUNTA,
-            raw={"reason": plano.reason},
+            raw={"reason": plano.reason, **_deixar_planilha_pendente(message)},
         )
 
     if plano.intent == Plan.Intent.OUT_OF_SCOPE:
@@ -604,11 +935,21 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
             gap_reason=plano.reason or "a IA não localizou o dado nas tabelas conhecidas",
         )
 
-    plano, resultado, erro, inexistente = _executar_com_correcao(
+    plano, resultado, erro, falha = _executar_com_correcao(
         plano, message, provider, executor, catalog, auditoria, historico
     )
 
-    if inexistente:
+    if falha == "indisponivel":
+        # Não é lacuna do catálogo nem erro da IA: o banco não respondeu.
+        return _Decisao(
+            decision=AIReply.Decision.FAILED,
+            reply=canned.BANCO_INDISPONIVEL,
+            rule="banco_indisponivel",
+            raw={"erro": erro},
+            message_status=Message.Status.FAILED,
+        )
+
+    if falha == "inexistente":
         return _Decisao(
             decision=AIReply.Decision.UNKNOWN,
             reply=canned.DADO_INDISPONIVEL,
@@ -659,10 +1000,26 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
             raw={**raw, "reference_query_id": plano.reference_query_id},
         )
 
-    texto, raw = _redigir(plano, resultado, message, provider, catalog, auditoria, historico)
+    vai_preencher = message.anexo_tipo == Message.Anexo.PLANILHA and bool(plano.preenchimento)
+    # Com planilha a preencher, o arquivo que importa é o da pessoa: a
+    # redação não é instruída a mandar ao "Baixar Excel" (o botão do
+    # resultado completo continua na tela, como segunda opção).
+    plano_da_redacao = replace(plano, excel=False) if vai_preencher else plano
+    texto, raw = _redigir(plano_da_redacao, resultado, message, provider, catalog, auditoria, historico)
+    texto += _nota_de_truncamento(resultado, catalog.max_rows)
+
+    if message.anexo_tipo == Message.Anexo.PLANILHA:
+        if plano.preenchimento:
+            texto += _preencher_planilha(message, plano, executor, catalog, auditoria)
+            raw["preenchimento"] = plano.preenchimento
+        else:
+            # A consulta respondeu, mas o modelo não disse como casar as
+            # colunas: a resposta em texto vale, e a planilha volta vazia.
+            texto += "\n\n---\n\n" + canned.PLANILHA_SEM_CASAMENTO
+
     return _Decisao(
         decision=AIReply.Decision.ANSWERED,
-        reply=texto + _nota_de_truncamento(resultado, catalog.max_rows),
+        reply=texto,
         rule=raw.pop("rule", ""),
         raw={**raw, "reference_query_id": plano.reference_query_id},
     )
@@ -677,7 +1034,7 @@ def _gravar(message, catalog, auditoria, decisao) -> AIReply:
         reply_text=decisao.reply,
         prompt_version=PROMPT_VERSION,
         catalog_hash=catalog.hash,
-        raw_response=decisao.raw,
+        raw_response={**decisao.raw, **auditoria.extras},
         **totais,
     )
 

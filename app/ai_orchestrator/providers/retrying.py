@@ -39,6 +39,9 @@ class RetryingAIProvider(AIProvider):
     def answer(self, request):
         return self._com_retry(self._inner.answer, request, "redação")
 
+    def read_image(self, request):
+        return self._com_retry(self._inner.read_image, request, "leitura da imagem")
+
     def _com_retry(self, funcao, request, etapa: str):
         espera = self._espera
         for tentativa in range(1, self._tentativas + 1):

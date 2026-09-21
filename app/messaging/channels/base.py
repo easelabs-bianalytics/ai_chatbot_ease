@@ -21,6 +21,12 @@ class InboundMessage:
     conversation_id: int
     client_message_id: str
     text: str
+    # Anexo (ADR-0024), quando houver. Só etiqueta: o arquivo não passa por
+    # aqui nem é guardado — ver `attachments/__init__.py`.
+    anexo_tipo: str = ""
+    anexo_nome: str = ""
+    anexo_resumo: str = ""
+    anexo_token: str = ""
 
 
 @dataclass(frozen=True)

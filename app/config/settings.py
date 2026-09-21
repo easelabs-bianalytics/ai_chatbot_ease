@@ -85,6 +85,24 @@ DEFAULT_FROM_EMAIL = os.environ.get(
 
 # Celery + Redis (ADR-0003)
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6381/0")
+
+# Cache = depósito temporário dos anexos (ADR-0024). É o mesmo Redis da fila,
+# em OUTRO banco (/1): um `FLUSHDB` no cache não pode apagar tarefa
+# enfileirada. Prazo padrão curto porque aqui não mora nada que precise
+# durar — anexo vencido é anexo descartado, e isso é de propósito.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": REDIS_URL.rsplit("/", 1)[0] + "/1",
+        "TIMEOUT": 15 * 60,
+    }
+}
+
+# Upload do anexo fica SÓ em memória. O padrão do Django grava em arquivo
+# temporário no disco tudo acima de 2,5 MB — e a regra aqui é que o arquivo
+# da pessoa não toca disco nenhum (ADR-0024). O teto acompanha o limite de
+# 5 MiB de `attachments/limites.py`, com folga para o cabeçalho multipart.
+FILE_UPLOAD_MAX_MEMORY_SIZE = 6 * 1024 * 1024
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_TASK_TRACK_STARTED = True
