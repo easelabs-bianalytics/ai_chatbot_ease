@@ -207,8 +207,8 @@ Commit só quando pedido.
       segunda chamada ao modelo. Investigar antes do deploy
 
 ## Fase 9 — Deploy
-**Status: ⏳ em andamento** · passos 0 a 7 fechados; passo 8 (imagem real)
-em andamento (2026-09-21)
+**Status: ⏳ em andamento** · passos 0 a 8 fechados; próximo é o bump da
+imagem (passo 9) (2026-09-21)
 
 ### Onde estamos
 
@@ -222,8 +222,8 @@ em andamento (2026-09-21)
 | 5 — CNAME de validação | ✅ criado no registro.br; conferido no DNS público |
 | 6 — Certificado `ISSUED` | ✅ emitido e anexado ao listener HTTPS |
 | 7 — CNAME final | ✅ `jarvis.easelabs.app.br` → ALB no DNS público, certificado válido |
-| 8 — Imagem real | 🔲 pode andar já: não depende de DNS |
-| 9 — Bump da imagem | 🔲 depende do 8 |
+| 8 — Imagem real | ✅ `cockpit-prod-jarvis:2ea453d` no ECR, linux/amd64, 83 MB |
+| 9 — Bump da imagem | 🔲 já pode |
 | 10 — Migrations e usuários | 🔲 depende do 9 |
 | 11 — Testar e fechar | 🔲 depende do 7 e do 10 |
 
@@ -835,7 +835,7 @@ no `sales_force_crm`. Antes do build, os ajustes de código:
       - teste do container: health com `Host: 10.0.1.23:8000` → 200, `/`
         com o mesmo host → 400, estáticos → 200, processo como `app`, sem
         `.env` na imagem, `celery` importa
-- [ ] **Tudo commitado no repositório do Jarvis** (ver "Como commitar daqui
+- [x] **Tudo commitado no repositório do Jarvis** (ver "Como commitar daqui
       em diante"). A tag da imagem é o hash do commit: com arquivo alterado
       fora de commit, a imagem leva código que não está em commit nenhum, e
       ninguém consegue saber depois o que foi ao ar. Em 2026-09-21 havia 33
@@ -849,14 +849,31 @@ export CONTA=595324409476.dkr.ecr.sa-east-1.amazonaws.com
 export HASH=$(git rev-parse --short HEAD)
 
 aws ecr get-login-password --region sa-east-1 | docker login --username AWS --password-stdin $CONTA
-docker build --platform linux/amd64 -t $CONTA/cockpit-prod-jarvis:$HASH .
-docker push $CONTA/cockpit-prod-jarvis:$HASH
+docker buildx build --platform linux/amd64 --provenance=false --sbom=false   --output type=image,name=$CONTA/cockpit-prod-jarvis:$HASH,oci-mediatypes=false,push=true .
 ```
 
-- [ ] Tag é o hash do commit, **nunca `latest`**
-- [ ] `--platform linux/amd64`: o Fargate do cockpit roda x86. Numa máquina
+**Por que não `docker build` + `docker push`:** o Docker Desktop anexa um
+atestado à imagem e sobe um índice com três entradas no ECR — duas sem tag.
+A lifecycle policy do repositório guarda as **10 entradas mais recentes,
+com ou sem tag**: cada deploy consumiria três vagas, e uma entrada-filha
+poderia expirar separada da imagem em uso. Os outros sete repositórios do
+cockpit têm um manifesto Docker simples por imagem; o comando acima gera o
+mesmo. Aconteceu no primeiro push (2026-09-21); as três entradas órfãs
+foram apagadas e a tag refeita.
+
+- [x] Tag é o hash do commit, **nunca `latest`**
+- [x] `--platform linux/amd64`: o Fargate do cockpit roda x86. Numa máquina
       ARM (Mac M1/M2) a imagem sairia na arquitetura errada e a task não sobe
-- [ ] `docker images` deve mostrar ~200 MB, não ~800 MB
+- [x] Tamanho: **83 MB comprimidos no ECR** (o `docker images` do Docker
+      Desktop mostra ~390 MB, que é a imagem descompactada — a base
+      `python:3.12-slim` mais 147 MB de dependências)
+
+Feito em 2026-09-21: commit `2ea453d` empurrado, imagem
+`595324409476.dkr.ecr.sa-east-1.amazonaws.com/cockpit-prod-jarvis:2ea453d`,
+manifesto Docker v2, linux/amd64, `USER app`, gunicorn no `CMD`. Conferida
+baixando de volta do ECR. O Poetry segue em aberto com a Natália (tabela de
+pendências): se for exigência literal, troca o instalador e sai uma imagem
+nova — nada nos passos seguintes muda.
 
 #### Passo 9 — Bump da imagem: a forma de deploy deste repositório
 
