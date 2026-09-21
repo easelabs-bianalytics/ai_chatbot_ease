@@ -23,6 +23,13 @@ class AIQuotaExceeded(AIProviderError):
     e vira uma mensagem própria ao usuário."""
 
 
+class AIOutputTruncated(AIProviderError):
+    """A saída passou do limite de tokens e chegou cortada no meio — o JSON
+    nem fecha. Tentar de novo dá o mesmo corte e paga de novo: em produção
+    (2026-09-21) "quais CDs estão em ruptura?" custou três tentativas iguais
+    cada vez. Quem chama cai para o que dá sem o modelo (a tabela crua)."""
+
+
 @dataclass(frozen=True)
 class HistoryMessage:
     direction: str  # "in" (pergunta) | "out" (resposta enviada)

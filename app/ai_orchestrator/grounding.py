@@ -11,12 +11,14 @@ escrever o número que quisesse dentro da própria consulta para "ancorá-lo".
 
 import re
 from dataclasses import dataclass
+from datetime import date
 
 import sqlglot
 from sqlglot import exp
 
 _NUMERO = re.compile(r"\d[\d.,]*\d|\d")
 _MAX_CASAS_DECIMAIS = 6
+_DOSE_NO_NOME = re.compile(r"(\d+)\s*(?:ml|mg)\b", re.I)
 
 
 @dataclass(frozen=True)
@@ -108,6 +110,20 @@ def numeros_suportados(columns, rows, question: str, sql: str, row_count=None) -
 
     # A quantidade de linhas é fato do resultado: "são 3 SKUs" não é invenção.
     suportados.add(float(len(rows) if row_count is None else row_count))
+
+    # A data de hoje vai no contexto ("Hoje: 21/09/2026") justamente para a
+    # resposta poder dizer que uma foto é de 27/08, não de hoje. Citá-la não é
+    # inventar número — e reprová-la derrubou a resposta do estoque da Raia.
+    hoje = date.today()
+    suportados |= {float(hoje.day), float(hoje.month), float(hoje.year)}
+
+    # Dose e volume que estão no NOME da coluna ("isolado_30ml",
+    # "cbd_20mg"): o texto diz "Isolado 30 mL". Só com a unidade colada — um
+    # número solto num apelido de coluna continua não valendo, senão bastaria
+    # o modelo escrever "AS total_4500" para ancorar o que quisesse.
+    for coluna in columns or ():
+        for numero in _DOSE_NO_NOME.findall(str(coluna)):
+            suportados.add(float(numero))
 
     # O texto não carrega o sinal: "caiu 61 unidades" e "recuou 13,4%" citam
     # o -61 e o -13,4 do resultado, e a expressão que acha números no texto

@@ -38,6 +38,7 @@ from ai_orchestrator.prompts import (
     load_prompt,
 )
 from ai_orchestrator.providers.base import (
+    AIOutputTruncated,
     AIProvider,
     AIProviderError,
     AIQuotaExceeded,
@@ -208,6 +209,13 @@ def _historico(mensagens) -> str:
 # gasto foi atingido. O 429 de limite de velocidade tem outro código e é
 # passageiro — esse sim vale tentar de novo.
 _CODIGOS_SEM_CREDITO = frozenset({"insufficient_quota", "billing_hard_limit_reached", "billing_not_active"})
+
+
+def _saida_cortada(exc) -> bool:
+    """JSON que não fecha: o modelo bateu no limite de tokens no meio da
+    resposta. É o que o SDK devolve ao validar a saída estruturada."""
+    texto = str(exc)
+    return "json_invalid" in texto or "EOF while parsing" in texto
 
 
 def _creditos_esgotados(exc) -> bool:
@@ -387,6 +395,8 @@ class OpenAIProvider(AIProvider):
         except Exception as exc:  # o SDK tem uma árvore própria de erros
             if _creditos_esgotados(exc):
                 raise AIQuotaExceeded(f"créditos da OpenAI esgotados: {exc}") from exc
+            if _saida_cortada(exc):
+                raise AIOutputTruncated(f"a saída do modelo veio cortada: {exc}") from exc
             raise AIProviderError(f"falha na chamada ao modelo: {exc}") from exc
 
         latencia = int((time.monotonic() - inicio) * 1000)

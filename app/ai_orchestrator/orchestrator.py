@@ -25,6 +25,7 @@ from ai_orchestrator.context import MAX_PASSOS_POR_RODADA, MAX_RODADAS, PEDIDO_D
 from ai_orchestrator.grounding import check_grounding, check_grounding_varias
 from ai_orchestrator.models import AICall, AIReply, CatalogGap
 from ai_orchestrator.providers.base import (
+    AIOutputTruncated,
     AIProviderError,
     AIQuotaExceeded,
     AnswerRequest,
@@ -180,6 +181,17 @@ def _nota_de_truncamento(resultado, max_rows: int) -> str:
         f"\n\n(Resultado cortado no limite de {max_rows} linhas: o que você vê "
         "é uma parte, não o total.)"
     )
+
+
+def _responde_a_um_pedido_de_detalhe(message) -> bool:
+    """A última resposta desta conversa foi uma pergunta do Jarvis."""
+    anterior = (
+        AIReply.objects.filter(message__conversation=message.conversation, message__id__lt=message.id)
+        .order_by("-message__id")
+        .values_list("decision", flat=True)
+        .first()
+    )
+    return anterior == AIReply.Decision.CLARIFY
 
 
 def _veio_do_documento_inteiro(plano) -> bool:
@@ -435,7 +447,13 @@ def _redigir(plano, resultado, message, provider, catalog, auditoria, historico,
         excel=plano.excel,
         verification=verificacao,
     )
-    resposta = provider.answer(pedido)
+    try:
+        resposta = provider.answer(pedido)
+    except AIOutputTruncated:
+        # A redação estourou o limite escrevendo a resposta (em produção,
+        # copiando 50 linhas numa tabela). O dado está aqui: sai a tabela.
+        logger.warning("A redação veio cortada no limite de tokens; enviando a tabela crua")
+        return _tabela(resultado), {"rule": "resposta_sem_narrativa", "excel": plano.excel, "saida_cortada": True}
     auditoria.chamada(AICall.Stage.ANSWER, resposta.usage)
 
     extras = {"excel": plano.excel}
@@ -470,9 +488,13 @@ def _redigir(plano, resultado, message, provider, catalog, auditoria, historico,
     rascunhos = [resposta.reply]
     motivos = [conferencia.reason]
 
-    reescrita = provider.answer(
-        AnswerRequest(**{**pedido.__dict__, "revision_note": conferencia.reason})
-    )
+    try:
+        reescrita = provider.answer(
+            AnswerRequest(**{**pedido.__dict__, "revision_note": conferencia.reason})
+        )
+    except AIOutputTruncated:
+        logger.warning("A reescrita veio cortada no limite de tokens; enviando a tabela crua")
+        return _tabela(resultado), {"rule": "resposta_sem_narrativa", "excel": plano.excel, "saida_cortada": True}
     auditoria.chamada(AICall.Stage.REWRITE, reescrita.usage)
 
     segunda = check_grounding(
@@ -920,7 +942,11 @@ def _redigir_analise(com_dado, message, provider, auditoria, historico) -> tuple
     rascunhos, motivos = [], []
     for tentativa in (1, 2):
         nota = motivos[-1] if motivos else ""
-        resposta = provider.answer(replace(pedido, revision_note=nota) if nota else pedido)
+        try:
+            resposta = provider.answer(replace(pedido, revision_note=nota) if nota else pedido)
+        except AIOutputTruncated:
+            logger.warning("A análise veio cortada no limite de tokens; enviando as evidências")
+            break
         auditoria.chamada(AICall.Stage.ANSWER if tentativa == 1 else AICall.Stage.REWRITE, resposta.usage)
         conferencia = check_grounding_varias(resposta.reply, suporte, message.content)
         if conferencia.ok:
@@ -1128,6 +1154,11 @@ def _ajustar_grafico(message) -> _Decisao | None:
 
 def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
     regra = apply_rules(message.content, catalog)
+    if regra is not None and regra.rule == "mensagem_sem_pergunta" and _responde_a_um_pedido_de_detalhe(message):
+        # "2026", "3000": sem letra nenhuma, mas é a resposta ao "de qual
+        # ano?" que o Jarvis acabou de perguntar. Recusar como mensagem
+        # inválida foi o que aconteceu em produção (2026-09-21).
+        regra = None
     if regra is not None:
         return _Decisao(
             decision=regra.decision, reply=regra.reply, rule=regra.rule

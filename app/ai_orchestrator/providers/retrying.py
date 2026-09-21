@@ -9,7 +9,7 @@ repetir só gastaria de novo.
 import logging
 import time
 
-from ai_orchestrator.providers.base import AIProvider, AIProviderError, AIQuotaExceeded
+from ai_orchestrator.providers.base import AIOutputTruncated, AIProvider, AIProviderError, AIQuotaExceeded
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +47,9 @@ class RetryingAIProvider(AIProvider):
         for tentativa in range(1, self._tentativas + 1):
             try:
                 return funcao(request)
-            except AIQuotaExceeded:
-                # Sem crédito não volta sozinho: insistir só atrasaria o aviso.
+            except (AIQuotaExceeded, AIOutputTruncated):
+                # Sem crédito não volta sozinho, e saída cortada no limite de
+                # tokens volta cortada de novo: insistir só pagaria outra vez.
                 raise
             except AIProviderError as exc:
                 if tentativa == self._tentativas:
