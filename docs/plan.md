@@ -1473,6 +1473,31 @@ primeira do tema.
       Ou seja: repetir o tema custa **87% menos**. A API aceita os dois
       breakpoints. O documento inteiro (2ª tentativa) continua sem gravar
       nada — ele nunca é reaproveitado e só pagaria o ágio.
+### Teste do Rubens em produção (2026-09-22, depois do deploy)
+
+Três achados, lidos no registro das conversas:
+
+- [x] **A resposta falava de todo mundo, não do que foi pedido.** A planilha
+      tinha 3 redes (e outra, 3 representantes); a consulta trouxe 29 e 34, e
+      a resposta e a tabela listaram todas. O preenchimento estava certo
+      ("3 de 3 linhas") — errado era o que a pessoa lia. Culpa da instrução
+      que eu havia escrito ("traga todas as chaves"). Agora:
+      - o resumo avisa quando a amostra cobre a planilha inteira, e o
+        planejador é instruído a **filtrar a consulta por essas chaves**;
+      - independentemente disso, o sistema **reduz o resultado às chaves da
+        planilha** antes de a redação ver qualquer coisa
+- [x] **A pergunta do print demorou 175 s.** A consulta pedia 5 indicadores
+      para os 34 representantes e **estourou o tempo do banco** na primeira
+      tentativa; a correção refez tudo. Filtrar pelas 3 chaves resolve a
+      causa
+- [x] **Ainda caiu numa pergunta tricky (P20).** "Unidades da
+      Prati-Donaduzzi no PDV X" virou pedido de período e de CNPJ, depois
+      busca de PDV — quando a resposta é que **dispensação por PDV é só
+      Ease**. Faltava a ordem: **conferir se a pergunta é possível antes de
+      pedir detalhe**. Entrou no prompt, com a tabela de cruzamentos que a
+      base não faz (concorrente por PDV, prescrição por dia ou por SKU,
+      extras/MP/SS por PDV, meta, próxima visita, estoque fora das redes)
+
 - [ ] Ir ao ar junto com o resto da Fase 12
 
 ---
