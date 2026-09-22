@@ -98,3 +98,14 @@ def test_sem_planilha_o_terceiro_tema_continua_em_resumo(catalogo):
     provider.plan(PlanRequest(question="PX por representante e sell out em unidades por setor do painel"))
 
     assert "Tema relacionado (resumo):" in _texto(provider._client.chamadas[0])
+
+
+def test_ressalva_de_forecast_e_lida_do_plano(catalogo):
+    """Marcada pelo modelo só em projeção de Sell Out ou Sell In da Ease."""
+    provider = _provider(catalogo, [_plano(ressalva_forecast=True), _plano()])
+
+    com = provider.plan(PlanRequest(question="projeção de sell out de outubro"))
+    sem = provider.plan(PlanRequest(question="projeção de PX de outubro"))
+
+    assert com.ressalva_forecast is True
+    assert sem.ressalva_forecast is False

@@ -1039,9 +1039,15 @@ LIMIT 10;
 
 ## 3. Estoque nas Redes e Categoria de PDVs
 
-> **Forecast e projeções de Sell In ou Sell Out:** oriente o usuário a acessar o **app de Forecast
-> de Reposição**, que concentra essas informações. A única exceção é o status de ruptura de hoje
-> (dia 0) de um CD, que pode ser consultado na seção 3.3.
+> **Projeções e forecast:** você **pode projetar** — sell-out, prescrição (PX), PBM e qualquer
+> série quantitativa. Escolha o método que o dado comportar (tendência dos últimos meses, média
+> móvel, mesmo período do ano anterior, ritmo do mês corrente) e calcule **na própria consulta**,
+> deixando claro na resposta o método e o período que serviu de base — projeção é estimativa, não
+> medição.
+>
+> **Só nas projeções de Sell Out ou Sell In da Ease**, acrescente que, para uma visão mais
+> assertiva e factual, o usuário deve conferir o **dashboard de Forecast de Reposição**. Em
+> projeção de PX, PBM ou outros indicadores, não cite o dashboard: apenas projete.
 
 | Tabela | Conteúdo | Colunas-chave |
 |---|---|---|
@@ -1259,8 +1265,9 @@ ORDER BY 1 DESC;
 Fonte: `estoque_redes.vw_forecast_projecao_cd`. **Um CD está em ruptura em um SKU quando o
 `dde_base` do dia 0 é menor ou igual a 15.**
 
-- **Sempre filtre `dia = 0`.** Os outros dias são projeção (oriente para o app de Forecast de
-  Reposição).
+- **Sempre filtre `dia = 0`** quando a pergunta for sobre a ruptura de hoje. Os outros dias são a
+  projeção de reposição desta própria base e podem ser usados quando a pergunta for de projeção —
+  citando o dashboard de Forecast de Reposição como a visão oficial.
 - **Sempre avalie por SKU.** Um CD pode estar OK em um SKU e em ruptura em outro. Se o usuário não
   disser o SKU, pergunte ou mostre cada SKU separado — nunca some os SKUs.
 

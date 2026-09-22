@@ -121,3 +121,9 @@ INVESTIGACAO_SEM_DADO = (
     "uma explicação. Tente com o período e o recorte mais específicos — por "
     "exemplo, o mês, o canal ou a regional."
 )
+
+RESSALVA_DE_FORECAST = (
+    "Esta é uma projeção, feita a partir do histórico. Para uma visão mais "
+    "assertiva e factual de reposição, confira o **dashboard de Forecast de "
+    "Reposição**."
+)
