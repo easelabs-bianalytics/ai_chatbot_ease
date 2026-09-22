@@ -1395,6 +1395,88 @@ receita: é exemplo de raciocínio.
 
 ---
 
+## Fase 12 — Lista longa, projeções e custo
+**Status: ⏳ implementado e testado localmente; falta ir ao ar (2026-09-22)**
+
+### Lista longa, agora de forma generalista
+
+O "problema técnico" da ruptura foi corrigido caso a caso na Fase 11 (saída
+cortada não é repetida e cai para a tabela). O Rubens pediu a correção da
+**causa**, para qualquer pergunta:
+
+- [x] **Resultado com mais de 10 linhas: o modelo não escreve a lista.** Ele
+      recebe uma amostra de 12 linhas, escreve o texto e aponta a tabela; a
+      tela desenha a lista inteira com os dados do banco
+      (`MAX_LINHAS_NO_TEXTO`, `AMOSTRA_DA_LISTA_LONGA`)
+- [x] **Se o modelo não apontar a tabela, o sistema a acrescenta**: a pessoa
+      nunca fica com um texto falando de uma lista que não está na tela
+- [x] Economiza nos dois lados: menos linhas na entrada e uma resposta que
+      não gasta a saída inteira transcrevendo o que já está no banco
+
+### Projeções (mudança no documento de referência)
+
+- [x] O documento deixava toda projeção para o app de Forecast de Reposição.
+      Agora **a IA projeta** sell-out, prescrição, PBM e outras séries: método
+      simples e defensável (tendência, média móvel, mesmo período do ano
+      anterior), **calculado na consulta**, com o histórico no resultado e o
+      método dito na resposta
+- [x] **Só em projeção de Sell Out ou Sell In da Ease** entra a orientação de
+      conferir o **dashboard de Forecast de Reposição**. Ela é acrescentada
+      pelo sistema (`canned.RESSALVA_DE_FORECAST`), a partir de uma marca do
+      planejador — não depende de o modelo lembrar e não custa token. Em
+      projeção de PX ou PBM, nada é dito sobre o dashboard
+- [x] A ruptura de hoje continua sendo `dia = 0`; os outros dias da projeção
+      de reposição podem ser usados quando a pergunta for de projeção
+
+### Custo: onde o dinheiro está (medido em 2026-09-22)
+
+US$ 6,36 gastos na OpenAI até aqui. O que está registrado no banco:
+
+| | Produção | Testes locais |
+|---|---|---|
+| Respostas | 16 · US$ 0,54 | 87 · US$ 4,51 |
+| Planejamento (Terra) | 80% do gasto | 70% (+23% em correções) |
+| Redação (Luna) | US$ 0,015 | US$ 0,056 |
+| Pergunta comum | US$ 0,03 | US$ 0,045 |
+| Investigação | US$ 0,14 | US$ 0,19 |
+| Entrada do Terra vinda do cache | 34,8% | 16,3% |
+
+A diferença para os US$ 6,36 são as chamadas diretas dos testes de
+capacidade (imagem, medição de tokens), que não passam pelo orquestrador.
+
+**O gasto é uma coisa só: o contexto da chamada que escreve SQL.** A redação
+é irrelevante (US$ 0,07 em tudo). Trocar de modelo não é o caminho: o Terra
+está onde o erro é caro e invisível, e o Luna já custa um décimo.
+
+- [x] **Uma chamada a menos por investigação**: o planejador marca
+      `rodada_final` quando as consultas da rodada já bastam, e o sistema vai
+      direto para a análise. Antes, quase toda investigação gastava uma
+      chamada só para ele dizer "pode concluir" (~US$ 0,05)
+
+**O que a investigação passa a custar**: a 1ª chamada grava o tema
+(~US$ 0,054) e as seguintes leem do cache (~US$ 0,007 cada), porque numa
+investigação o tema é sempre o mesmo. Com `rodada_final` poupando uma
+chamada, uma pergunta de porquê deve sair por **~US$ 0,07** em vez dos
+US$ 0,18 medidos ontem, e a pergunta comum por **~US$ 0,01** depois da
+primeira do tema.
+- [x] **Cache do contexto por tema.** Havia um ponto de cache só, no prefixo
+      fixo; as seções do tema e o schema pagavam entrada cheia em toda
+      pergunta (35% de cache, medido). Agora são **dois pontos**: fixo e tema.
+      **Medido com a API real em 2026-09-22** (custo do teste: US$ 0,11):
+
+      | Chamada | Entrada | Do cache | Custo |
+      |---|---|---|---|
+      | 1ª pergunta do tema `sell_out` | 20.298 | 0 (grava 20.262) | US$ 0,0536 |
+      | 2ª pergunta, tema diferente (`sell_out` + `estoque`) | 27.396 | 9.929 (36%, só o fixo) | US$ 0,0522 |
+      | 2ª pergunta, **mesmo tema** | 20.298 | **20.262 (100%)** | **US$ 0,0071** |
+
+      Ou seja: repetir o tema custa **87% menos**. A API aceita os dois
+      breakpoints. O documento inteiro (2ª tentativa) continua sem gravar
+      nada — ele nunca é reaproveitado e só pagaria o ágio.
+- [ ] Ir ao ar junto com o resto da Fase 12
+
+---
+
 ## Plano de testes
 
 Regra geral: a suíte (`uv run pytest`) nunca acessa rede, OpenAI ou o RDS.
