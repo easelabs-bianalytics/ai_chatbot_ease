@@ -70,6 +70,12 @@ LINHAS_DO_PREENCHIMENTO = 50_000
 LINHAS_DOS_ACHADOS = 30
 LINHAS_DOS_BLOCOS = 100
 
+# Acima disto, a lista não é escrita pelo modelo: vira bloco de tabela, e ele
+# recebe só uma amostra para comentar. Dez linhas ainda cabem num texto; 50
+# viravam resposta cortada no meio (produção, 2026-09-21).
+MAX_LINHAS_NO_TEXTO = 10
+AMOSTRA_DA_LISTA_LONGA = 12
+
 
 def _max_history_messages() -> int:
     """Quantas mensagens anteriores entram no contexto. Configurável por
@@ -435,17 +441,25 @@ def _guardar_dados_do_grafico(auditoria, resultado) -> None:
 
 def _redigir(plano, resultado, message, provider, catalog, auditoria, historico, verificacao=False):
     """Redige a resposta e confere a ancoragem numérica (ADR-0010)."""
+    # Lista longa: o modelo não copia linha nenhuma. Ele recebe uma amostra,
+    # escreve o texto e aponta a tabela; quem a desenha é a tela, com o
+    # resultado do banco. Pedir a lista inteira ao modelo é o que estourava
+    # o limite de saída — e, quando não estoura, é resposta paga para
+    # transcrever o que já está no banco.
+    lista_longa = not verificacao and resultado.row_count > MAX_LINHAS_NO_TEXTO
+    linhas = resultado.rows[: AMOSTRA_DA_LISTA_LONGA if lista_longa else catalog.rows_to_model]
     pedido = AnswerRequest(
         question=message.content,
         sql=plano.sql,
         columns=resultado.columns,
-        rows=resultado.rows[: catalog.rows_to_model],
+        rows=linhas,
         truncated=resultado.truncated,
         reference_query_id=plano.reference_query_id,
         history=historico,
         total_rows=resultado.row_count,
         excel=plano.excel,
         verification=verificacao,
+        tabela_em_bloco=lista_longa,
     )
     try:
         resposta = provider.answer(pedido)
@@ -467,12 +481,13 @@ def _redigir(plano, resultado, message, provider, catalog, auditoria, historico,
         extras["grafico"] = grafico
         _guardar_dados_do_grafico(auditoria, resultado)
 
-    if resposta.blocos and not verificacao:
+    if (resposta.blocos or lista_longa) and not verificacao:
         # Resposta em blocos (ADR-0025): o gráfico vem de dentro deles, e a
         # tela desenha tabela e gráfico com os dados da consulta.
         blocos, dados = _validar_blocos(
             resposta.blocos, [(resultado, plano.sql)], message
         )
+        blocos, dados = _garantir_a_tabela(blocos, dados, resultado, lista_longa, resposta.reply)
         if blocos:
             extras.pop("grafico", None)
             extras["blocos"] = blocos
@@ -803,7 +818,10 @@ def _investigar(plano, message, provider, executor, catalog, auditoria, historic
     while True:
         for passo in atual.investigacao[:MAX_PASSOS_POR_RODADA]:
             passos.append(_testar_hipotese(passo, rodada, message, executor, catalog, auditoria))
-        if rodada >= MAX_RODADAS:
+        if rodada >= MAX_RODADAS or atual.rodada_final:
+            # O próprio planejador disse que estas consultas fecham a
+            # investigação: a chamada seguinte só serviria para ele repetir
+            # isso, e ela custa o mesmo que a primeira.
             break
         progresso.definir(message.pk, "Lendo o que as consultas mostraram e decidindo o próximo passo")
         seguinte = provider.plan(PlanRequest(
@@ -983,6 +1001,23 @@ def _redigir_analise(com_dado, message, provider, auditoria, historico) -> tuple
         "rascunho_reprovado": rascunhos,
         "motivos_ancoragem": motivos,
     }
+
+
+def _garantir_a_tabela(blocos, dados, resultado, lista_longa: bool, texto: str) -> tuple:
+    """Lista longa sem bloco de tabela: acrescenta um no fim.
+
+    A instrução pede ao modelo que aponte a tabela em vez de copiar as
+    linhas. Se ele não apontar, a pessoa ficaria com um texto que fala de
+    uma lista que não está em lugar nenhum — então a tabela entra aqui, com
+    os dados do banco."""
+    if not lista_longa or any(b["tipo"] == "tabela" for b in blocos):
+        return blocos, dados
+    if not blocos:
+        blocos = [{"tipo": "texto", "texto": texto}] if texto else []
+    if not blocos:
+        return [], {}
+    blocos = [*blocos, {"tipo": "tabela", "consulta": 0, "colunas": list(resultado.columns)}]
+    return blocos, {**dados, "0": _dados_da_consulta(resultado)}
 
 
 def _dados_da_consulta(resultado) -> dict:
@@ -1316,6 +1351,11 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
     plano_da_redacao = replace(plano, excel=False) if vai_preencher else plano
     texto, raw = _redigir(plano_da_redacao, resultado, message, provider, catalog, auditoria, historico)
     texto += _nota_de_truncamento(resultado, catalog.max_rows)
+    if plano.ressalva_forecast:
+        # Projeção de Sell Out ou Sell In: a orientação sobre o dashboard é
+        # acrescentada aqui, sempre, em vez de depender do texto do modelo.
+        texto += "\n\n" + canned.RESSALVA_DE_FORECAST
+        raw["ressalva_forecast"] = True
 
     if message.anexo_tipo == Message.Anexo.PLANILHA:
         if plano.preenchimento:

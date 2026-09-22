@@ -113,6 +113,15 @@ class Plan:
     # Em `investigate`: as hipóteses desta rodada, cada uma com a consulta
     # que a testa — ({"hipotese", "sql", "reference_query_id"}, ...).
     investigacao: tuple = ()
+    # Projeção de Sell Out ou Sell In da Ease: o sistema acrescenta à resposta
+    # a orientação de conferir o dashboard de Forecast de Reposição. Fica
+    # fora do texto do modelo de propósito — assim ela nunca depende de ele
+    # lembrar, e não gasta token.
+    ressalva_forecast: bool = False
+    # Em `investigate`: estas consultas já fecham a investigação. Poupa a
+    # chamada seguinte ao planejador, que em quase toda investigação só
+    # servia para ele dizer "pode concluir" — ~US$ 0,05 por pergunta.
+    rodada_final: bool = False
     usage: AIUsage = field(default_factory=AIUsage)
 
 
@@ -136,6 +145,10 @@ class AnswerRequest:
     # O resultado abaixo é de uma consulta de verificação (a da pergunta
     # voltou vazia): a resposta explica o que aconteceu, não o número.
     verification: bool = False
+    # Lista longa (ADR-0025): a tabela é desenhada pela tela, e o modelo
+    # recebeu só uma amostra das linhas. Ele escreve o texto e aponta a
+    # tabela em `blocos`, sem copiar linha nenhuma.
+    tabela_em_bloco: bool = False
     # Investigação (ADR-0025): o resultado de cada hipótese consultada, na
     # ordem — ({"hipotese", "sql", "columns", "rows", "total_rows"}, ...).
     # Com isto preenchido, `sql`, `columns` e `rows` ficam vazios e a

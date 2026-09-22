@@ -143,6 +143,14 @@ class PlanoEstruturado(BaseModel):
     investigacao: list[PassoEstruturado] = Field(
         default_factory=list, description="em investigate: as hipóteses desta rodada"
     )
+    ressalva_forecast: bool = Field(
+        default=False,
+        description="true só em projeção de Sell Out ou Sell In da Ease",
+    )
+    rodada_final: bool = Field(
+        default=False,
+        description="em investigate: true se estas consultas já bastam para concluir",
+    )
 
 
 class GraficoEstruturado(BaseModel):
@@ -236,21 +244,31 @@ def _texto_dos_blocos(blocos) -> str:
     return "\n\n".join(b["texto"] for b in blocos if b["tipo"] == "texto")
 
 
-def _entrada_com_cache(fixo: str, resto: str) -> list:
-    """Uma mensagem, dois blocos de texto: o prefixo fixo, com o breakpoint do
-    cache no fim, e o resto. Para o modelo é o mesmo texto de antes, emendado.
+def _entrada_com_cache(fixo: str, tema: str, resto: str) -> list:
+    """Uma mensagem, três blocos de texto, com dois pontos de cache.
+
+    Para o modelo é o mesmo texto de antes, emendado; o que muda é o que a
+    OpenAI guarda:
+
+    - **fixo** (~5,6 mil tokens): prompt e núcleo, iguais em toda pergunta;
+    - **tema** (~11 mil): as seções do assunto e o schema filtrado. São
+      iguais em toda pergunta do MESMO tema e em todas as rodadas de uma
+      investigação — e eram justamente a parte que pagava entrada cheia toda
+      vez (medido em 2026-09-22: só 35% da entrada do Terra vinha do cache);
+    - **resto**: histórico, data, notas e a pergunta, que mudam sempre.
 
     Sem prefixo fixo (contexto completo, na segunda tentativa) vai um bloco só
     e sem breakpoint: nada é gravado, e aquele documento de ~45 mil tokens
     deixa de pagar o ágio de gravação — ele nunca era reaproveitado mesmo.
     """
     blocos = []
-    if fixo:
-        blocos.append({
-            "type": "input_text",
-            "text": fixo,
-            "prompt_cache_breakpoint": {"mode": "explicit"},
-        })
+    for parte in (fixo, tema):
+        if parte:
+            blocos.append({
+                "type": "input_text",
+                "text": parte,
+                "prompt_cache_breakpoint": {"mode": "explicit"},
+            })
     blocos.append({"type": "input_text", "text": resto})
     return [{"role": "user", "content": blocos}]
 
@@ -451,7 +469,12 @@ class OpenAIProvider(AIProvider):
             investigacao=e_pergunta_de_porque(request.question),
         )
 
-        entrada = contexto.texto[len(contexto.fixo):] + _historico(request.history)
+        # O tema fica no seu próprio bloco, com ponto de cache: é o que duas
+        # perguntas do mesmo assunto — e as rodadas de uma investigação —
+        # têm em comum. No contexto completo não há prefixo fixo nem tema: o
+        # documento inteiro vai num bloco só, sem gravar nada.
+        tema = contexto.texto[len(contexto.fixo):] if contexto.fixo else ""
+        entrada = ("" if contexto.fixo else contexto.texto) + _historico(request.history)
         entrada += f"\n\n# Hoje\n\n{date.today():%d/%m/%Y}"
         if request.empty_note:
             entrada += (
@@ -498,7 +521,7 @@ class OpenAIProvider(AIProvider):
         conteudo, usage = self._chamar(
             modelo=self.model,
             instrucoes=load_prompt(PROMPT_VERSION),
-            entrada=_entrada_com_cache(contexto.fixo, entrada),
+            entrada=_entrada_com_cache(contexto.fixo, tema, entrada),
             formato=PlanoEstruturado,
             esforco=self.effort,
             max_tokens=MAX_TOKENS_PLANO,
@@ -534,6 +557,8 @@ class OpenAIProvider(AIProvider):
             excel=bool(getattr(conteudo, "excel", False)),
             preenchimento=_preenchimento(conteudo, pedido=bool(request.planilha)),
             investigacao=_investigacao(conteudo) if intent == Plan.Intent.INVESTIGATE else (),
+            ressalva_forecast=bool(getattr(conteudo, "ressalva_forecast", False)),
+            rodada_final=bool(getattr(conteudo, "rodada_final", False)),
             usage=usage,
         )
 
@@ -565,6 +590,14 @@ class OpenAIProvider(AIProvider):
                 "Não apresente esses números como se fossem a resposta da pergunta."
             )
         total = request.total_rows or len(linhas)
+        if request.tabela_em_bloco:
+            entrada += (
+                f"\n\n# Lista longa\n\nO resultado tem {total} linhas e a tela desenha a tabela "
+                f"inteira a partir do banco. Você recebeu só uma amostra de {len(linhas)}. "
+                "Escreva o texto (o que a lista mostra, os extremos, a ressalva que importar) e "
+                "aponte a tabela num bloco `tabela` da consulta 0 — **não escreva as linhas**. "
+                "Copiar a lista gasta a resposta inteira e ela chega cortada."
+            )
         entrada += f"\n\nTotal de linhas no resultado: {total}"
         if request.excel:
             entrada += (

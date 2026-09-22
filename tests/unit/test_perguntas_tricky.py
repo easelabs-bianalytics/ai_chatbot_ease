@@ -11,6 +11,7 @@ import pytest
 from ai_orchestrator import canned
 from ai_orchestrator.grounding import check_grounding
 from ai_orchestrator.models import AIReply
+from ai_orchestrator.orchestrator import AMOSTRA_DA_LISTA_LONGA
 from ai_orchestrator.providers.base import AIOutputTruncated
 from ai_orchestrator.providers.openai_provider import _saida_cortada
 from ai_orchestrator.providers.retrying import RetryingAIProvider
@@ -119,3 +120,89 @@ def test_numero_solto_em_apelido_de_coluna_nao_vale():
     texto = "O total é 4500."
 
     assert not check_grounding(texto, ("total_4500",), ((1.0,),), "total?", "").ok
+
+
+# ------------------------------------- lista longa não é escrita pelo modelo
+# Generalização da falha da ruptura: qualquer resultado com muitas linhas.
+# Antes o modelo recebia 50 linhas e era mandado copiá-las; agora recebe uma
+# amostra e aponta a tabela, que a tela desenha com os dados do banco.
+
+
+def test_lista_longa_vai_ao_modelo_como_amostra(conversa, catalogo):
+    provider = ScriptedAIProvider([plano()], [resposta("São 50 CDs em ruptura.")])
+
+    _responder(_pergunta(conversa, "Quais CDs estão em ruptura?"), catalogo,
+               provider=provider, executor=FakeQueryExecutor([RUPTURA]))
+
+    pedido = provider.answer_requests[0]
+    assert pedido.tabela_em_bloco is True
+    assert len(pedido.rows) == AMOSTRA_DA_LISTA_LONGA
+    assert pedido.total_rows == 50
+
+
+def test_lista_curta_continua_indo_inteira(conversa, catalogo):
+    curta = make_result(("cd", "dde"), [(f"CD {i}", 3.0) for i in range(4)])
+    provider = ScriptedAIProvider([plano()], [resposta("São 4 CDs.")])
+
+    _responder(_pergunta(conversa, "Quais CDs estão em ruptura?"), catalogo,
+               provider=provider, executor=FakeQueryExecutor([curta]))
+
+    pedido = provider.answer_requests[0]
+    assert pedido.tabela_em_bloco is False
+    assert len(pedido.rows) == 4
+
+
+def test_tabela_da_lista_longa_aparece_mesmo_se_o_modelo_nao_apontar(conversa, catalogo):
+    """A instrução pode ser ignorada; a pessoa não pode ficar sem a lista."""
+    provider = ScriptedAIProvider([plano()], [resposta("São 50 CDs em ruptura.")])
+
+    reply = _responder(_pergunta(conversa, "Quais CDs estão em ruptura?"), catalogo,
+                       provider=provider, executor=FakeQueryExecutor([RUPTURA]))
+
+    blocos = reply.raw_response["blocos"]
+    assert [b["tipo"] for b in blocos] == ["texto", "tabela"]
+    assert blocos[1]["colunas"] == ["rede", "cd", "produto", "dde_base"]
+    assert len(reply.raw_response["dados_blocos"]["0"]["rows"]) == 50
+
+
+def test_tabela_apontada_pelo_modelo_e_respeitada(conversa, catalogo):
+    blocos = (
+        {"tipo": "texto", "texto": "São 50 CDs em ruptura."},
+        {"tipo": "tabela", "consulta": 0, "colunas": ["cd", "dde_base"]},
+    )
+    provider = ScriptedAIProvider([plano()], [resposta("São 50 CDs em ruptura.", blocos=blocos)])
+
+    reply = _responder(_pergunta(conversa, "Quais CDs estão em ruptura?"), catalogo,
+                       provider=provider, executor=FakeQueryExecutor([RUPTURA]))
+
+    guardados = reply.raw_response["blocos"]
+    assert len(guardados) == 2
+    assert guardados[1]["colunas"] == ["cd", "dde_base"]
+
+
+# ------------------------------------------------------------- projeções
+# O documento de referência passou a permitir projeções (2026-09-22). Em
+# projeção de Sell Out ou Sell In da Ease, a orientação sobre o dashboard de
+# Forecast de Reposição é acrescentada pelo sistema, não pelo modelo — assim
+# ela nunca depende de o modelo lembrar, e não custa token.
+
+
+def test_projecao_de_sell_out_traz_a_ressalva_do_dashboard(conversa, catalogo):
+    provider = ScriptedAIProvider(
+        [plano(ressalva_forecast=True)], [resposta("A projeção para outubro é de 47 unidades.")]
+    )
+
+    reply = _responder(_pergunta(conversa, "Qual a projeção de sell out para outubro?"),
+                       catalogo, provider=provider)
+
+    assert reply.reply_text.endswith(canned.RESSALVA_DE_FORECAST)
+    assert reply.raw_response["ressalva_forecast"] is True
+
+
+def test_projecao_de_px_nao_fala_do_dashboard(conversa, catalogo):
+    provider = ScriptedAIProvider([plano()], [resposta("A projeção de PX é de 47 prescrições.")])
+
+    reply = _responder(_pergunta(conversa, "Qual a projeção de PX para outubro?"),
+                       catalogo, provider=provider)
+
+    assert "Forecast de Reposição" not in reply.reply_text

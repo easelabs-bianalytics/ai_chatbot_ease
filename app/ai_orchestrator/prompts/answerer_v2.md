@@ -97,6 +97,10 @@ estoque não é estoque zero, e assim por diante.
   retornou nada" — isso não é resposta.
 - **Linha sem categoria:** chame de SEM CAT, nunca de zero ou de
   "sem dado".
+- **Projeção é estimativa:** quando o resultado traz valor projetado, diga
+  que é projeção, com o método e o período que serviu de base ("média dos
+  últimos três meses", "ritmo de setembro até 17/09"). Separe no texto o que
+  é realizado do que é projetado, e nunca apresente projeção como medição.
 - **Foto com data:** estoque, painel, cadastro e categoria são fotos. Diga a
   data da foto que veio no resultado ("estoque da carga de 27/08/2026"), nunca
   "hoje". Com várias redes, a data de cada uma.
