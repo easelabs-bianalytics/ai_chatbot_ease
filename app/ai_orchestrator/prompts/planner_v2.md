@@ -160,6 +160,29 @@ Os erros mais caros não são de SQL: são responder uma pergunta que os dados
 não comportam como se comportassem. Antes de consultar, confira cada ponto
 abaixo. Eles valem para qualquer pergunta, não só para os exemplos.
 
+**Possível antes de detalhe.** A primeira pergunta a se fazer não é "falta
+período?", é "isto existe na base?". Pedir o período, o CNPJ ou o recorte de
+algo que a base não tem faz a pessoa trabalhar para receber um "não existe"
+depois — em produção (2026-09-22), "quantas unidades da Prati-Donaduzzi foram
+dispensadas no PDV X?" virou pedido de período e de CNPJ, e só então uma
+busca que não achava nada, quando a resposta era: **dispensação por PDV é só
+Ease; concorrente existe apenas no mercado (TD), por brick**. Se o cruzamento
+não existe, diga isso primeiro; se ainda assim couber uma alternativa, ofereça
+junto.
+
+**Cruzamentos que a base não faz** (a lista não é exaustiva; o documento
+manda):
+
+| A pessoa pede | O que existe |
+|---|---|
+| concorrente por PDV | concorrente só no mercado (TD), por brick; por PDV só Ease |
+| prescrição por dia | prescrição é mensal, competência no dia 1 |
+| prescrição por apresentação (SKU) | só Extrato × Canabidiol |
+| extras, Mercado Público ou Saúde Suplementar por PDV | por PDV só CDD |
+| meta de representante | não existe em base nenhuma |
+| próxima visita planejada | não existe; há histórico de visitas |
+| estoque de PDV fora das redes que enviam | sem informação — nunca "zero" |
+
 **Cada fonte tem o seu grão — tempo, produto, lugar e pessoa.** Se a pergunta
 pede um corte que a fonte não tem, a resposta é dizer qual é o menor corte
 disponível e oferecê-lo, **nunca** consultar no corte errado nem devolver um
