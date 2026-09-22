@@ -61,7 +61,8 @@ class Estrutura:
         partes = [f"Arquivo: {self.nome}"]
         if len(self.abas) > 1:
             partes.append(f"Abas: {', '.join(self.abas)} (lendo \"{self.aba}\")")
-        partes.append(f"Linhas de dados: {self.linhas}")
+        cobertura = " (a amostra abaixo traz todas elas)" if self.linhas <= LINHAS_DE_AMOSTRA else ""
+        partes.append(f"Linhas de dados: {self.linhas}{cobertura}")
         partes.append("Colunas (nome · tipo · exemplos):")
         for coluna in self.colunas:
             # Coluna de texto costuma ser a chave (rede, representante,
@@ -480,3 +481,46 @@ def montar_de_tabela(colunas, linhas) -> bytes:
     buffer = io.BytesIO()
     livro.save(buffer)
     return buffer.getvalue()
+
+
+def linhas_das_chaves(nome: str, dados: bytes, pedido: PedidoDePreenchimento, colunas, linhas) -> list:
+    """Só as linhas do resultado que correspondem às chaves da planilha.
+
+    A consulta pode trazer o país inteiro — 34 representantes para uma
+    planilha de 3, como aconteceu em produção em 2026-09-22. O preenchimento
+    já acerta (casa por chave), mas a resposta em texto e a tabela na tela
+    falavam de todo mundo. Aqui o resultado é reduzido ao que foi pedido,
+    na ordem da planilha, antes de a redação ver qualquer coisa.
+    """
+    if _e_csv(nome):
+        uteis = [l for l in _linhas_do_csv(dados) if any(v not in (None, "") for v in l)]
+    else:
+        brutas, _, _ = _linhas_do_xlsx(dados)
+        uteis = [list(l) for l in brutas if any(v not in (None, "") for v in l)]
+    if not uteis:
+        return []
+
+    i_chave = _indice_da_coluna(uteis[0], pedido.coluna_chave)
+    if i_chave is None:
+        return []
+
+    casador = _Casador(colunas, linhas, pedido)
+    por_chave = {}
+    for linha in linhas:
+        por_chave[normalizar(linha[list(colunas).index(pedido.chave_no_resultado)])] = linha
+
+    escolhidas, vistas = [], set()
+    for linha in uteis[1:]:
+        bruto = linha[i_chave] if i_chave < len(linha) else None
+        if bruto in (None, ""):
+            continue
+        situacao, _, no_banco = casador.casar(bruto)
+        if situacao not in ("exata", "aproximada"):
+            continue
+        chave = normalizar(no_banco)
+        if chave in vistas:
+            continue
+        vistas.add(chave)
+        if chave in por_chave:
+            escolhidas.append(por_chave[chave])
+    return escolhidas

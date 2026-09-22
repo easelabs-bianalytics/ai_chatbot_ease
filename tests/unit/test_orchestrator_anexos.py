@@ -280,3 +280,21 @@ def test_com_planilha_a_redacao_nao_aponta_o_baixar_excel(conversa, catalogo):
     _responder(mensagem, catalogo, provider, FakeQueryExecutor([RESULTADO, RESULTADO]))
 
     assert provider.answer_requests[0].excel is False
+
+
+def test_resposta_fala_so_das_linhas_da_planilha(conversa, catalogo):
+    """Produção, 2026-09-22: a planilha tinha 3 redes, a consulta trouxe 29 e
+    a resposta listou as 29. O preenchimento estava certo; a leitura, não."""
+    planilha = _xlsx([("Rede",), ("Pague Menos",), ("Drogasil",)])
+    mensagem = _pergunta_com_anexo(conversa, Message.Anexo.PLANILHA, planilha, "redes.xlsx")
+    pais_inteiro = make_result(
+        ("rede", "unidades"),
+        [("Pague Menos", 47.0), ("Drogasil", 30.0), ("Panvel", 12.0), ("Araujo", 400.0)],
+    )
+    provider = ScriptedAIProvider([plano(preenchimento=PREENCHIMENTO)], [resposta("foram 47 unidades")])
+
+    _responder(mensagem, catalogo, provider, FakeQueryExecutor([pais_inteiro, pais_inteiro]))
+
+    pedido = provider.answer_requests[0]
+    assert [linha[0] for linha in pedido.rows] == ["Pague Menos", "Drogasil"]
+    assert pedido.total_rows == 2

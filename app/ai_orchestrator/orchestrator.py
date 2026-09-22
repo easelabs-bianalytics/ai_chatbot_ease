@@ -1003,6 +1003,27 @@ def _redigir_analise(com_dado, message, provider, auditoria, historico) -> tuple
     }
 
 
+def _so_as_linhas_da_planilha(resultado, plano, message):
+    """Reduz o resultado às chaves da planilha, na ordem dela.
+
+    Se a planilha venceu, ou se nenhuma chave casou, devolve o resultado
+    como veio: melhor a resposta falar demais do que não falar nada."""
+    dados = deposito.buscar(message.anexo_token)
+    if dados is None:
+        return resultado
+    try:
+        pedido = planilha_anexada.PedidoDePreenchimento.do_plano(plano.preenchimento)
+        escolhidas = planilha_anexada.linhas_das_chaves(
+            message.anexo_nome, dados, pedido, resultado.columns, resultado.rows
+        )
+    except (AnexoRecusado, KeyError, ValueError) as exc:
+        logger.info("Não deu para reduzir o resultado às linhas da planilha: %s", exc)
+        return resultado
+    if not escolhidas:
+        return resultado
+    return replace(resultado, rows=tuple(escolhidas), truncated=False)
+
+
 def _garantir_a_tabela(blocos, dados, resultado, lista_longa: bool, texto: str) -> tuple:
     """Lista longa sem bloco de tabela: acrescenta um no fim.
 
@@ -1345,6 +1366,11 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
         )
 
     vai_preencher = message.anexo_tipo == Message.Anexo.PLANILHA and bool(plano.preenchimento)
+    if vai_preencher:
+        # A consulta pode ter trazido o país inteiro; a resposta fala do que
+        # a pessoa pediu (produção, 2026-09-22: 34 representantes para uma
+        # planilha de 3). O preenchimento segue usando a consulta completa.
+        resultado = _so_as_linhas_da_planilha(resultado, plano, message)
     # Com planilha a preencher, o arquivo que importa é o da pessoa: a
     # redação não é instruída a mandar ao "Baixar Excel" (o botão do
     # resultado completo continua na tela, como segunda opção).

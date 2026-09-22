@@ -102,3 +102,49 @@ def test_coluna_de_texto_mostra_a_amostra_inteira_no_resumo():
     resumo = ler_estrutura("t.xlsx", dados).resumo
 
     assert "ALEXANDRE CIMINI" in resumo
+
+
+# ---------------------------------- a resposta fala só do que foi pedido
+# Produção, 2026-09-22: a planilha tinha 3 representantes, a consulta trouxe
+# 34 e a resposta falou dos 34. O preenchimento acertava; a leitura, não.
+
+RESULTADO_COMPLETO = (
+    ("representante", "px_ease"),
+    [("MARTA ELOISA", 120), ("DANILO SOUZA", 90), ("HERMES BIZZOTO", 300), ("CAROLINE SILVA", 70)],
+)
+PEDIDO_DE_UMA = PedidoDePreenchimento(
+    coluna_chave="REPRESENTANTE", chave_no_resultado="representante", colunas=(("PX", "px_ease"),)
+)
+
+
+def test_so_as_linhas_da_planilha_entram_na_resposta():
+    from attachments.planilha import linhas_das_chaves
+
+    planilha = _xlsx([("REPRESENTANTE",), ("MARTA ELOISA",), ("HERMES",)])
+
+    escolhidas = linhas_das_chaves("r.xlsx", planilha, PEDIDO_DE_UMA, *RESULTADO_COMPLETO)
+
+    # Na ordem da planilha; "HERMES" casa com "HERMES BIZZOTO" por estar
+    # contido em uma única chave. Grafia trocada dentro da palavra
+    # ("BIZOTTO" × "BIZZOTO") é trabalho da consulta, com ILIKE por pedaço.
+    assert escolhidas == [("MARTA ELOISA", 120), ("HERMES BIZZOTO", 300)]
+
+
+def test_chave_que_nao_casa_nao_entra():
+    from attachments.planilha import linhas_das_chaves
+
+    planilha = _xlsx([("REPRESENTANTE",), ("QUEM NAO EXISTE",)])
+
+    assert linhas_das_chaves("r.xlsx", planilha, PEDIDO_DE_UMA, *RESULTADO_COMPLETO) == []
+
+
+def test_resumo_avisa_quando_a_amostra_cobre_a_planilha():
+    dados = montar_de_tabela(["REDE"], [["RAIA DROGASIL"], ["PANVEL"], ["PAGUE MENOS"]])
+
+    assert "todas elas" in ler_estrutura("r.xlsx", dados).resumo
+
+
+def test_resumo_nao_promete_cobertura_em_planilha_grande():
+    dados = montar_de_tabela(["REDE"], [[f"rede {i}"] for i in range(40)])
+
+    assert "todas elas" not in ler_estrutura("r.xlsx", dados).resumo
