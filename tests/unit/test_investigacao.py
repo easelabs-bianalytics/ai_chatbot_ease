@@ -285,3 +285,32 @@ def test_resposta_comum_tambem_pode_vir_em_blocos(conversa, catalogo):
 
     assert [b["tipo"] for b in reply.raw_response["blocos"]] == ["texto", "tabela"]
     assert "0" in reply.raw_response["dados_blocos"]
+
+
+def test_rodada_final_poupa_a_chamada_de_avaliacao(conversa, catalogo):
+    """Em quase toda investigação a última chamada ao planejador só dizia
+    "pode concluir", e custava o mesmo que a primeira (~US$ 0,05)."""
+    provider = ScriptedAIProvider(
+        [_investiga(_passo("premissa"), _passo("concentrada?"), rodada_final=True)],
+        [_analise()],
+    )
+
+    reply = _responder(_pergunta(conversa, PERGUNTA), catalogo, provider=provider,
+                       executor=FakeQueryExecutor([PREMISSA, POR_GR]))
+
+    assert len(provider.plan_requests) == 1
+    assert list(AICall.objects.values_list("stage", flat=True)) == [
+        AICall.Stage.PLAN, AICall.Stage.ANSWER,
+    ]
+    assert reply.decision == AIReply.Decision.ANSWERED
+
+
+def test_sem_rodada_final_a_investigacao_continua_como_antes(conversa, catalogo):
+    provider = ScriptedAIProvider(
+        [_investiga(_passo("premissa")), _conclui()], [_analise("A queda foi de 11,1%.")]
+    )
+
+    _responder(_pergunta(conversa, PERGUNTA), catalogo, provider=provider,
+               executor=FakeQueryExecutor([PREMISSA]))
+
+    assert len(provider.plan_requests) == 2

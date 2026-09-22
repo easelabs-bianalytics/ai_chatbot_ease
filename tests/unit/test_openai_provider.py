@@ -202,12 +202,12 @@ def test_custo_registra_o_que_foi_gravado_no_cache(catalogo):
     assert plano.usage.response["tokens_gravados_no_cache"] == 5000
 
 
-def test_planejamento_grava_no_cache_so_o_prefixo_fixo(catalogo):
+def test_planejamento_grava_no_cache_o_fixo_e_o_tema(catalogo):
     """No modo implícito a OpenAI gravava o prompt inteiro a cada chamada, a
-    1,25× o preço da entrada, e só as instruções e o prefixo fixo se repetem
-    entre perguntas. Medido em 2026-09-21: 57% das chamadas chegavam com o
-    cache zerado, pagando o ágio de gravação em ~10 mil tokens de tema e
-    schema que nunca voltavam."""
+    1,25× o preço da entrada. Com um ponto de cache só, no prefixo fixo, as
+    seções do tema e o schema pagavam entrada cheia em toda pergunta — 35% de
+    cache, medido em 2026-09-22. Com dois pontos, a segunda pergunta do mesmo
+    tema lê ~90% da entrada a um décimo do preço."""
     provider = _provider(catalogo, [_plano()])
 
     provider.plan(PlanRequest(question="Quais CDs estão em ruptura de Extrato?"))
@@ -216,11 +216,19 @@ def test_planejamento_grava_no_cache_so_o_prefixo_fixo(catalogo):
     assert enviado["prompt_cache_options"] == {"mode": "explicit"}
     blocos = _blocos(enviado)
     marcados = [b for b in blocos if "prompt_cache_breakpoint" in b]
-    assert len(marcados) == 1
-    assert blocos[0] is marcados[0], "o breakpoint fecha o primeiro bloco, o fixo"
+    assert len(marcados) == 2
+    assert blocos[:2] == marcados, "os pontos fecham o fixo e o tema, nessa ordem"
+    # 1) o fixo: igual em toda pergunta
     assert "Temas do documento" in blocos[0]["text"]
-    assert "Quais CDs estão em ruptura de Extrato?" not in blocos[0]["text"]
     assert "Tema da pergunta" not in blocos[0]["text"]
+    # 2) o tema: igual em toda pergunta do mesmo assunto
+    assert "Tema da pergunta" in blocos[1]["text"]
+    assert "vw_forecast_projecao_cd" in blocos[1]["text"]
+    # 3) o resto: a pergunta do usuário, que muda sempre. (O texto dela pode
+    # aparecer no tema: o documento usa perguntas de exemplo.)
+    assert "# Pergunta do usuário" in blocos[2]["text"]
+    assert "Quais CDs estão em ruptura de Extrato?" in blocos[2]["text"]
+    assert "# Pergunta do usuário" not in blocos[0]["text"] + blocos[1]["text"]
 
 
 def test_prefixo_gravado_e_o_mesmo_para_perguntas_diferentes(catalogo):
