@@ -15,6 +15,7 @@ reaproveitam o prefixo em cache, que custa um décimo.
 
 import base64
 import json
+from dataclasses import replace
 import logging
 import os
 import time
@@ -90,6 +91,13 @@ _INTENCOES = frozenset(
 )
 
 MAX_TOKENS_PLANO = 8000
+# Conversa curta vai primeiro ao modelo barato. "Oi, quem é você?" custou
+# US$ 0,032 no modelo principal (2026-09-23) — o preço de uma consulta. Só
+# quando o roteador não reconheceu tema nenhum e a mensagem é curta: pergunta
+# de dado quase sempre tem termo de tema. Se o barato achar que é dado, a
+# pergunta sobe para o principal, que é quem escreve SQL.
+MAX_LETRAS_CONVERSA_BARATA = 120
+_INTENCOES_QUE_SOBEM = frozenset({Plan.Intent.ANSWER_WITH_DATA, Plan.Intent.INVESTIGATE})
 MAX_TOKENS_RESPOSTA = 2000
 # A análise de uma investigação conta a cadeia de evidências em blocos; com
 # 2000 ela saía cortada no meio. Continua no modelo barato.
@@ -487,6 +495,13 @@ class OpenAIProvider(AIProvider):
         # perguntas do mesmo assunto — e as rodadas de uma investigação —
         # têm em comum. No contexto completo não há prefixo fixo nem tema: o
         # documento inteiro vai num bloco só, sem gravar nada.
+        conversa_curta = (
+            not request.sem_atalho
+            and not contexto.secoes
+            and not contexto.completo
+            and not (request.planilha or request.error_note or request.empty_note or request.achados)
+            and len(request.question.strip()) <= MAX_LETRAS_CONVERSA_BARATA
+        )
         tema = contexto.texto[len(contexto.fixo):] if contexto.fixo else ""
         entrada = ("" if contexto.fixo else contexto.texto) + _historico(request.history)
         entrada += f"\n\n# Hoje\n\n{date.today():%d/%m/%Y}"
@@ -539,11 +554,11 @@ class OpenAIProvider(AIProvider):
         entrada += f"\n\n# Pergunta do usuário\n\n{request.question}"
 
         conteudo, usage = self._chamar(
-            modelo=self.model,
+            modelo=self.answer_model if conversa_curta else self.model,
             instrucoes=load_prompt(PROMPT_VERSION),
             entrada=_entrada_com_cache(contexto.fixo, tema, entrada),
             formato=PlanoEstruturado,
-            esforco=self.effort,
+            esforco=self.answer_effort if conversa_curta else self.effort,
             max_tokens=MAX_TOKENS_PLANO,
             # No GPT-5.6 o roteamento do cache é automático e a chave não
             # muda mais nada nele (documentação da OpenAI, 2026-09-21). Fica
@@ -566,6 +581,9 @@ class OpenAIProvider(AIProvider):
         intent = (conteudo.intent or "").strip()
         if intent not in _INTENCOES:
             raise AIProviderError(f"intenção desconhecida devolvida pelo modelo: {intent!r}")
+        if conversa_curta and intent in _INTENCOES_QUE_SOBEM:
+            principal = self.plan(replace(request, sem_atalho=True))
+            return replace(principal, tentativas=(usage, *principal.tentativas))
 
         return Plan(
             intent=intent,

@@ -108,6 +108,38 @@ def test_planejamento_manda_prompt_contexto_recortado_e_pergunta(catalogo):
     assert plano.reference_query_id == "B13"
 
 
+def test_conversa_curta_vai_ao_modelo_barato(catalogo):
+    """"Oi, quem é você?" custou US$ 0,032 no modelo principal (2026-09-23),
+    o preço de uma consulta. Sem tema e curta, vai primeiro ao barato."""
+    provider = _provider(catalogo, [_plano(intent="conversation", sql="", user_message="Sou o Jarvis.")])
+
+    plano = provider.plan(PlanRequest(question="Oi, quem é você?"))
+
+    assert [c["model"] for c in provider._client.chamadas] == ["gpt-5.6-luna"]
+    assert plano.intent == Plan.Intent.CONVERSATION
+    assert plano.tentativas == ()
+
+
+def test_conversa_curta_que_era_dado_sobe_para_o_principal(catalogo):
+    """Se o barato vê que é pergunta de dado, quem escreve o SQL é o principal
+    — e a tentativa barata fica registrada, porque foi paga."""
+    provider = _provider(catalogo, [_plano(), _plano()])
+
+    plano = provider.plan(PlanRequest(question="e em julho, como ficou?"))
+
+    assert [c["model"] for c in provider._client.chamadas] == ["gpt-5.6-luna", "gpt-5.6-terra"]
+    assert plano.intent == Plan.Intent.ANSWER_WITH_DATA
+    assert [u.model for u in plano.tentativas] == ["gpt-5.6-luna"]
+
+
+def test_pergunta_com_tema_vai_direto_ao_principal(catalogo):
+    provider = _provider(catalogo, [_plano()])
+
+    provider.plan(PlanRequest(question="Quais CDs estão em ruptura?"))
+
+    assert [c["model"] for c in provider._client.chamadas] == ["gpt-5.6-terra"]
+
+
 def test_chave_de_cache_do_plano_nao_carrega_o_tema(catalogo):
     """A chave roteia a requisição. Uma por tema fragmentava o roteamento: a
     pergunta de estoque não reaproveitava o prefixo comum — prompt mais

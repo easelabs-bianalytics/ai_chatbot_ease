@@ -1404,6 +1404,8 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
             planilha=_planilha(message),
         )
     )
+    for tentativa in plano.tentativas:
+        auditoria.chamada(AICall.Stage.PLAN, tentativa)
     auditoria.chamada(AICall.Stage.PLAN, plano.usage)
 
     if _pediu_o_documento_inteiro(plano):

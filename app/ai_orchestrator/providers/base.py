@@ -70,6 +70,9 @@ class PlanRequest:
     # Contexto recortado por tema é o normal (ADR-0015); esta bandeira pede
     # o documento inteiro, quando o recorte se mostrou insuficiente.
     full_context: bool = False
+    # Força o modelo principal: é a segunda tentativa, depois de o modelo
+    # barato ter visto que a conversa curta era, na verdade, pergunta de dado.
+    sem_atalho: bool = False
     # Investigação (ADR-0025): o que as consultas das rodadas anteriores
     # mostraram, em texto compacto, e em que rodada estamos. Com achados, o
     # planejador decide se aprofunda (novas hipóteses) ou se já dá para
@@ -127,6 +130,10 @@ class Plan:
     # servia para ele dizer "pode concluir" — ~US$ 0,05 por pergunta.
     rodada_final: bool = False
     usage: AIUsage = field(default_factory=AIUsage)
+    # Chamadas de planejamento descartadas antes desta: o modelo barato que
+    # tentou a conversa curta e viu que era pergunta de dado. Pagas do mesmo
+    # jeito — a auditoria registra cada uma.
+    tentativas: tuple = ()
 
 
 @dataclass(frozen=True)
