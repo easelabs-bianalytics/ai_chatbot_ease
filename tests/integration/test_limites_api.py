@@ -62,7 +62,7 @@ def test_a_aba_manda_porcentagem_e_nao_a_contagem(django_user_model):
 def test_a_porcentagem_acompanha_o_perfil(django_user_model):
     """Três perguntas são 43% de quem tem 7 e 25% de quem tem 12."""
     renato = django_user_model.objects.create_user(
-        "renato_avilla@easelabs.com.br", email="renato_avilla@easelabs.com.br", password="x"
+        "renato.avilla@easelabs.com.br", email="renato.avilla@easelabs.com.br", password="x"
     )
     _gastar(renato, 3)
 

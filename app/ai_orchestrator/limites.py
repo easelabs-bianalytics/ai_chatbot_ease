@@ -42,15 +42,15 @@ SEM_LIMITE = frozenset({
     "natalia.miranda@easelabs.com.br",
     "gustavo@easelabs.com.br",
     "guilherme@easelabs.com.br",
-    "fernando@easelabs.com.br",
+    "fernando.franco@easelabs.com.br",
 })
 
 # Uso frequente: consultam o Jarvis como parte do trabalho do dia.
 COM_MAIS_CONSULTAS = frozenset({
-    "renato_avilla@easelabs.com.br",
+    "renato.avilla@easelabs.com.br",
     "ivan.junior@easelabs.com.br",
     "gabriel.bastos@easelabs.com.br",
-    "juliana@easelabs.com.br",
+    "juliana.goularte@easelabs.com.br",
 })
 
 # Por dia e por semana. O diário evita o susto — alguém preso num laço de
