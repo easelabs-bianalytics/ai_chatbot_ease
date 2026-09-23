@@ -10,10 +10,12 @@ no login, para ninguém conseguir logar o usuário numa conta alheia a partir
 de outro site.
 """
 
+import datetime
 import ipaddress
 
 from django.conf import settings
 from django.contrib.auth import authenticate, login, logout
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.generic import TemplateView
@@ -23,7 +25,9 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from ai_orchestrator import limites
 from web.acesso import INTERVALO_REENVIO, normalizar_email, solicitar_codigo, verificar_codigo
+from web.models import PrimeiroAcesso
 
 MENSAGEM_LOGIN_INVALIDO = "Usuário ou senha incorretos."
 MENSAGEM_DOMINIO = f"Use o seu e-mail @{settings.DOMINIO_DE_ACESSO}."
@@ -52,6 +56,9 @@ def usuario_json(user) -> dict:
         # Quem administra vê custo e tokens na fonte da resposta; o restante
         # vê a consulta, a referência e o momento, que é o que dá confiança.
         "equipe": bool(user.is_staff),
+        # Primeiro login desta pessoa: a tela abre a apresentação antes de
+        # qualquer outra coisa. A marca é do usuário, não do navegador.
+        "passeio_pendente": not PrimeiroAcesso.objects.filter(user=user).exists(),
     }
 
 
@@ -74,6 +81,57 @@ class SessaoView(APIView):
         if not request.user.is_authenticated:
             return Response({"autenticado": False})
         return Response({"autenticado": True, "usuario": usuario_json(request.user)})
+
+
+class LimitesView(APIView):
+    """Quanto da cota a pessoa já usou, no dia e na semana.
+
+    Existe para a cota não ser uma surpresa: descobrir o limite no momento
+    em que ele bate é a pior hora de saber que ele existe. Quem não tem
+    limite recebe `dia: null`, e a tela diz isso em vez de desenhar uma
+    barra vazia.
+
+    **Só porcentagem.** Nem dinheiro, nem os números absolutos: quem
+    pergunta precisa saber se está perto do fim, não contar quantas
+    sobraram. E a conta não sai daqui de propósito — mandar `usadas` e
+    `limite` para a tela apenas não desenhá-los seria esconder da vista, não
+    do usuário: a resposta inteira aparece no navegador de quem procurar.
+    """
+
+    @staticmethod
+    def _janela(j: dict | None) -> dict | None:
+        if j is None:
+            return None
+        bruto = (min(j["usadas"], j["limite"]) / j["limite"]) * 100
+        # 1 de 200 é 0,5%: arredondar para 0% diria que nada foi usado.
+        return {
+            "pct": max(1, round(bruto)) if j["usadas"] else 0,
+            "excedeu": j["excedeu"],
+        }
+
+    def get(self, request):
+        cota = limites.situacao(request.user)
+        meia_noite = timezone.localtime().replace(hour=0, minute=0, second=0, microsecond=0)
+        return Response({
+            "dia": self._janela(cota["dia"]),
+            "semana": self._janela(cota["semana"]),
+            "excedeu": cota["excedeu"],
+            "renova_em": (meia_noite + datetime.timedelta(days=1)).isoformat(),
+            "semana_renova_em": (limites.inicio_da_semana() + datetime.timedelta(days=7)).isoformat(),
+        })
+
+
+class PasseioView(APIView):
+    """Registra que a apresentação já subiu sozinha para esta pessoa.
+
+    Chamado no instante em que o passeio abre, não no fim: fechar no
+    primeiro quadro é uma resposta, e insistir a cada login seria empurrar.
+    Idempotente — a tela pode chamar duas vezes sem consequência.
+    """
+
+    def post(self, request):
+        PrimeiroAcesso.objects.get_or_create(user=request.user)
+        return Response({"passeio_pendente": False})
 
 
 def _ip(request) -> str | None:

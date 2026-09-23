@@ -1,4 +1,33 @@
+from django.conf import settings
 from django.db import models
+
+
+class PrimeiroAcesso(models.Model):
+    """Marca que a apresentação do Jarvis já foi aberta sozinha para alguém.
+
+    Mora no banco, e não no navegador, porque a regra é uma vez por PESSOA,
+    não por máquina: quem já conheceu o Jarvis e entra do notebook de casa,
+    ou limpa o navegador, não precisa ver a apresentação de novo. O que o
+    navegador guarda — em que quadro parou, quantos convites já recebeu —
+    continua sendo conforto local, e some sem prejuízo.
+
+    A linha existir é a resposta: não há estado intermediário para manter em
+    dia. Ela é criada no instante em que o passeio sobe sozinho, e não no
+    fim dele: quem fechou no primeiro quadro decidiu que não queria, e
+    reabrir na cara da pessoa a cada login seria o oposto de acolher.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="primeiro_acesso"
+    )
+    passeio_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "primeiro acesso"
+        verbose_name_plural = "primeiros acessos"
+
+    def __str__(self):
+        return f"{self.user} · {self.passeio_em:%d/%m/%Y %H:%M}"
 
 
 class CodigoDeAcesso(models.Model):
