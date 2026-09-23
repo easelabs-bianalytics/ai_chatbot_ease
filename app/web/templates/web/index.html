@@ -4,8 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Jarvis · Ease Labs</title>
-  <link rel="icon" type="image/png" href="{% static 'web/favicon.png' %}">
-  <link rel="apple-touch-icon" href="{% static 'web/favicon.png' %}">
+  <!-- O SVG é o ícone de verdade (nítido em qualquer tamanho); o PNG de 32
+       é para navegador que não lê SVG, e o de 180 é o da tela inicial do
+       iPhone, sem cantos, porque o iOS arredonda sozinho. -->
+  <link rel="icon" type="image/svg+xml" href="{% static 'web/favicon.svg' %}">
+  <link rel="icon" type="image/png" sizes="32x32" href="{% static 'web/favicon-32.png' %}">
+  <link rel="apple-touch-icon" href="{% static 'web/apple-touch-icon.png' %}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -23,12 +27,19 @@
 </head>
 <body class="bg-gradiente">
 
-  <!-- LOGIN -->
+  <!-- LOGIN
+       Duas metades: à esquerda o palco, onde o Jarvis recebe a pessoa e
+       mostra o que faz (uma pergunta entra, ele consulta, a resposta chega
+       com a fonte); à direita o formulário, e só ele. O palco não mostra
+       número nenhum: número inventado na porta de entrada contradiria o
+       "se não sabe, não inventa" do produto — ele mostra o caminho.
+       No celular o palco encolhe para o alto e o formulário vem logo abaixo. -->
   <main class="page" id="panel-login" hidden>
-    <div class="login-wrap">
-      <form class="login-card" id="formLogin" novalidate>
-        <img class="logo-img logo-login" src="{% static 'web/logo-login@1x.png' %}" srcset="{% static 'web/logo-login@1x.png' %} 1x, {% static 'web/logo-login@2x.png' %} 2x, {% static 'web/logo-login@3x.png' %} 3x" width="172" height="38" alt="Ease Labs">
-        <svg class="jarvis jarvis--vivo login-jarvis" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+    <section class="login-palco" aria-hidden="true">
+      <img class="logo-img logo-login" src="{% static 'web/logo-login@1x.png' %}" srcset="{% static 'web/logo-login@1x.png' %} 1x, {% static 'web/logo-login@2x.png' %} 2x, {% static 'web/logo-login@3x.png' %} 3x" width="172" height="38" alt="">
+      <div class="login-cena">
+        <div class="login-demo" id="loginDemo"></div>
+        <svg class="jarvis jarvis--vivo login-jarvis" id="loginJarvis" viewBox="0 0 64 64" focusable="false">
           <g class="j-orbita-g">
             <path class="j-orbita j-orbita--tras" d="M 7,40 A 25,8 0 0,0 57,40"/>
             <circle class="j-satelite j-satelite--tras" r="2.2"/>
@@ -41,28 +52,50 @@
             <circle class="j-satelite j-satelite--frente" r="2.9"/>
           </g>
         </svg>
+        <p class="login-lema">Pergunte ao Jarvis.<span>Eu consulto os dados e mostro de onde veio cada número.</span></p>
+      </div>
+    </section>
+
+    <section class="login-lado">
+      <form class="login-card" id="formLogin" novalidate>
         <p class="login-produto">Jarvis · Copiloto de Dados</p>
-        <h1>Entre na sua conta</h1>
-        <p class="login-sub">Pergunte aos dados da Ease Labs.</p>
         {% comment %}
-          Duas etapas no mesmo cartão: primeiro o e-mail, depois o código que
-          chegou nele. Sem senha — só entra quem lê uma caixa @easelabs.com.br.
+          Duas etapas no mesmo formulário: primeiro o e-mail, depois o código
+          que chegou nele. Sem senha — só entra quem lê uma caixa @easelabs.com.br.
         {% endcomment %}
         <div class="login-etapa" id="etapaEmail">
+          <h1>Entrar no Jarvis</h1>
+          <p class="login-sub">Sem senha: mandamos um código de acesso para o seu e-mail da Ease Labs.</p>
           <div class="input-group">
-            <label class="input-label" for="loginEmail">E-mail da Ease Labs</label>
-            <input class="input-field" id="loginEmail" type="email" inputmode="email"
-                   autocomplete="email" placeholder="nome.sobrenome@easelabs.com.br" required>
+            <label class="input-label" for="loginEmail">E-mail</label>
+            <!-- O domínio fica à vista no próprio campo: é a regra de acesso,
+                 e quem lê já sabe que basta o nome. Some quando a pessoa
+                 digita o "@" por conta própria. -->
+            <div class="campo-email" id="campoEmail">
+              <input class="input-field" id="loginEmail" type="email" inputmode="email"
+                     autocomplete="email" placeholder="nome.sobrenome" required>
+              <span class="campo-email-dominio" aria-hidden="true"><span class="campo-email-eco" id="loginEmailEco"></span>@easelabs.com.br</span>
+            </div>
           </div>
         </div>
         <div class="login-etapa" id="etapaCodigo" hidden>
+          <h1>Confira seu e-mail</h1>
           <p class="login-enviado">Enviamos um código de 6 dígitos para
             <strong id="loginEmailEnviado"></strong>
             <span class="login-spam">Não chegou? Confira também o spam.</span></p>
           <div class="input-group">
             <label class="input-label" for="loginCodigo">Código</label>
-            <input class="input-field input-codigo" id="loginCodigo" type="text" inputmode="numeric"
-                   autocomplete="one-time-code" maxlength="7" placeholder="000000" required>
+            <!-- Um campo só, invisível, por cima de seis casas desenhadas: o
+                 celular continua sugerindo o código do e-mail e colar
+                 "123 456" continua funcionando, o que seis campos separados
+                 quebrariam. -->
+            <div class="campo-codigo" id="campoCodigo">
+              <div class="codigo-casas" id="codigoCasas" aria-hidden="true">
+                <span></span><span></span><span></span><span></span><span></span><span></span>
+              </div>
+              <input class="input-field input-codigo" id="loginCodigo" type="text" inputmode="numeric"
+                     autocomplete="one-time-code" maxlength="7" required>
+            </div>
           </div>
         </div>
         <div class="input-error-msg" id="loginErro" role="alert" hidden></div>
@@ -74,7 +107,7 @@
         </div>
         <p class="login-footnote">BI &amp; Analytics · Ease Labs</p>
       </form>
-    </div>
+    </section>
   </main>
 
   <!-- CHAT -->
@@ -88,17 +121,24 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M10 4v16"/></svg>
         </button>
       </div>
-      <button class="sidebar-marca" id="btnLogoHome" title="Nova conversa">
+      <button class="sidebar-marca" id="btnLogoHome" title="Conheça o Jarvis">
         <span class="marca-jarvis" aria-hidden="true">
           <svg class="jarvis" viewBox="0 0 64 64" focusable="false">
             <rect class="j-corpo" x="17" y="11.9" width="30" height="40.3" rx="15"/>
             <rect class="j-viseira" x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9"/>
             <circle class="j-olho" cx="40" cy="26.5" r="2.4"/>
           </svg>
+          <!-- aceso só para quem ainda não fez o passeio (ver `convidarParaPasseio`) -->
+          <span class="marca-convite" id="marcaConvite" hidden></span>
         </span>
         <span class="marca-produto">
           <span class="produto-nome">Jarvis</span>
-          <span class="produto-area">Copiloto de Dados</span>
+          <!-- Ao passar o mouse a linha de baixo diz o que o clique faz: o
+               aceno sozinho mostrava que o mascote reage, não o que ele abre. -->
+          <span class="produto-area">
+            <span class="produto-area-texto">Copiloto de Dados</span>
+            <span class="produto-area-dica" aria-hidden="true">Ver a apresentação ›</span>
+          </span>
         </span>
       </button>
       <div class="busca">
@@ -124,7 +164,6 @@
           <div class="avatar" id="headerUserAvatar"></div>
           <span class="user-name">
             <span id="headerUserName"></span>
-            <span class="user-role" id="headerUserRole">BI &amp; Analytics</span>
           </span>
           <svg class="user-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>
         </button>
@@ -136,6 +175,10 @@
           <button class="dropdown-item" id="btnNovaConversaMenu">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
             Nova conversa
+          </button>
+          <button class="dropdown-item" id="btnLimites">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
+            Limites de uso
           </button>
           <div class="dropdown-sep"></div>
           <div class="dropdown-rotulo">Tema</div>
@@ -201,6 +244,9 @@
         </div>
       </div>
 
+      <!-- Aviso de cota: aparece a partir de 80% da janela mais apertada, logo
+           acima de onde a próxima pergunta vai ser escrita. -->
+      <div class="aviso-cota" id="avisoCota" role="status" hidden></div>
       <div class="anexo-chip" id="anexoChip" hidden aria-live="polite"></div>
       <form class="composer" id="formPergunta">
         <!-- Anexo (ADR-0024): planilha para preencher ou imagem para ler.
@@ -214,12 +260,23 @@
         </button>
         <label class="sr-only" for="campoPergunta">Sua pergunta</label>
         <textarea class="composer-campo" id="campoPergunta" rows="1" maxlength="2000"
-          placeholder="Ex.: Quantas unidades a Pague Menos dispensou por mês em 2026?"></textarea>
+          placeholder="Pergunte ao Jarvis"></textarea>
+        <!-- Ditado: o reconhecimento de fala é do próprio navegador. O texto
+             cai no campo para quem falou revisar, nunca envia sozinho. O
+             botão começa escondido e só aparece onde o navegador ouve. -->
+        <button class="composer-ditar" id="btnDitar" type="button" hidden
+          aria-pressed="false" aria-label="Ditar a pergunta"
+          title="Ditar a pergunta pelo microfone">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0"/><path d="M12 18v3"/></svg>
+        </button>
+        <!-- Enquanto a resposta não chega, o mesmo botão interrompe: a seta dá
+             lugar ao quadrado, e o `submit` decide qual ação disparar. -->
         <button class="composer-enviar" id="btnEnviar" type="submit" aria-label="Enviar pergunta" disabled>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          <svg class="icone-enviar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          <svg class="icone-parar" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
         </button>
       </form>
-      <p class="composer-dica">A IA pode cometer erros: confira a informação. Somente leitura — a IA nunca altera os dados na fonte.</p>
+      <p class="composer-dica">A IA pode cometer erros: confira a informação. Somente leitura, nunca altera os dados na fonte.</p>
     </section>
   </div>
 
@@ -236,6 +293,40 @@
         <button class="btn btn-primary" type="submit" id="modalConfirmar">Salvar</button>
       </div>
     </form>
+  </div>
+
+  <!-- Passeio de apresentação, aberto pelo mascote na lateral. Ocupa a tela
+       inteira: num cartão de 440px as cenas ficavam do tamanho de um ícone.
+       O Jarvis (`walkAtor`) é um só do começo ao fim e só troca de estado;
+       o que é remontado a cada quadro são os objetos da cena e o texto, que
+       precisam nascer na hora para as animações rodarem do começo. -->
+  <div class="walk" id="walk" role="dialog" aria-modal="true" aria-labelledby="walkTitulo" hidden>
+    <div class="walk-progresso" id="walkPontos" role="tablist" aria-label="Quadros"></div>
+    <button class="walk-fechar" id="walkFechar" type="button" title="Fechar o passeio (Esc)">
+      <span>Pular</span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+    <div class="walk-palco">
+      <div class="walk-cena" aria-hidden="true">
+        <div class="walk-objetos" id="walkPalco"></div>
+        <span class="walk-ator" id="walkAtor"></span>
+      </div>
+      <div class="walk-legenda" id="walkLegenda" aria-live="polite"></div>
+      <div class="walk-acoes">
+        <button class="walk-link" id="walkVoltar" type="button">Voltar</button>
+        <button class="btn btn-primary walk-proximo" id="walkProximo" type="button">Próximo</button>
+      </div>
+      <p class="walk-dica">Use as setas do teclado ou arraste para os lados</p>
+    </div>
+  </div>
+
+  <!-- visor da imagem anexada: abre aqui dentro, em cima da conversa. Clicar
+       na miniatura levava para uma aba com o blob solto, fora do Jarvis. -->
+  <div class="visor" id="visor" role="dialog" aria-modal="true" aria-label="Imagem enviada" hidden>
+    <button class="visor-fechar" id="visorFechar" type="button" aria-label="Fechar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+    <img id="visorImagem" alt="Imagem enviada">
   </div>
 
   <!-- Chart.js 4.4.7 (MIT) servido pelo próprio app: em produção o ECS roda

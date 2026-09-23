@@ -24,7 +24,6 @@
     usuario: null,
     conversas: [],
     projetos: [],
-    arquivoAberto: false,
     conversaId: null,
     ultimoId: 0,
     aguardando: null,     // { id, inicio, texto } — pergunta sem resposta ainda
@@ -51,15 +50,16 @@
 
   // Como cada decisão do sistema aparece na conversa.
   const TIPO_RESPOSTA = {
-    answered:     { classe: '',                     rotulo: '' },
-    conversation: { classe: '',                     rotulo: '' },
+    // "cartao-aberto": a resposta que deu certo não usa moldura nem avatar.
+    answered:     { classe: 'cartao-aberto',        rotulo: '' },
+    conversation: { classe: 'cartao-aberto',        rotulo: '' },
     empty_result: { classe: 'tipo-sem-dado',        rotulo: 'Sem resultado',         icone: 'vazio' },
     clarify:      { classe: 'tipo-esclarecimento',  rotulo: 'Preciso de um detalhe', icone: 'pergunta' },
     unknown:      { classe: 'tipo-sem-dado',        rotulo: 'Dado não disponível',   icone: 'info' },
     out_of_scope: { classe: 'tipo-sem-dado',        rotulo: 'Fora do que eu faço',   icone: 'info' },
     failed:       { classe: 'tipo-falha',           rotulo: 'Não consegui responder', icone: 'alerta' },
     // A única resposta que não passou pelo banco (ADR-0024): o rótulo diz isso.
-    image_reading: { classe: '',                    rotulo: 'Leitura da imagem',     icone: 'imagem' },
+    image_reading: { classe: 'cartao-aberto',       rotulo: 'Leitura da imagem',     icone: 'imagem' },
   };
 
   const ICONES = {
@@ -84,6 +84,8 @@
     lista: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
     relogio: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
     planilha: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg>',
+    // Folha com grade, para o ladrilho verde do anexo de planilha.
+    xlsx: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h8M12 13v4"/></svg>',
   };
 
   // ---------------------------------------------------------- Jarvis
@@ -284,12 +286,12 @@
   };
 
   const entrar = (usuario) => {
+    pararPalco();
     state.usuario = usuario;
     $('#panel-login').hidden = true;
     $('#panel-chat').hidden = false;
     $('#headerUserAvatar').textContent = usuario.iniciais;
     $('#headerUserName').textContent = usuario.nome;
-    $('#headerUserRole').textContent = usuario.equipe ? 'Equipe BI & Analytics' : 'BI & Analytics';
     $('#menuUserName').textContent = usuario.nome;
     $('#menuUserSub').textContent = usuario.email || `@${usuario.usuario}`;
     // Quem veio do Admin (/admin/login redireciona para cá com ?proximo=)
@@ -299,6 +301,12 @@
     if (proximo && /^\/admin\/[\w\-/]*$/.test(proximo)) { location.href = proximo; return; }
     carregarConversas();
     irParaRota(location.pathname, 'replace');
+    // Primeiro login desta pessoa: a apresentação é a primeira coisa que
+    // acontece, antes de a conversa entrar em cena. Quem chega sem nunca ter
+    // visto o Jarvis precisa saber o que ele faz antes de olhar para um campo
+    // de pergunta em branco.
+    if (usuario.passeio_pendente) setTimeout(() => abrirPasseio(), 320);
+    avisarDaCota();
   };
 
   // ---------------------------------------------------------- rotas
@@ -322,6 +330,10 @@
   // Quais pastas estão abertas fica no navegador: é conforto de quem usa,
   // não dado da aplicação.
   const CHAVE_PASTAS = 'bi-chat:pastas-abertas';
+  // A seção "Arquivadas" é uma pasta como as outras, e lembrar se ela está
+  // aberta é conforto de quem usa, igual às de projeto. O identificador é
+  // texto justamente para nunca colidir com o id de um projeto.
+  const ARQUIVO = 'arquivadas';
   const pastasAbertas = (() => {
     try { return new Set(JSON.parse(localStorage.getItem(CHAVE_PASTAS) || '[]')); } catch { return new Set(); }
   })();
@@ -340,8 +352,13 @@
       <button class="item-acoes" type="button" data-menu-conversa="${c.id}" aria-label="Opções da conversa" aria-haspopup="true">${ICONES.mais}</button>
     </div>`;
 
+  let listaEstreou = false;
+
   const renderLista = () => {
     const lista = $('#listaConversas');
+    // Só a primeira pintura anima; as seguintes trocam o conteúdo em silêncio.
+    lista.classList.toggle('estreando', !listaEstreou);
+    listaEstreou = true;
     const ativas = state.conversas.filter((c) => c.status !== 'archived');
     const arquivadas = state.conversas.filter((c) => c.status === 'archived');
     const soltas = ativas.filter((c) => !c.project);
@@ -391,8 +408,8 @@
           : `<p class="conversa-vazia">${ativas.length ? 'Todas as conversas estão em projetos.' : 'Suas conversas aparecem aqui. Comece com uma pergunta.'}</p>`}
       </div>
       ${arquivadas.length ? `
-        <div class="lista-secao pasta${state.arquivoAberto ? ' aberta' : ''}">
-          <button class="secao-cabeca secao-arquivo" type="button" id="btnArquivadas" aria-expanded="${state.arquivoAberto}">
+        <div class="lista-secao pasta${pastasAbertas.has(ARQUIVO) ? ' aberta' : ''}" data-arquivo="1">
+          <button class="secao-cabeca secao-arquivo" type="button" data-pasta="${ARQUIVO}" aria-expanded="${pastasAbertas.has(ARQUIVO)}">
             <h2 class="section-label">Arquivadas · ${arquivadas.length}</h2>${ICONES.chevron}
           </button>
           <div class="pasta-conversas">${arquivadas.map((c) => itemConversa(c, n++)).join('')}</div>
@@ -421,11 +438,11 @@
     const menuProjeto = ev.target.closest('[data-menu-projeto]');
     if (menuProjeto) { abrirMenuProjeto(Number(menuProjeto.dataset.menuProjeto), menuProjeto); return; }
     if (ev.target.closest('#btnNovoProjeto')) { dialogoProjeto(); return; }
-    if (ev.target.closest('#btnArquivadas')) { state.arquivoAberto = !state.arquivoAberto; renderLista(); return; }
 
     const pasta = ev.target.closest('[data-pasta]');
     if (pasta) {
-      const id = Number(pasta.dataset.pasta);
+      const bruto = pasta.dataset.pasta;
+      const id = bruto === ARQUIVO ? ARQUIVO : Number(bruto);
       if (pastasAbertas.has(id)) pastasAbertas.delete(id); else pastasAbertas.add(id);
       salvarPastas();
       pasta.closest('.pasta').classList.toggle('aberta');
@@ -522,13 +539,21 @@
     else if (alvoPasta) projeto = Number(alvoPasta.dataset.pastaAlvo);
     else if (emSoltas) projeto = null;
 
+    // Tirar do arquivo é arrastar para fora dele — para uma pasta ou para
+    // "Recentes", tanto faz. O arquivo é um lugar, e sair dele é o gesto
+    // natural de voltar a trabalhar na conversa.
+    const voltouDoArquivo = conversa.status === 'archived'
+      && !ev.target.closest('[data-arquivo]');
+
     const ordem = state.conversas.filter((c) => c.id !== id);
     let destino;
     if (sobre !== null) {
       destino = ordem.findIndex((c) => c.id === sobre) + (depois ? 1 : 0);
-    } else if (projeto !== projetoAntes) {
+    } else if (projeto !== projetoAntes || voltouDoArquivo) {
       // Largou no corpo da pasta (ou na lista solta), sem mirar ninguém:
-      // entra no topo do grupo de destino.
+      // entra no topo do grupo de destino. Uma conversa que acabou de sair do
+      // arquivo entra aqui mesmo sem trocar de pasta — senão a soltura em
+      // "Recentes", onde a pasta continua a mesma (nenhuma), não faria nada.
       const i = ordem.findIndex((c) => (c.project ?? null) === projeto && c.status !== 'archived');
       destino = i === -1 ? ordem.length : i;
     } else {
@@ -539,6 +564,7 @@
     // falhar, recarrega — melhor voltar ao que o banco tem do que deixar a
     // tela mentindo.
     conversa.project = projeto;
+    if (voltouDoArquivo) conversa.status = 'open';
     // Largar numa pasta fechada abre a pasta: sem isto a conversa some de
     // vista no instante em que foi movida, e parece que deu errado.
     if (projeto && projeto !== projetoAntes) { pastasAbertas.add(projeto); salvarPastas(); }
@@ -550,6 +576,9 @@
     try {
       if (projeto !== projetoAntes) {
         await api(`/api/conversations/${id}/`, { method: 'PATCH', body: { project: projeto } });
+      }
+      if (voltouDoArquivo) {
+        await api(`/api/conversations/${id}/`, { method: 'PATCH', body: { status: 'open' } });
       }
       await api('/api/conversations/ordem/', {
         method: 'PATCH',
@@ -597,6 +626,17 @@
   const menu = $('#menuContexto');
   let ancoraDoMenu = null;
 
+  // O menu é `position: fixed`: ele não anda junto com a lista sozinho.
+  const posicionarMenu = () => {
+    if (!ancoraDoMenu || menu.hidden) return;
+    const r = ancoraDoMenu.getBoundingClientRect();
+    const largura = menu.offsetWidth;
+    const altura = menu.offsetHeight;
+    const abaixo = r.bottom + 6 + altura < window.innerHeight;
+    menu.style.top = `${abaixo ? r.bottom + 6 : Math.max(8, r.top - altura - 6)}px`;
+    menu.style.left = `${Math.max(8, Math.min(r.right - largura, window.innerWidth - largura - 8))}px`;
+  };
+
   const fecharMenu = () => {
     menu.hidden = true;
     menu.innerHTML = '';
@@ -613,12 +653,7 @@
     menu.hidden = false;
     ancoraDoMenu = ancora;
     ancora.setAttribute('aria-expanded', 'true');
-    const r = ancora.getBoundingClientRect();
-    const largura = menu.offsetWidth;
-    const altura = menu.offsetHeight;
-    const abaixo = r.bottom + 6 + altura < window.innerHeight;
-    menu.style.top = `${abaixo ? r.bottom + 6 : Math.max(8, r.top - altura - 6)}px`;
-    menu.style.left = `${Math.max(8, Math.min(r.right - largura, window.innerWidth - largura - 8))}px`;
+    posicionarMenu();
     menu.onclick = (ev) => {
       const b = ev.target.closest('[data-i]');
       if (!b) return;
@@ -632,7 +667,9 @@
     if (!menu.hidden && !ev.target.closest('#menuContexto') && !ev.target.closest('.item-acoes')) fecharMenu();
   });
   window.addEventListener('resize', fecharMenu);
-  $('#listaConversas').addEventListener('scroll', fecharMenu, true);
+  // Rolar a lista reposiciona o menu em vez de fechá-lo: fechar era o que
+  // impedia o menu dos arquivados de abrir.
+  $('#listaConversas').addEventListener('scroll', posicionarMenu, true);
 
   const conversaPorId = (id) => state.conversas.find((c) => c.id === id);
 
@@ -672,6 +709,8 @@
   };
 
   const abrirModal = ({ titulo, corpo, confirmar = 'Salvar', perigo = false, acao = null }) => {
+    // Cada diálogo nasce na largura padrão; quem precisar de mais pede depois.
+    modal.querySelector('.modal').classList.remove('largo');
     $('#modalTitulo').textContent = titulo;
     const area = $('#modalCorpo');
     area.onclick = null;
@@ -765,8 +804,10 @@
 
   const moverPara = async (c, projetoId) => {
     await api(`/api/conversations/${c.id}/`, { method: 'PATCH', body: { project: projetoId } });
+    const voltou = await desarquivarAoMover(c, projetoId);
     if (projetoId) { pastasAbertas.add(projetoId); salvarPastas(); }
     await carregarConversas();
+    return voltou;
   };
 
   const dialogoMover = (c) => {
@@ -793,10 +834,20 @@
       fecharModal();
       if (alvo === atual) return;
       try {
-        await moverPara(c, alvo);
-        toast(alvo ? 'Conversa movida para o projeto.' : 'Conversa tirada do projeto.');
+        const voltou = await moverPara(c, alvo);
+        if (voltou) toast('Conversa movida para o projeto e tirada do arquivo.');
+        else toast(alvo ? 'Conversa movida para o projeto.' : 'Conversa tirada do projeto.');
       } catch (e) { toast(e.message, true); }
     };
+  };
+
+  // Mover uma conversa arquivada para um projeto é voltar a trabalhar nela.
+  // Sem isto o arquivo engolia a ação: a pasta só mostra conversas ativas, a
+  // conversa continuava em "Arquivadas", e parecia que mover não funcionava.
+  const desarquivarAoMover = async (c, projeto) => {
+    if (!projeto || c.status !== 'archived') return false;
+    await api(`/api/conversations/${c.id}/`, { method: 'PATCH', body: { status: 'open' } });
+    return true;
   };
 
   const arquivar = async (c, arquivar) => {
@@ -848,13 +899,41 @@
     'Posso comparar meses, redes, produtos e representantes. Quanto mais claro o recorte, mais direta a resposta.',
   ];
 
+  // Convite para o passeio: quem ainda não viu encontra o ponto verde no
+  // mascote da lateral e uma linha na tela de boas-vindas. Nada abre sozinho
+  // — empurrar a apresentação na cara de quem chegou para perguntar é o
+  // jeito mais rápido de ela ser fechada sem ler. E o convite tem prazo:
+  // quem ignorou seis vezes já decidiu, e a linha vira ruído.
+  const CHAVE_PASSEIO = 'jarvis:passeio-visto';
+  const CHAVE_CONVITES = 'jarvis:passeio-convites';
+  // Quem fecha no meio volta de onde parou; o passeio só conta como visto
+  // quando chega ao fim.
+  const CHAVE_QUADRO = 'jarvis:passeio-quadro';
+  const MAX_CONVITES = 6;
+  const lerChave = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+  const gravarChave = (k, v) => { try { localStorage.setItem(k, v); } catch { /* navegação privada */ } };
+  const convitesFeitos = () => Number(lerChave(CHAVE_CONVITES) || 0);
+  const deveConvidar = () => !lerChave(CHAVE_PASSEIO) && convitesFeitos() < MAX_CONVITES;
+  const convidarParaPasseio = () => { $('#marcaConvite').hidden = !deveConvidar(); };
+
   const renderBoasVindas = () => {
     const convite = CONVITES[Math.floor(Math.random() * CONVITES.length)];
+    const convidar = deveConvidar();
+    const parouNo = Number(lerChave(CHAVE_QUADRO) || 0);
+    if (convidar) gravarChave(CHAVE_CONVITES, String(convitesFeitos() + 1));
     $('#mensagens').innerHTML = `
-      <div class="boas-vindas" id="boasVindas">
-        <div class="boas-vindas-marca">${jarvis('jarvis--vivo', true)}</div>
+      <div class="boas-vindas${convidar ? ' boas-vindas--convite' : ''}" id="boasVindas">
+        <button class="boas-vindas-marca" type="button" data-passeio title="Conheça o Jarvis" aria-label="Conheça o Jarvis">${jarvis('jarvis--vivo', true)}</button>
         <h1>${esc(saudacao())}</h1>
         <p>${esc(convite)}</p>
+        ${convidar ? `
+        <button class="convite-passeio" type="button" data-passeio>
+          <span class="convite-passeio-ponto" aria-hidden="true"></span>
+          <span>${parouNo
+            ? `Você parou no quadro ${parouNo + 1}. <strong>Continuar o passeio</strong>`
+            : 'Primeira vez por aqui? <strong>Conheça o Jarvis em 1 minuto</strong>'}</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </button>` : ''}
         <div class="sugestoes">${SUGESTOES.map((s, i) => `
           <button class="sugestao" type="button" data-texto="${esc(s.texto)}" style="--tema-cor:${s.cor};animation-delay:${80 + i * 45}ms">
             <span class="sugestao-tema">${esc(s.tema)}</span>
@@ -862,6 +941,7 @@
           </button>`).join('')}
         </div>
       </div>`;
+    convidarParaPasseio();
   };
 
   // O cartão de cabeçalho saiu da tela; o título continua existindo na aba
@@ -904,11 +984,13 @@
       messages.forEach(renderMensagem);
       state.ultimoId = messages.length ? messages[messages.length - 1].id : 0;
       atualizarSubtitulo(messages);
+      $('#mensagens').style.paddingBottom = '';
       rolarParaFim(false);
 
-      // pergunta que ficou sem resposta (a página foi fechada no meio)
+      // pergunta que ficou sem resposta (a página foi fechada no meio).
+      // Interrompida não conta: ninguém está mais trabalhando nela.
       const ultima = messages[messages.length - 1];
-      if (ultima && ultima.direction === 'in' && ultima.status !== 'failed') {
+      if (ultima && ultima.direction === 'in' && !['failed', 'cancelled'].includes(ultima.status)) {
         iniciarAguardo(ultima.id, ultima.text, new Date(ultima.created_at).getTime());
       }
     } catch (e) {
@@ -935,6 +1017,33 @@
   const rolarParaFim = (suave = true) => {
     const area = $('#mensagens');
     area.scrollTo({ top: area.scrollHeight, behavior: suave ? 'smooth' : 'auto' });
+  };
+
+  // A pergunta enviada sobe para o alto e a resposta nasce embaixo dela, como
+  // no ChatGPT e no Claude. Sem isso, numa conversa curta não há o que rolar:
+  // a pergunta simplesmente aparece no meio da tela e nada se move.
+  //
+  // O que permite a subida é um respiro embaixo — aqui, o `padding-bottom` da
+  // própria área, e não um elemento vazio que teria de ser mantido sempre por
+  // último entre as mensagens. Ele é recalculado a cada passo: encolhe
+  // sozinho quando a resposta é longa e enche a tela.
+  const RESPIRO = 12;  // o padding que a área já tinha embaixo
+  const FOLGA_DO_TOPO = 6;
+
+  const subirAPergunta = (pergunta) => {
+    const area = $('#mensagens');
+    if (!pergunta || !area.contains(pergunta)) return rolarParaFim();
+    area.style.paddingBottom = `${RESPIRO}px`;  // mede a conversa sem o respiro
+    const topo = pergunta.getBoundingClientRect().top
+      - area.getBoundingClientRect().top + area.scrollTop;
+    const abaixo = area.scrollHeight - RESPIRO - topo;
+    area.style.paddingBottom = `${Math.max(RESPIRO, area.clientHeight - abaixo - 24)}px`;
+    area.scrollTo({ top: Math.max(0, topo - FOLGA_DO_TOPO), behavior: 'smooth' });
+  };
+
+  const ultimaPergunta = () => {
+    const perguntas = $$('#mensagens > .msg-usuario');
+    return perguntas[perguntas.length - 1];
   };
 
   // ---------------------------------------------------------- mensagens
@@ -968,19 +1077,37 @@
     const el = document.createElement('div');
     el.className = 'msg msg-usuario';
     if (m.id) el.dataset.id = m.id;
-    // Imagem aparece como prévia, como nas outras IAs: a miniatura que fica
-    // na conversa (ou, logo depois do envio, a própria imagem local). A
-    // planilha aparece pelo nome — o arquivo foi descartado (ADR-0024).
+    // A imagem vira um quadradinho, como nas outras IAs: clicar abre no
+    // tamanho real. A planilha vira uma ficha com o verde do Excel — o
+    // arquivo foi descartado (ADR-0024), fica a lembrança dele.
+    // A ficha vem numa linha só dela: ela é `inline-flex` para caber no nome
+    // do arquivo, e sem a linha a pergunta colaria ao lado.
+    //
+    // Tudo numa linha de código também, sem quebra nem recuo: o balão é
+    // `white-space: pre-wrap` (a pergunta preserva os parágrafos de quem
+    // escreveu), então cada quebra de linha do HTML virava espaço em branco
+    // desenhado na tela — era daí o vão em cima e embaixo da ficha.
+    const ficha = (icone, nome, tipo, variante = '') =>
+      `<div><div class="bolha-anexo"><span class="bolha-anexo-ladrilho ${variante}">${icone}</span>`
+      + `<span class="bolha-anexo-texto"><span class="bolha-anexo-nome">${esc(nome)}</span>`
+      + `<span class="bolha-anexo-tipo">${esc(tipo)}</span></span></div></div>`;
     let anexo = '';
     if (m.anexo?.tipo === 'imagem') {
       const src = m.anexo.miniatura || m.anexo.previa;
+      // No visor entra a melhor cópia que existir: a prévia local, enquanto a
+      // aba está aberta, é a imagem inteira; depois resta a miniatura de 480px
+      // guardada na conversa — o arquivo não é salvo (ADR-0024).
+      const cheia = m.anexo.previa || m.anexo.miniatura;
       anexo = src
-        ? `<a class="bolha-imagem" href="${esc(m.anexo.miniatura || src)}" target="_blank" rel="noopener"><img src="${esc(src)}" alt="Imagem enviada"></a>`
-        : `<div class="bolha-anexo">${ICONES.imagem}<span>Imagem enviada</span></div>`;
+        ? `<button class="bolha-imagem" type="button" data-visor="${esc(cheia)}" title="Abrir a imagem"><img src="${esc(src)}" alt="Imagem enviada"></button>`
+        : ficha(ICONES.imagem, 'Imagem enviada', 'Imagem', 'ladrilho-imagem');
     } else if (m.anexo) {
-      anexo = `<div class="bolha-anexo">${ICONES.tabela}<span>${esc(m.anexo.nome)}</span></div>`;
+      anexo = ficha(ICONES.xlsx, m.anexo.nome, /\.csv$/i.test(m.anexo.nome || '') ? 'CSV' : 'Planilha');
     }
-    el.innerHTML = `<div class="bolha-usuario">${anexo}${esc(m.text)}<span class="msg-hora">${esc(fmtHora(m.created_at || new Date().toISOString()))}</span></div>`;
+    // A hora sai do balão e vira o título: numa conversa de trabalho ela quase
+    // nunca importa, e repetida em toda pergunta vira ruído.
+    const hora = fmtHora(m.created_at || new Date().toISOString());
+    el.innerHTML = `<div class="bolha-usuario" title="${esc(hora)}">${anexo}${esc(m.text)}</div>`;
     return el;
   };
 
@@ -988,7 +1115,8 @@
     const fonte = m.fonte || {};
     // Crédito da IA esgotado ou teto do mês: não é erro de quem perguntou e
     // perguntar de novo não adianta — aviso discreto, sem vermelho.
-    const semCredito = ['sem_creditos_na_ia', 'teto_de_custo_do_mes'].includes(fonte.regra);
+    const semCredito = ['sem_creditos_na_ia', 'teto_de_custo_do_mes', 'limite_diario_da_pessoa']
+      .includes(fonte.regra);
     const tipo = semCredito
       ? { classe: 'tipo-sem-dado', rotulo: 'Indisponível no momento', icone: 'info' }
       : (TIPO_RESPOSTA[fonte.decisao] || TIPO_RESPOSTA.answered);
@@ -1012,7 +1140,7 @@
         ${fonte.decisao === 'failed' && !semCredito && m.in_reply_to ? `
           <div class="msg-erro-acao"><button class="btn btn-ghost" type="button" data-refazer="${m.in_reply_to}">Perguntar de novo</button></div>` : ''}
         ${fonte.blocos?.length ? '' : blocoGrafico(fonte, m.id)}
-        ${blocoFonte(fonte, m.id)}
+        ${blocoFonte(fonte, m.id, !!m.planilha_preenchida)}
       </article>
       ${blocoContinuacoes(fonte)}
       </div>`;
@@ -1026,10 +1154,19 @@
   // números do banco — a redação só apontou a consulta e as colunas.
   const rotuloColuna = (nome) => String(nome || '').replace(/_/g, ' ');
 
-  const fmtCelula = (v) => {
+  // Percentual só se reconhece pelo nome da coluna: o banco devolve 9.23 e
+  // 9.23 pode ser real, unidade ou por cento. A convenção das consultas de
+  // referência (`share_pct`, `retencao_90d_pct`, `share_ease_varejo_ytd`) é
+  // o que dá a unidade — sem isso a tabela mostrava "9,23" onde a pessoa lê
+  // "9,23%" e o gráfico rotulava a barra sem unidade nenhuma.
+  const PERCENTUAL_NO_NOME = /(^|_)(pct|perc|percent|percentual|share|participacao|participação)(?=_|$)/i;
+  const ehPercentual = (coluna) => PERCENTUAL_NO_NOME.test(String(coluna || ''));
+
+  const fmtCelula = (v, coluna) => {
     if (v === null || v === undefined) return '';
     if (typeof v === 'number') {
-      return v.toLocaleString('pt-BR', { maximumFractionDigits: Number.isInteger(v) ? 0 : 2 });
+      const texto = v.toLocaleString('pt-BR', { maximumFractionDigits: Number.isInteger(v) ? 0 : 2 });
+      return ehPercentual(coluna) ? `${texto}%` : texto;
     }
     return String(v);
   };
@@ -1039,7 +1176,7 @@
     const indices = (bloco.colunas?.length ? bloco.colunas : dados.columns)
       .map((c) => dados.columns.indexOf(c)).filter((i) => i >= 0);
     const cabecalho = indices.map((i) => rotuloColuna(dados.columns[i]));
-    const linhas = dados.rows.map((linha) => indices.map((i) => fmtCelula(linha[i])));
+    const linhas = dados.rows.map((linha) => indices.map((i) => fmtCelula(linha[i], dados.columns[i])));
     const titulo = bloco.titulo ? `<div class="bloco-titulo">${esc(bloco.titulo)}</div>` : '';
     return `<div class="md bloco bloco-tabela">${titulo}${tabelaHtml(cabecalho, linhas)}</div>`;
   };
@@ -1113,14 +1250,14 @@
 
   const fmtEixo = (v) => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 
-  // A IA escolhe as colunas, não a unidade. O nome da coluna diz: é a
-  // convenção das consultas de referência (`retencao_90d_pct`, `share_pct`).
-  // Sem isto o eixo de retenção ia de 0 a 60 sem dizer de quê.
-  const PERCENTUAL = /(^|_)(pct|perc|percent|percentual)(?=_|$)/i;
-  const ehPercentual = (coluna) => PERCENTUAL.test(coluna);
+  // A IA escolhe as colunas, não a unidade — quem dá a unidade é o nome da
+  // coluna (`ehPercentual`, lá em cima, junto do formato da tabela: o
+  // gráfico e a tabela da mesma resposta não podem discordar).
   const fmtValor = (v, coluna) => fmtEixo(v) + (ehPercentual(coluna) ? '%' : '');
   // "retencao_90d_pct" vira "retencao 90d" na legenda: o % já está no número.
-  const rotuloSerie = (coluna) => coluna.replace(PERCENTUAL, '').replace(/_+/g, ' ').trim();
+  // Só o sufixo técnico sai; "share" é o nome do indicador e fica.
+  const SUFIXO_PCT = /(^|_)(pct|perc|percent|percentual)(?=_|$)/i;
+  const rotuloSerie = (coluna) => coluna.replace(SUFIXO_PCT, '').replace(/_+/g, ' ').trim();
 
   // Quantos meses pular entre um rótulo e outro, para caber na horizontal.
   // O passo acompanha o calendário (3 = jan/abr/jul/out, 6 = jan/jul): um
@@ -1352,7 +1489,11 @@
     });
   };
 
-  const blocoFonte = (fonte, id) => {
+  // `temPlanilha`: a resposta já traz o botão verde da planilha preenchida.
+  // Dois botões de baixar, um do lado do outro, com arquivos diferentes, é
+  // uma escolha que ninguém pediu — some o do resultado cru, que não foi o
+  // que a pessoa mandou preencher.
+  const blocoFonte = (fonte, id, temPlanilha = false) => {
     if (fonte.investigacao?.length) return blocoFonteDaInvestigacao(fonte);
     const consulta = fonte.consulta;
     if (!consulta) return '';
@@ -1375,7 +1516,7 @@
       <div class="fonte">
         <div class="fonte-barra">
           <button class="fonte-toggle" type="button" aria-expanded="false">${ICONES.banco}<span class="fonte-toggle-texto">Ver fonte e consulta</span><span class="chevron">${ICONES.chevron}</span></button>
-          ${fonte.excel ? `<button class="fonte-excel${fonte.excel_pedido ? ' destaque' : ''}" type="button" data-excel="${id}">${ICONES.planilha}<span>Baixar Excel</span></button>` : ''}
+          ${fonte.excel && !temPlanilha ? `<button class="fonte-excel${fonte.excel_pedido ? ' destaque' : ''}" type="button" data-excel="${id}">${ICONES.planilha}<span>Baixar Excel</span></button>` : ''}
         </div>
         <div class="fonte-detalhe">
           <div class="fonte-detalhe-inner">
@@ -1535,18 +1676,21 @@
     const el = document.createElement('div');
     el.className = 'msg msg-ia';
     el.id = 'pensando';
+    // A espera tem a forma de uma resposta que ainda não chegou: o mascote na
+    // coluna do avatar e uma linha de estado no lugar do texto. Sem cartão e
+    // sem barra de progresso — a resposta não vem por etapas medidas, e a
+    // barra prometia uma precisão que não existe.
     el.innerHTML = `
-      <article class="cartao-ia cartao-pensando">
+      <div class="ia-avatar" id="jarvisEspera" aria-hidden="true">${jarvis('jarvis--pensando', true)}</div>
+      <div class="msg-corpo">
         <div class="pensando">
-          <span class="jarvis-espera" id="jarvisEspera">${jarvis('jarvis--pensando', true)}</span>
           <span class="pensando-texto" id="pensandoTexto"><strong>Pensando…</strong></span>
           <span class="pensando-tempo" id="pensandoTempo">0 s</span>
         </div>
-        <div class="pensando-trilha"></div>
-      </article>`;
+      </div>`;
     $('#mensagens').appendChild(el);
     atualizarContinuacoes();
-    rolarParaFim();
+    subirAPergunta(ultimaPergunta());
   };
 
   const tickPensando = () => {
@@ -1620,7 +1764,8 @@
         if (chegou) {
           pararAguardo();
           document.querySelector(`#mensagens [data-id="${chegou.id}"] .jarvis`)?.classList.add('jarvis--chegou');
-          rolarParaFim();
+          subirAPergunta(ultimaPergunta());
+          avisarDaCota();
           carregarConversas();
           const perguntas = document.querySelectorAll('#mensagens .msg-usuario').length;
           state.subtituloConversa = `${perguntas} ${perguntas === 1 ? 'pergunta' : 'perguntas'}`;
@@ -1640,12 +1785,14 @@
       el.className = 'msg msg-ia';
       el.innerHTML = `
         <div class="ia-avatar" aria-hidden="true">${jarvis()}</div>
+        <div class="msg-corpo">
         <article class="cartao-ia tipo-falha">
           <div class="cartao-ia-corpo">
             <div class="cartao-ia-rotulo">${ICONES.alerta}Demorou mais que o normal</div>
             <div class="md"><p>A resposta ainda não chegou. Ela pode aparecer se você abrir esta conversa de novo daqui a pouco.</p></div>
           </div>
-        </article>`;
+        </article>
+        </div>`;
       $('#mensagens').appendChild(el);
       rolarParaFim();
       return;
@@ -1664,6 +1811,7 @@
     const anexo = state.anexo;
     const texto = String(textoBruto || '').trim() || (anexo ? PERGUNTA_PADRAO[anexo.tipo] : '');
     if (!texto || state.aguardando || state.anexoEnviando) return;
+    pararDitado();
 
     const campo = $('#campoPergunta');
     campo.value = '';
@@ -1679,7 +1827,7 @@
     });
     $('#boasVindas')?.remove();
     $('#mensagens').appendChild(provisoria);
-    rolarParaFim();
+    subirAPergunta(provisoria);
     state.aguardando = { id: null, texto, inicio: Date.now() };
     atualizarBotao();
 
@@ -1723,11 +1871,40 @@
     campo.style.height = `${Math.min(campo.scrollHeight, 180)}px`;
   };
 
+  // Enquanto a resposta não chega, o mesmo botão para a solicitação — é o
+  // lugar onde a mão já está, e é assim nas outras IAs. Ele nunca fica
+  // desabilitado nesse estado: esperar sem poder desistir é a situação que
+  // o botão existe para resolver.
   const atualizarBotao = () => {
     const vazio = !$('#campoPergunta').value.trim() && !state.anexo;
-    $('#btnEnviar').disabled = vazio || !!state.aguardando || state.anexoEnviando;
-    $('#btnAnexar').disabled = !!state.aguardando || state.anexoEnviando;
+    const esperando = !!state.aguardando;
+    const enviar = $('#btnEnviar');
+    enviar.classList.toggle('parar', esperando);
+    enviar.setAttribute('aria-label', esperando ? 'Interromper a solicitação' : 'Enviar pergunta');
+    enviar.title = esperando ? 'Interromper a solicitação' : '';
+    enviar.disabled = esperando ? false : (vazio || state.anexoEnviando);
+    $('#btnAnexar').disabled = esperando || state.anexoEnviando;
   };
+
+  // Só escreve o status pela API; quem para de verdade é o worker, que o lê
+  // entre as etapas. A tela não espera a confirmação para sair do "pensando":
+  // quem apertou parar quer a tela livre agora.
+  const interromper = async () => {
+    const aguardando = state.aguardando;
+    if (!aguardando) return;
+    // A tela não anuncia a interrupção: quem apertou parar sabe o que fez, e
+    // um aviso ali seria ruído em toda pergunta desistida.
+    pararAguardo();
+    if (!aguardando.id) return;  // o POST da pergunta ainda nem voltou
+    try {
+      await api(`/api/conversations/${state.conversaId}/messages/${aguardando.id}/interromper/`, {
+        method: 'POST', body: {},
+      });
+    } catch (e) {
+      toast(`Não consegui interromper: ${e.message}`, true);
+    }
+  };
+
 
   // ---------------------------------------------------------- anexo
   // O arquivo sobe assim que é escolhido: validação e resumo acontecem no
@@ -1756,8 +1933,9 @@
         </div>`;
       return;
     }
+    const imagem = tipo === 'imagem';
     chip.innerHTML = `
-      <span class="anexo-chip-icone">${tipo === 'imagem' ? ICONES.imagem : ICONES.tabela}</span>
+      <span class="anexo-chip-icone${imagem ? ' ladrilho-imagem' : ''}">${imagem ? ICONES.imagem : ICONES.xlsx}</span>
       <div class="anexo-chip-texto">
         <div class="anexo-chip-nome">${esc(nome)}</div>
         <div class="anexo-chip-detalhe">${esc(detalhe)}</div>
@@ -1851,7 +2029,557 @@
       enviar($('#campoPergunta').value);
     }
   });
-  $('#formPergunta').addEventListener('submit', (ev) => { ev.preventDefault(); enviar($('#campoPergunta').value); });
+  $('#formPergunta').addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    if (state.aguardando) interromper(); else enviar($('#campoPergunta').value);
+  });
+
+
+  // ---------------------------------------------------------- passeio
+  // O mascote abre a apresentação do Jarvis. Seis quadros, um assunto cada,
+  // em tela cheia: no cartão pequeno de antes as cenas ficavam do tamanho de
+  // um ícone, e elas são o que explica — o texto só legenda.
+  //
+  // O Jarvis é um personagem só do começo ao fim. Ele sai voando do lugar
+  // onde foi clicado, troca de estado a cada quadro (vivo, pensando,
+  // consultando) sem ser redesenhado, e no fim volta para o mesmo lugar.
+  // O que é remontado a cada quadro são os objetos em volta dele e a
+  // legenda: animação de CSS só toca do começo quando o nó é novo.
+  const PASSEIO = [
+    {
+      titulo: 'Oi, eu sou o Jarvis',
+      texto: 'Eu respondo perguntas sobre os dados da Ease Labs. É só perguntar: eu consulto os dados e mostro de onde veio cada número.',
+      estado: 'jarvis--vivo',
+      objetos: `
+        <span class="cena-brilho cena-brilho--1"></span>
+        <span class="cena-brilho cena-brilho--2"></span>
+        <span class="cena-brilho cena-brilho--3"></span>
+        <span class="cena-oi">Oi!</span>`,
+    },
+    {
+      titulo: 'Pergunte como você fala',
+      texto: 'Nada de filtro nem menu. "Quantas unidades a Pague Menos dispensou por mês em 2026?" já é uma pergunta inteira.',
+      estado: 'jarvis--pensando',
+      objetos: `
+        <span class="cena-balao cena-balao--pergunta">Quantas unidades a Pague Menos<br>dispensou por mês em 2026?</span>
+        <span class="cena-balao cena-balao--resposta"><i></i><i></i><i></i></span>
+        <span class="cena-balao cena-balao--numero"><b>1,2 mi</b> un. · jan–ago</span>`,
+    },
+    {
+      titulo: 'Todo número tem fonte',
+      texto: 'Embaixo de cada resposta, "Ver fonte e consulta" abre a consulta que rodou no banco. E é sempre leitura: eu nunca altero o dado na origem.',
+      estado: 'jarvis--consultando',
+      objetos: `
+        <span class="cena-sql">
+          <span><b>SELECT</b> rede, <b>SUM</b>(und)</span>
+          <span><b>FROM</b> cddd.vendas</span>
+          <span><b>WHERE</b> competencia = 202608</span>
+        </span>
+        <span class="cena-tabela">
+          <i style="--w:70%"></i><i style="--w:44%"></i><i style="--w:58%"></i>
+        </span>
+        <span class="cena-cadeado">somente leitura</span>`,
+    },
+    {
+      titulo: 'Também respondo "por quê"',
+      texto: 'Pergunta de causa vira investigação: eu levanto hipóteses, testo uma por uma no banco e cruzo as áreas antes de concluir.',
+      estado: 'jarvis--pensando',
+      objetos: `
+        <span class="cena-hipotese cena-hipotese--1">rede?</span>
+        <span class="cena-hipotese cena-hipotese--2">produto?</span>
+        <span class="cena-hipotese cena-hipotese--3">mercado?</span>
+        <svg class="cena-fios" viewBox="0 0 220 150" aria-hidden="true">
+          <path d="M60 46 L110 88" /><path d="M110 40 L112 84" /><path d="M162 46 L118 88" />
+        </svg>`,
+    },
+    {
+      titulo: 'Traga sua planilha ou um print',
+      texto: 'Eu preencho a sua planilha com os dados do banco e leio um print para analisar. O arquivo não fica guardado: sai da conversa e é descartado.',
+      estado: 'jarvis--consultando',
+      objetos: `
+        <span class="cena-folha">
+          <b></b>
+          <i style="--w:62%"></i><i style="--w:40%"></i><i style="--w:52%"></i>
+        </span>
+        <span class="cena-print"></span>
+        <span class="cena-descartado">print descartado</span>`,
+    },
+    {
+      titulo: 'Pode perguntar',
+      texto: 'Gráfico e Excel saem prontos, e se algo demorar ou sair torto, o botão de parar interrompe na hora. Estou aqui do lado.',
+      estado: 'jarvis--vivo',
+      objetos: `
+        <span class="cena-grafico">
+          <i style="--h:34%"></i><i style="--h:62%"></i><i style="--h:46%"></i><i style="--h:88%"></i>
+        </span>`,
+    },
+  ];
+
+  const semMovimento = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let quadro = 0;
+  let origemDoPasseio = null;   // o mascote clicado: é de lá que o Jarvis sai e para lá que volta
+  let passeioFechando = false;
+
+  // O voo: o Jarvis do palco começa em cima do mascote clicado, no tamanho
+  // dele, e vai para o centro (ou o contrário, na volta). É o mesmo truque
+  // de sempre — medir os dois, desenhar no destino, animar a diferença. O
+  // ator mora dentro de um palco escalado, então a distância medida na tela
+  // é dividida pela escala antes de virar `translate`.
+  // Na tela e com tamanho: a lateral recolhida ainda mostra o mascote, a
+  // gaveta fechada do celular o deixa fora da tela.
+  const naTela = (el) => {
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.right > 0 && r.left < innerWidth && r.bottom > 0 && r.top < innerHeight;
+  };
+  const mascoteDaLateral = () => $('#btnLogoHome .marca-jarvis');
+
+  const voar = (de, ator, volta = false) => {
+    if (semMovimento() || !naTela(de)) return Promise.resolve();
+    const a = de.getBoundingClientRect();
+    const b = ator.getBoundingClientRect();
+    if (!b.width) return Promise.resolve();
+    const escala = b.width / ator.offsetWidth;
+    const dx = (a.left + a.width / 2 - (b.left + b.width / 2)) / escala;
+    const dy = (a.top + a.height / 2 - (b.top + b.height / 2)) / escala;
+    const quadros = [
+      { transform: `translate(${dx}px, ${dy}px) scale(${a.width / b.width})` },
+      { transform: `translate(${dx * 0.45}px, ${dy * 0.45 - 30}px) scale(${(a.width / b.width + 1) / 2})`, offset: 0.55 },
+      { transform: 'none' },
+    ];
+    const voo = ator.animate(volta ? quadros.reverse() : quadros, {
+      duration: volta ? 480 : 680,
+      easing: volta ? 'cubic-bezier(0.55, 0, 0.75, 0.3)' : 'cubic-bezier(0.22, 1, 0.36, 1)',
+      fill: 'both',
+    });
+    return voo.finished.then(() => voo.cancel(), () => {});
+  };
+
+  const desenharQuadro = (direcao = 'frente') => {
+    const q = PASSEIO[quadro];
+    const walk = $('#walk');
+    walk.dataset.direcao = direcao;
+    walk.dataset.quadro = String(quadro);
+    $('#walkPalco').innerHTML = q.objetos;
+    $('#walkLegenda').innerHTML = `
+      <span class="walk-contador">${quadro + 1} de ${PASSEIO.length}</span>
+      <h2 class="walk-titulo" id="walkTitulo">${esc(q.titulo)}</h2>
+      <p class="walk-texto">${esc(q.texto)}</p>`;
+    // O mesmo Jarvis, outro estado: trocar a classe não o redesenha, então
+    // a órbita segue de onde estava em vez de recomeçar a cada quadro.
+    const svg = $('#walkAtor svg');
+    if (svg) svg.setAttribute('class', `jarvis ${q.estado}`);
+    $('#walkPontos').innerHTML = PASSEIO.map((_, i) =>
+      `<button class="walk-ponto${i < quadro ? ' feito' : ''}${i === quadro ? ' atual' : ''}" type="button" role="tab"
+        aria-selected="${i === quadro}" aria-label="Quadro ${i + 1}: ${esc(PASSEIO[i].titulo)}" data-quadro="${i}"><i></i></button>`).join('');
+    $('#walkVoltar').hidden = quadro === 0;
+    const ultimo = quadro === PASSEIO.length - 1;
+    $('#walkProximo').textContent = ultimo ? 'Começar a perguntar' : 'Próximo';
+    $('#walkProximo').classList.toggle('walk-proximo--fim', ultimo);
+  };
+
+  // O pulinho de quando o quadro muda: o ator reage à troca de assunto.
+  const pular = () => {
+    const ator = $('#walkAtor');
+    ator.classList.remove('pula');
+    void ator.offsetWidth;   // reinicia a animação
+    ator.classList.add('pula');
+  };
+
+  // A marca do primeiro acesso é gravada quando o passeio SOBE, não quando
+  // ele termina: fechar no primeiro quadro é uma resposta, e reabrir a cada
+  // login seria empurrar. Falhar aqui não atrapalha ninguém — no máximo a
+  // apresentação abre de novo no próximo login.
+  const marcarPasseioVisto = () => {
+    if (!state.usuario?.passeio_pendente) return;
+    state.usuario.passeio_pendente = false;
+    api('/api/auth/passeio/', { method: 'POST', body: {} }).catch(() => {});
+  };
+
+  const abrirPasseio = (origem) => {
+    if (!$('#walk').hidden) return;
+    marcarPasseioVisto();
+    origemDoPasseio = origem instanceof Element ? origem : $('#btnLogoHome .marca-jarvis');
+    passeioFechando = false;
+    const parouNo = lerChave(CHAVE_PASSEIO) ? 0 : Number(lerChave(CHAVE_QUADRO) || 0);
+    quadro = parouNo > 0 && parouNo < PASSEIO.length ? parouNo : 0;
+    $('#walkAtor').innerHTML = jarvis('jarvis--vivo', true);
+    $('#walkAtor').classList.remove('pula');
+    desenharQuadro();
+    const walk = $('#walk');
+    walk.classList.remove('saindo');
+    walk.hidden = false;
+    // Enquanto o Jarvis está no palco, o lugar de onde ele saiu fica vazio.
+    origemDoPasseio?.classList.add('jarvis-emprestado');
+    voar(origemDoPasseio, $('#walkAtor'));
+    $('#walkProximo').focus({ preventScroll: true });
+  };
+
+  const fecharPasseio = async ({ perguntar = false } = {}) => {
+    const walk = $('#walk');
+    if (walk.hidden || passeioFechando) return;
+    passeioFechando = true;
+    const concluiu = perguntar || quadro === PASSEIO.length - 1;
+    if (concluiu) {
+      gravarChave(CHAVE_PASSEIO, '1');
+      try { localStorage.removeItem(CHAVE_QUADRO); } catch { /* navegação privada */ }
+    } else {
+      gravarChave(CHAVE_QUADRO, String(quadro));
+    }
+    // Na volta o Jarvis pousa na lateral, mesmo que tenha saído das
+    // boas-vindas: é lá que ele mora, e é lá que se clica para revê-lo.
+    const lateral = mascoteDaLateral();
+    const destino = naTela(lateral) ? lateral : origemDoPasseio;
+    destino?.classList.add('jarvis-emprestado');
+    walk.classList.add('saindo');
+    await Promise.all([
+      voar(destino, $('#walkAtor'), true),
+      new Promise((ok) => setTimeout(ok, semMovimento() ? 0 : 260)),
+    ]);
+    walk.hidden = true;
+    walk.classList.remove('saindo');
+    $('#walkPalco').innerHTML = '';   // para as animações da cena
+    $('#walkAtor').innerHTML = '';
+    origemDoPasseio?.classList.remove('jarvis-emprestado');
+    destino?.classList.remove('jarvis-emprestado');
+    origemDoPasseio = null;
+    passeioFechando = false;
+    convidarParaPasseio();
+    // Quem concluiu não precisa mais da linha de convite; quem parou no
+    // meio passa a ver "continuar" na próxima conversa nova.
+    if (concluiu) {
+      $('#boasVindas')?.classList.remove('boas-vindas--convite');
+      $('.convite-passeio')?.remove();
+    }
+    if (destino === lateral) acenarNaLateral();
+    if (perguntar) $('#campoPergunta').focus();
+  };
+
+  // O pouso: o mascote da lateral acena ao receber o Jarvis de volta — é o
+  // gesto que mostra onde ele mora, sem precisar de recado.
+  const acenarNaLateral = () => {
+    const botao = $('#btnLogoHome');
+    botao.classList.remove('acenando');
+    void botao.offsetWidth;   // reinicia o aceno
+    botao.classList.add('acenando');
+  };
+  $('#btnLogoHome').addEventListener('animationend', (ev) => {
+    if (ev.animationName === 'jarvisAcena') $('#btnLogoHome').classList.remove('acenando');
+  });
+
+  const irParaQuadro = (i) => {
+    if (passeioFechando || i === quadro) return;
+    if (i >= PASSEIO.length) return fecharPasseio({ perguntar: true });
+    if (i < 0) return;
+    const direcao = i > quadro ? 'frente' : 'tras';
+    quadro = i;
+    desenharQuadro(direcao);
+    pular();
+  };
+
+  $('#walkProximo').addEventListener('click', () => irParaQuadro(quadro + 1));
+  $('#walkVoltar').addEventListener('click', () => irParaQuadro(quadro - 1));
+  $('#walkFechar').addEventListener('click', () => fecharPasseio());
+  $('#walkPontos').addEventListener('click', (ev) => {
+    const ponto = ev.target.closest('[data-quadro]');
+    if (ponto) irParaQuadro(Number(ponto.dataset.quadro));
+  });
+  // Clicar no próprio Jarvis também avança: é o primeiro lugar em que se
+  // clica numa tela cheia, e ele está ali justamente para isso.
+  $('#walkAtor').addEventListener('click', () => irParaQuadro(quadro + 1));
+  document.addEventListener('keydown', (ev) => {
+    if ($('#walk').hidden) return;
+    if (ev.key === 'Escape') fecharPasseio();
+    if (ev.key === 'ArrowRight') irParaQuadro(quadro + 1);
+    if (ev.key === 'ArrowLeft') irParaQuadro(quadro - 1);
+  });
+  // No celular o passeio se navega arrastando, como qualquer onboarding.
+  let toqueX = null;
+  $('#walk').addEventListener('touchstart', (ev) => { toqueX = ev.touches[0].clientX; }, { passive: true });
+  $('#walk').addEventListener('touchend', (ev) => {
+    if (toqueX === null) return;
+    const dx = ev.changedTouches[0].clientX - toqueX;
+    toqueX = null;
+    if (Math.abs(dx) > 50) irParaQuadro(quadro + (dx < 0 ? 1 : -1));
+  });
+  // O mascote grande das boas-vindas e a linha de convite abrem o passeio,
+  // e o Jarvis sai de lá — não da lateral.
+  $('#mensagens').addEventListener('click', (ev) => {
+    const gatilho = ev.target.closest('[data-passeio]');
+    if (!gatilho) return;
+    abrirPasseio($('#boasVindas .boas-vindas-marca') || undefined);
+  });
+  convidarParaPasseio();
+
+  // ---------------------------------------------------------- limites
+  // Quanto a pessoa já usou hoje. Existe para a cota não ser uma surpresa:
+  // descobrir o limite no instante em que ele bate é a pior hora de saber
+  // que ele existe.
+  // Em percentual, não "7 de 20": a pessoa quer saber quanto já foi e se
+  // está perto do fim, e o número absoluto obriga a fazer a conta. A partir
+  // de 80% a barra fica âmbar e avisa — descobrir que acabou só quando acaba
+  // é o que esta tela existe para evitar.
+  const PERTO_DO_LIMITE = 80;
+
+  // Cada janela é uma linha: rótulo e prazo à esquerda, barra no meio,
+  // porcentagem à direita. Empilhar rótulo, barra e nota (como estava) dá
+  // três alturas por limite e faz o painel parecer um formulário; em linha,
+  // os dois limites se comparam num olhar.
+  // Só a porcentagem. A pessoa precisa saber se está perto do fim, não
+  // contar quantas sobraram — e a conta nem chega aqui: a API manda a
+  // porcentagem já pronta.
+  const janelaDaCota = (titulo, j, quando) => {
+    const nivel = j.excedeu ? 'cheia' : (j.pct >= PERTO_DO_LIMITE ? 'perto' : 'ok');
+    const prazo = j.excedeu ? `Cota usada. Volta ${quando}.` : `Renova ${quando}.`;
+    return `
+      <div class="cota-item cota-item--${nivel}">
+        <div class="cota-rotulo">
+          <strong>${esc(titulo)}</strong>
+          <span>${esc(prazo)}</span>
+        </div>
+        <div class="cota-barra"><i style="--p:${Math.min(j.pct, 100)}%"></i></div>
+        <div class="cota-pct"><strong>${j.pct}% usado</strong></div>
+      </div>`;
+  };
+
+  const corpoDosLimites = (d) => {
+    const agora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const rodape = `
+      <div class="cota-rodape">
+        <span>Atualizado às ${esc(agora)}</span>
+        <button class="cota-atualizar" type="button" id="btnAtualizarCota" aria-label="Atualizar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.6-6.4M21 4v5h-5"/></svg>
+        </button>
+      </div>`;
+
+    if (!d.dia) {
+      return `
+        <div class="cota">
+          <div class="cota-item">
+            <div class="cota-rotulo">
+              <strong>Perguntas por dia</strong>
+              <span>Sua conta não tem cota. Pergunte à vontade.</span>
+            </div>
+            <div class="cota-pct"><strong>Sem limite</strong></div>
+          </div>
+          ${rodape}
+        </div>`;
+    }
+    const segunda = new Date(`${d.semana_renova_em}T00:00:00`).toLocaleDateString('pt-BR', {
+      day: '2-digit', month: '2-digit',
+    });
+    return `
+      <div class="cota">
+        ${janelaDaCota('Hoje', d.dia, 'à meia\u2011noite')}
+        ${janelaDaCota('Esta semana', d.semana, `na segunda, ${segunda}`)}
+        ${rodape}
+      </div>`;
+  };
+
+  const desenharCota = async () => {
+    try {
+      $('#modalCorpo').innerHTML = corpoDosLimites(await api('/api/auth/limites/'));
+    } catch (e) {
+      $('#modalCorpo').innerHTML = `<p class="modal-texto">Não consegui ler a sua cota agora: ${esc(e.message)}</p>`;
+    }
+  };
+
+  // A partir de 80% da janela mais apertada, uma faixa âmbar acima do campo
+  // de pergunta. O aviso mora aqui, e não num canto qualquer, porque é aqui
+  // que a pessoa está quando a informação importa: um passo antes de gastar
+  // a próxima pergunta. Descobrir o limite só quando ele bate é a pior hora
+  // de saber que ele existe.
+  const avisarDaCota = async () => {
+    const faixa = $('#avisoCota');
+    if (!faixa) return;
+    try {
+      const d = await api('/api/auth/limites/');
+      // A mais apertada das duas manda: adiantar o fim da semana quando o
+      // dia ainda está folgado é o caso que mais pega gente de surpresa.
+      const janelas = [
+        { j: d.dia, prazo: 'à meia\u2011noite', qual: 'diário' },
+        { j: d.semana, prazo: 'na segunda', qual: 'semanal' },
+      ].filter((x) => x.j);
+      const pior = janelas.sort((a, b) => b.j.pct - a.j.pct)[0];
+      if (!pior || pior.j.pct < PERTO_DO_LIMITE) { faixa.hidden = true; return; }
+      faixa.textContent = pior.j.excedeu
+        ? `Você atingiu 100% do limite de perguntas ${pior.qual}. A cota volta ${pior.prazo}.`
+        : `Você já usou ${pior.j.pct}% do limite de perguntas ${pior.qual}. A cota renova ${pior.prazo}.`;
+      faixa.classList.toggle('cheia', pior.j.excedeu);
+      faixa.hidden = false;
+    } catch {
+      faixa.hidden = true;  // a cota não é motivo para atrapalhar quem pergunta
+    }
+  };
+
+  const verLimites = async () => {
+    fecharDropdown();
+    abrirModal({
+      titulo: 'Seus limites de uso',
+      corpo: '<div class="cota cota-carregando"></div>',
+      acao: null,
+    });
+    // Recarrega sem fechar: a cota muda enquanto a pessoa usa o app.
+    modal.querySelector('.modal').classList.add('largo');
+    $('#modalCorpo').onclick = (ev) => { if (ev.target.closest('#btnAtualizarCota')) desenharCota(); };
+    await desenharCota();
+  };
+
+  $('#btnLimites').addEventListener('click', verLimites);
+
+  // ---------------------------------------------------------- visor
+  // A miniatura abre aqui dentro, em cima da conversa. Antes ela era um link
+  // para o blob, que abria uma aba com a imagem solta, fora do Jarvis.
+  const abrirVisor = (src) => {
+    $('#visorImagem').src = src;
+    $('#visor').hidden = false;
+  };
+
+  const fecharVisor = () => {
+    $('#visor').hidden = true;
+    $('#visorImagem').removeAttribute('src');
+  };
+
+  $('#mensagens').addEventListener('click', (ev) => {
+    const alvo = ev.target.closest('.bolha-imagem');
+    if (alvo?.dataset.visor) abrirVisor(alvo.dataset.visor);
+  });
+  // Clicar no fundo fecha; clicar na própria imagem, não.
+  $('#visor').addEventListener('click', (ev) => {
+    if (!ev.target.closest('#visorImagem')) fecharVisor();
+  });
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && !$('#visor').hidden) fecharVisor();
+  });
+
+  // ---------------------------------------------------------- ditado
+  // O reconhecimento de fala é do próprio navegador: não passa pelo nosso
+  // servidor, não chama a IA e não custa nada. Duas regras de desenho:
+  //
+  //   1. o texto cai no campo para quem falou revisar antes de enviar —
+  //      ditado que envia sozinho erra uma vez e ninguém usa de novo;
+  //   2. o jargão da casa passa por uma lista nossa, porque o navegador
+  //      reconhece português geral e devolve "cell out" para "sell out".
+  //      A lista é para crescer: toda palavra que voltar torta entra aqui.
+  //
+  // Onde o navegador não ouve (Firefox), o botão não aparece: melhor não ter
+  // do que ter quebrado.
+  const CORRECOES_DO_DITADO = [
+    [/\b(?:cell|cel|sel|self)[\s-]?out\b/gi, 'sell out'],
+    [/\bs?el+(?:aute|auti)\b/gi, 'sell out'],
+    [/\b(?:cell|cel|sel)[\s-]?in\b/gi, 'sell in'],
+    [/\b(?:is|iz|ease|eas)[\s-]?labs?\b/gi, 'Ease Labs'],
+    [/\bp[eê]\s?b[eê]\s?eme\b/gi, 'PBM'],
+    [/\bp[eê]\s?xis\b/gi, 'PX'],
+    // Sem \b no fim: a borda de palavra do JavaScript não enxerga o "ê".
+    [/\bc[eê]\s?d[eê]\s?d[eê](?![a-z])/gi, 'CDD'],
+    [/\bmarket[\s-]?(?:cher|xer|sher|cheer)\b/gi, 'market share'],
+    [/\besquiu\b/gi, 'SKU'],
+    [/\bfor[eé]cast(?:e)?\b/gi, 'forecast'],
+    [/\bdash\s?bor(?:d|de)\b/gi, 'dashboard'],
+  ];
+
+  const corrigirJargao = (texto) =>
+    CORRECOES_DO_DITADO.reduce((t, [de, para]) => t.replace(de, para), texto);
+
+  // Declarado aqui e usado lá em cima no envio: quem apertou Enter não pode
+  // deixar o microfone escrevendo na caixa que acabou de esvaziar.
+  let pararDitado = () => {};
+
+  const Reconhecimento = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (Reconhecimento) {
+    const btnDitar = $('#btnDitar');
+    const rec = new Reconhecimento();
+    rec.lang = 'pt-BR';
+    rec.continuous = true;
+    rec.interimResults = true;
+
+    let ditando = false;  // o que a pessoa quer; o navegador para sozinho
+    let base = '';        // o que já estava escrito quando o microfone abriu
+    let firmado = '';     // o que o navegador deu por certo nesta rodada
+
+    // Trima cada pedaço e junta com um espaço. Não mexe no miolo da base:
+    // quem escreveu em duas linhas e resolveu ditar o resto mantém as linhas.
+    const juntar = (...partes) => partes
+      .map((p) => String(p || '').trim())
+      .filter(Boolean)
+      .join(' ');
+
+    const escrever = (parcial = '') => {
+      const campo = $('#campoPergunta');
+      campo.value = juntar(base, firmado, parcial);
+      ajustarCampo();
+      atualizarBotao();
+    };
+
+    const marcar = (ouvindo) => {
+      btnDitar.setAttribute('aria-pressed', String(ouvindo));
+      btnDitar.setAttribute('aria-label', ouvindo ? 'Parar de ditar' : 'Ditar a pergunta');
+      btnDitar.title = ouvindo ? 'Parar de ditar' : 'Ditar a pergunta pelo microfone';
+    };
+
+    rec.addEventListener('result', (ev) => {
+      let parcial = '';
+      for (let i = ev.resultIndex; i < ev.results.length; i += 1) {
+        const trecho = ev.results[i][0].transcript;
+        // A correção só entra no que já está firme: o provisório ainda muda.
+        if (ev.results[i].isFinal) firmado = juntar(firmado, corrigirJargao(trecho));
+        else parcial = juntar(parcial, trecho);
+      }
+      escrever(parcial);
+    });
+
+    rec.addEventListener('error', (ev) => {
+      ditando = false;
+      if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
+        toast('Preciso da permissão do microfone: libere no cadeado da barra de endereço.', true);
+      } else if (ev.error === 'network') {
+        toast('O reconhecimento de fala não respondeu. Tente de novo.', true);
+      }
+      // 'no-speech' e 'aborted' são silêncio e desistência: não viram aviso.
+    });
+
+    // O navegador encerra sozinho depois de alguns segundos calado. Se a
+    // pessoa não mandou parar, o que ela ditou vira base e o microfone volta;
+    // assim ninguém perde a frase por ter pensado no meio dela.
+    rec.addEventListener('end', () => {
+      escrever();
+      if (!ditando) { marcar(false); return; }
+      base = juntar(base, firmado);
+      firmado = '';
+      try {
+        rec.start();
+      } catch {
+        ditando = false;
+        marcar(false);
+      }
+    });
+
+    pararDitado = () => {
+      if (!ditando) return;
+      ditando = false;
+      marcar(false);
+      rec.stop();
+    };
+
+    btnDitar.addEventListener('click', () => {
+      if (ditando) { pararDitado(); return; }
+      base = $('#campoPergunta').value;
+      firmado = '';
+      ditando = true;
+      marcar(true);
+      try {
+        rec.start();
+      } catch {
+        // start() com a sessão anterior ainda encerrando: o próximo clique pega.
+        ditando = false;
+        marcar(false);
+      }
+      $('#campoPergunta').focus();
+    });
+
+    btnDitar.hidden = false;
+  }
 
   // ---------------------------------------------------------- login
   document.querySelectorAll('.btn-olho').forEach((btn) => {
@@ -1871,10 +2599,97 @@
   const DOMINIO = '@easelabs.com.br';
   const login = { etapa: 'email', email: '', relogio: null };
 
+  // O palco do login: uma pergunta de exemplo entra, o Jarvis consulta a
+  // tabela de onde a resposta sairia, e a resposta chega com a fonte. Sem
+  // número: o que ele mostra é o caminho, que é o que o produto promete.
+  // As tabelas são as do catálogo, para ninguém do BI estranhar o nome.
+  const DEMOS = [
+    { pergunta: 'Quantas adesões ao PBM tivemos por mês em 2026?', onde: 'pbm.fato_pbm_adesoes' },
+    { pergunta: 'Como evoluiu a prescrição da Ease mês a mês?', onde: 'audit.vw_fato_prescricao_remota' },
+    { pergunta: 'Qual foi o sell-in por rede em agosto?', onde: 'estoque_redes.fato_sell_in' },
+    { pergunta: 'Por que a prescrição caiu em maio?', onde: '3 hipóteses, uma por uma', porque: true },
+  ];
+  const palco = { demo: 0, timers: [] };
+  const estadoDoJarvis = (estado) => {
+    $('#loginJarvis').setAttribute('class', `jarvis jarvis--${estado} login-jarvis`);
+  };
+  // Um gesto por cima do estado: `nega` (balança a cabeça) e `chegou` (o pulo).
+  const gestoDoJarvis = (gesto) => {
+    const j = $('#loginJarvis');
+    j.classList.remove('login-nega', 'jarvis--chegou');
+    void j.getBoundingClientRect();   // reinicia a animação
+    j.classList.add(gesto === 'nega' ? 'login-nega' : 'jarvis--chegou');
+  };
+  const pararPalco = () => { palco.timers.forEach(clearTimeout); palco.timers = []; };
+  const depois = (ms, fn) => palco.timers.push(setTimeout(fn, ms));
+  const rodarDemo = () => {
+    pararPalco();
+    const d = DEMOS[palco.demo % DEMOS.length];
+    palco.demo += 1;
+    $('#loginDemo').innerHTML = `
+      <span class="demo-pergunta">${esc(d.pergunta)}</span>
+      <span class="demo-consulta"><i></i><i></i><i></i>${d.porque ? 'testando' : 'consultando'} <b>${esc(d.onde)}</b></span>
+      <span class="demo-resposta">Resposta pronta, com a fonte e a consulta</span>`;
+    estadoDoJarvis('pensando');
+    depois(1300, () => estadoDoJarvis('consultando'));
+    depois(3500, () => { estadoDoJarvis('vivo'); gestoDoJarvis('chegou'); });
+    depois(6400, rodarDemo);
+  };
+  // Na etapa do código o palco para de encenar e fala com a pessoa.
+  const palcoDoCodigo = () => {
+    pararPalco();
+    $('#loginDemo').innerHTML = `
+      <span class="demo-pergunta demo-pergunta--jarvis">Mandei um código para o seu e-mail. É só digitar aqui.</span>`;
+    estadoDoJarvis('vivo');
+    gestoDoJarvis('chegou');
+  };
+  const semMovimentoNoLogin = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const ligarPalco = () => {
+    if (login.etapa === 'codigo') return palcoDoCodigo();
+    if (semMovimentoNoLogin()) {
+      // Sem animação, o palco mostra a cena já resolvida e não troca sozinho.
+      $('#loginDemo').innerHTML = `<span class="demo-pergunta">${esc(DEMOS[0].pergunta)}</span>
+        <span class="demo-resposta">Resposta pronta, com a fonte e a consulta</span>`;
+      return estadoDoJarvis('vivo');
+    }
+    rodarDemo();
+  };
+
+  // O domínio escrito dentro do campo, logo depois do que a pessoa digitou:
+  // um eco invisível do texto empurra o "@easelabs.com.br" para o lugar
+  // certo. Com "@" digitado, ele sai.
+  const ecoDoEmail = () => {
+    const valor = $('#loginEmail').value;
+    $('#loginEmailEco').textContent = valor || $('#loginEmail').placeholder;
+    $('#campoEmail').classList.toggle('com-arroba', valor.includes('@'));
+    $('#campoEmail').classList.toggle('vazio', !valor);
+  };
+  $('#loginEmail').addEventListener('input', ecoDoEmail);
+
+  // As seis casas desenham o que está no campo invisível por cima delas.
+  const casasDoCodigo = () => {
+    const campo = $('#loginCodigo');
+    const valor = campo.value.replace(/\D/g, '').slice(0, 6);
+    const focado = document.activeElement === campo;
+    $$('#codigoCasas span').forEach((casa, i) => {
+      casa.textContent = valor[i] || '';
+      casa.classList.toggle('cheia', i < valor.length);
+      casa.classList.toggle('atual', focado && i === Math.min(valor.length, 5));
+    });
+  };
+  ['input', 'focus', 'blur'].forEach((ev) => $('#loginCodigo').addEventListener(ev, casasDoCodigo));
+
   const erroDoLogin = (texto) => {
     const erro = $('#loginErro');
     erro.textContent = texto || '';
     erro.hidden = !texto;
+    if (texto) {
+      gestoDoJarvis('nega');
+      const campo = login.etapa === 'codigo' ? $('#campoCodigo') : $('#campoEmail');
+      campo.classList.remove('treme');
+      void campo.offsetWidth;
+      campo.classList.add('treme');
+    }
   };
 
   const etapaDoLogin = (etapa) => {
@@ -1893,6 +2708,9 @@
       clearInterval(login.relogio);
       setTimeout(() => $('#loginEmail').focus(), 50);
     }
+    ecoDoEmail();
+    casasDoCodigo();
+    ligarPalco();
   };
 
   // "Reenviar" fica travado pelo mesmo tempo que o servidor exige entre dois
@@ -1938,11 +2756,15 @@
       login.email = email;
       botao.disabled = true;
       botao.textContent = 'Enviando…';
+      pararPalco();
+      estadoDoJarvis('consultando');
       try {
         await pedirCodigo();
       } catch (e) {
+        estadoDoJarvis('vivo');
         erroDoLogin(e.message);
         botao.textContent = 'Enviar código';
+        depois(1800, ligarPalco);
       } finally {
         botao.disabled = false;
       }
@@ -1957,14 +2779,17 @@
     }
     botao.disabled = true;
     botao.textContent = 'Entrando…';
+    estadoDoJarvis('consultando');
     try {
       const r = await api('/api/auth/entrar/', { method: 'POST', body: { email: login.email, codigo } });
       clearInterval(login.relogio);
       $('#loginCodigo').value = '';
       entrar(r.usuario);
     } catch (e) {
+      estadoDoJarvis('vivo');
       erroDoLogin(e.message);
       $('#loginCodigo').select();
+      casasDoCodigo();
     } finally {
       botao.disabled = false;
       botao.textContent = 'Entrar';
@@ -1976,6 +2801,7 @@
   $('#loginCodigo').addEventListener('input', (ev) => {
     const limpo = ev.target.value.replace(/\D/g, '').slice(0, 6);
     if (ev.target.value !== limpo) ev.target.value = limpo;
+    casasDoCodigo();
     if (limpo.length === 6 && !$('#btnLogin').disabled) $('#formLogin').requestSubmit();
   });
 
@@ -2026,7 +2852,7 @@
   const irParaNova = () => { fecharDropdown(); fecharGaveta(); novaConversa('push'); };
   $('#btnNovaConversa').addEventListener('click', irParaNova);
   $('#btnNovaConversaMenu').addEventListener('click', irParaNova);
-  $('#btnLogoHome').addEventListener('click', irParaNova);
+  $('#btnLogoHome').addEventListener('click', abrirPasseio);
 
   // ---------------------------------------------------------- busca
   // Espera a pessoa parar de digitar: uma consulta por tecla faria a lista
@@ -2099,15 +2925,6 @@
     mostrarLogin();
   });
 
-  // No celular o exemplo longo quebra em duas linhas num campo de uma linha.
-  const telaEstreita = window.matchMedia('(max-width: 640px)');
-  const ajustarExemplo = () => {
-    $('#campoPergunta').placeholder = telaEstreita.matches
-      ? 'Pergunte sobre os dados…'
-      : 'Ex.: Quantas unidades a Pague Menos dispensou por mês em 2026?';
-  };
-  telaEstreita.addEventListener('change', ajustarExemplo);
-  ajustarExemplo();
 
   // ---------------------------------------------------------- início
   (async () => {

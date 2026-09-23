@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Ícone do Jarvis: o mascote sobre um ladrilho índigo profundo. Sem o
+       ladrilho, a silhueta sumia na aba escura do navegador e virava uma
+       mancha roxa em 16 px. Medidas do mascote: docs/brand/README.md. -->
+  <defs>
+    <linearGradient id="fundo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2E3190"/>
+      <stop offset="1" stop-color="#161747"/>
+    </linearGradient>
+    <radialGradient id="brilho" cx="0.82" cy="0.9" r="0.6">
+      <stop offset="0" stop-color="#6ECC64" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#6ECC64" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="corpo" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7C80F7"/>
+      <stop offset="1" stop-color="#5558D4"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="url(#fundo)"/>
+  <rect width="64" height="64" rx="15" fill="url(#brilho)"/>
+  <g transform="translate(32 31.5) scale(1.16) translate(-32 -32)">
+    <g transform="rotate(-14 32 40)">
+      <path d="M 7,40 A 25,8 0 0,1 57,40" fill="none" stroke="#6ECC64" stroke-width="2.2" stroke-linecap="round" opacity="0.45"/>
+    </g>
+    <rect x="17" y="11.9" width="30" height="40.3" rx="15" fill="url(#corpo)" stroke="#1B1C55" stroke-width="2.6" paint-order="stroke"/>
+    <rect x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9" fill="#14153F"/>
+    <circle cx="40" cy="26.5" r="2.9" fill="#6ECC64"/>
+    <g transform="rotate(-14 32 40)">
+      <path d="M 7,40 A 25,8 0 0,0 57,40" fill="none" stroke="#6ECC64" stroke-width="2.8" stroke-linecap="round"/>
+      <circle cx="51.5" cy="44.9" r="3.2" fill="#6ECC64" stroke="#1B1C55" stroke-width="1.4" paint-order="stroke"/>
+    </g>
+  </g>
+</svg>

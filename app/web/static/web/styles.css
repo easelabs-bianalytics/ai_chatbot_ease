@@ -25,6 +25,9 @@
   --success: #3FB868; --warning: #F5A623; --error: #E5484D; --info: #5558D4;
   --success-bg: #E2F8EB; --warning-bg: #FFF4E0; --error-bg: #FEECEC; --info-bg: #E8E9FC;
 
+  /* verde do Excel, para o anexo de planilha se reconhecer de longe */
+  --xlsx: #217346;
+
   --brand-green: #6ECC64; --brand-indigo: #5661E8;
   --brand-diagonal: linear-gradient(135deg, #5661E8, #6ECC64);
   --brand-vertical: linear-gradient(180deg, #6ECC64, #5661E8);
@@ -115,6 +118,104 @@ body.bg-gradiente {
 }
 :root[data-escuro="1"] body.bg-gradiente { background: var(--bg-page); }
 
+/* ============================================================
+   TEMA ESCURO — acabamento
+   Os tokens acima só invertiam a escala de cinza, e o resultado era uma
+   tela chapada: fundo, lateral e cartões no mesmo cinza-azulado, sem a marca
+   em lugar nenhum. Aqui o escuro ganha o que o claro tem de graça:
+   - três planos: a lateral é o mais fundo, a conversa fica um degrau acima
+     e o que se toca (campo, sugestões, menus) fica mais um;
+   - a luz da marca: o mesmo índigo e verde do gradiente do claro, bem
+     baixos, atrás da conversa — no escuro a luz é o que dá profundidade;
+   - menos grito: títulos da lateral em peso médio e texto sem branco puro.
+   ============================================================ */
+:root[data-escuro="1"] {
+  --bg-page: #0C0E14; --bg-lateral: #0C0E14; --bg-card: #151823;
+  /* superfície que se toca: fica um degrau acima da conversa */
+  --bg-elevado: #1C1F2D;
+  --border-light: #20232F; --border-default: #2A2E3D; --border-strong: #3C4155;
+  --gray-50: #1D2030; --gray-100: #252939;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 4px 10px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.25);
+  --shadow-xl: 0 24px 48px rgba(0, 0, 0, 0.55), 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+:root[data-escuro="1"] .chat-shell {
+  background:
+    radial-gradient(900px 460px at 92% -12%, rgba(110, 204, 100, 0.07), transparent 60%),
+    radial-gradient(1100px 600px at 18% -20%, rgba(99, 102, 241, 0.16), transparent 58%),
+    var(--bg-card);
+}
+:root[data-escuro="1"] .sidebar { border-right-color: rgba(255, 255, 255, 0.04); }
+/* o contorno do Jarvis é da cor do fundo onde ele está: na lateral, a dela */
+:root[data-escuro="1"] .sidebar .j-corpo { stroke: var(--bg-lateral); }
+
+/* Botões índigo: no escuro, `--primary-700` é o tom de texto (claro), e o
+   hover que o usava como fundo virava lilás com letra branca. O relevo sai
+   de uma luz no alto, não de sombra — sombra some no escuro. */
+:root[data-escuro="1"] .btn-primary,
+:root[data-escuro="1"] .composer-enviar:not(:disabled) {
+  background: linear-gradient(180deg, #6A6EF3, #5558D4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+:root[data-escuro="1"] .btn-primary:hover:not(:disabled),
+:root[data-escuro="1"] .composer-enviar:hover:not(:disabled) {
+  background: linear-gradient(180deg, #7478F6, #5F62DE);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 6px 18px rgba(85, 88, 212, 0.35);
+}
+:root[data-escuro="1"] .btn-primary:disabled { background: var(--gray-100); color: var(--gray-500); }
+:root[data-escuro="1"] .composer-enviar:disabled { background: var(--gray-100); color: var(--gray-400); }
+
+/* A lista é apoio: peso médio e um cinza, para não disputar com a resposta.
+   A conversa aberta ganha um véu índigo, que no escuro lê melhor que cinza. */
+:root[data-escuro="1"] .conversa-titulo { font-weight: 500; color: var(--gray-600); }
+:root[data-escuro="1"] .conversa-item:hover { background: rgba(255, 255, 255, 0.035); }
+:root[data-escuro="1"] .conversa-item:hover .conversa-titulo { color: var(--gray-800); }
+:root[data-escuro="1"] .conversa-item.ativa { background: rgba(99, 102, 241, 0.14); }
+:root[data-escuro="1"] .conversa-item.ativa .conversa-titulo { color: var(--gray-900); }
+
+/* o que se toca fica um degrau acima */
+:root[data-escuro="1"] .composer,
+:root[data-escuro="1"] .sugestao,
+:root[data-escuro="1"] .dropdown-menu,
+:root[data-escuro="1"] .modal {
+  background: var(--bg-elevado);
+  border-color: var(--border-default);
+}
+:root[data-escuro="1"] .composer { border-color: rgba(255, 255, 255, 0.07); }
+:root[data-escuro="1"] .composer:focus-within { border-color: rgba(165, 168, 243, 0.35); }
+:root[data-escuro="1"] .sugestao { border-color: rgba(255, 255, 255, 0.06); }
+:root[data-escuro="1"] .sugestao:hover { background: #20243A; border-color: rgba(123, 131, 232, 0.55); }
+:root[data-escuro="1"] .busca-campo { background: rgba(255, 255, 255, 0.03); }
+
+/* Tabela: no escuro a zebra vira listra de pijama. Fica só o fio entre as
+   linhas e o cabeçalho num degrau acima. */
+:root[data-escuro="1"] .md-tabela { border-color: rgba(255, 255, 255, 0.07); background: rgba(255, 255, 255, 0.015); }
+:root[data-escuro="1"] .md th { background: rgba(255, 255, 255, 0.03); color: var(--gray-500); border-bottom-color: var(--border-default); }
+:root[data-escuro="1"] .md tbody tr:nth-child(even) > td { background: none; }
+:root[data-escuro="1"] .md td { border-bottom-color: rgba(255, 255, 255, 0.05); }
+@media (hover: hover) { :root[data-escuro="1"] .md tbody tr:hover > td { background: rgba(99, 102, 241, 0.08); } }
+
+/* Índigo como cor de letra: o `--primary-600` é tom de fundo e, em cima do
+   escuro, some. O token não muda (ele pinta o corpo do Jarvis e os botões);
+   muda só onde ele vira texto. As etiquetas das sugestões vêm com a cor do
+   tema no próprio elemento, então clareiam pela mistura com branco. */
+:root[data-escuro="1"] .fonte-toggle,
+:root[data-escuro="1"] .login-link,
+:root[data-escuro="1"] .walk-contador,
+:root[data-escuro="1"] .produto-area-dica,
+:root[data-escuro="1"] .btn-olho[aria-pressed="true"],
+:root[data-escuro="1"] .anexo-chip.enviando .anexo-chip-detalhe,
+:root[data-escuro="1"] .cena-balao--numero b,
+:root[data-escuro="1"] .convite-passeio svg,
+:root[data-escuro="1"] .secao-acao:hover,
+:root[data-escuro="1"] .composer-anexar:hover:not(:disabled),
+:root[data-escuro="1"] .composer-ditar:hover { color: var(--primary-300); }
+:root[data-escuro="1"] .pasta-cabeca svg,
+:root[data-escuro="1"] .opcao-projeto svg { color: var(--primary-400); }
+:root[data-escuro="1"] .sugestao-tema { color: color-mix(in srgb, var(--tema-cor, var(--primary-600)) 62%, #fff); }
+:root[data-escuro="1"] .pasta-cabeca { font-weight: 500; color: var(--gray-700); }
+
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
@@ -155,7 +256,8 @@ body.bg-gradiente {
    Ele fica parado enquanto se trabalha e só reage ao mouse — animação
    constante no canto do olho cansa em meia hora de uso. */
 .sidebar-marca .marca-jarvis { display: block; width: 38px; height: 38px; flex-shrink: 0; }
-.sidebar-marca:hover .marca-jarvis { animation: jarvisAcena 0.75s ease-in-out; }
+.sidebar-marca:hover .marca-jarvis,
+.sidebar-marca.acenando .marca-jarvis { animation: jarvisAcena 0.75s ease-in-out; }
 .sidebar-marca:hover .j-olho { animation: jarvisPiscaCurta 0.75s ease-in-out; }
 @keyframes jarvisAcena {
   0%, 100% { transform: rotate(0deg) translateY(0); }
@@ -183,6 +285,18 @@ body.bg-gradiente {
 .topbar-produto { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
 .produto-nome { font-size: 14px; font-weight: 600; color: var(--gray-900); letter-spacing: -0.1px; white-space: nowrap; }
 .produto-area { font-size: 12px; font-weight: 500; color: var(--gray-600); letter-spacing: 0.1px; white-space: nowrap; }
+/* As duas linhas ocupam o mesmo lugar: no hover a descrição dá vez ao que
+   o clique faz, sem a lateral mudar de altura. */
+.produto-area { display: grid; }
+.produto-area > span {
+  grid-area: 1 / 1;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+.produto-area-dica { opacity: 0; transform: translateY(4px); color: var(--primary-600); font-weight: 600; }
+.sidebar-marca:hover .produto-area-texto,
+.sidebar-marca:focus-visible .produto-area-texto { opacity: 0; transform: translateY(-4px); }
+.sidebar-marca:hover .produto-area-dica,
+.sidebar-marca:focus-visible .produto-area-dica { opacity: 1; transform: none; }
 .menu-toggle {
   display: none;
   width: 36px; height: 36px;
@@ -262,7 +376,6 @@ body.bg-gradiente {
 .user-trigger:hover { background: var(--gray-50); }
 .user-trigger .user-name { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.25; }
 .user-trigger .user-name > span:first-child { font-size: 13px; font-weight: 600; color: var(--gray-800); white-space: nowrap; }
-.user-trigger .user-role { font-size: 11px; font-weight: 500; color: var(--gray-500); }
 .user-chevron { width: 14px; height: 14px; color: var(--gray-400); transition: transform var(--transition-fast); }
 .topbar-user.open .user-chevron { transform: rotate(180deg); }
 
@@ -417,89 +530,254 @@ body.bg-gradiente {
 .badge-warning { background: var(--warning-bg);  color: #9A6700; }
 .badge-error   { background: var(--error-bg);    color: #C53030; }
 .badge-accent  { background: var(--accent-100);  color: var(--accent-800); }
-
 /* ============================================================
    LOGIN
+   Duas metades. À esquerda o palco: o Jarvis grande, vivo, encenando o que
+   faz — uma pergunta entra, ele consulta a tabela, a resposta chega com a
+   fonte. À direita o formulário, sem cartão nem moldura: é a única coisa
+   daquele lado, não precisa de caixa para ser encontrado.
+   O cartão de antes empilhava logotipo, mascote de 40 px, etiqueta, fio,
+   título e subtítulo antes do primeiro campo, e o produto — o mascote e o
+   que ele faz — era o menor elemento da tela.
+   Segue o tema escolhido: um login sempre escuro dava um clarão em quem usa
+   o claro (ver o comentário de `data-escuro`).
    ============================================================ */
-/* O cartão fica no meio da tela, sobre o índigo da marca: o fundo claro
-   com o cartão no alto deixava a página com cara de formulário solto. */
-/* Azul-noite quase preto (o --gray-950 da identidade), com um halo índigo
-   atrás do cartão e um fio verde na base. O índigo puro no fundo inteiro
-   puxava para o roxo e brigava com o próprio índigo dos botões. */
-/* O login segue o tema escolhido. Sempre escuro, ele fazia quem usa o tema
-   claro sair de uma tela quase preta direto para o app branco — um clarão a
-   cada entrada. No claro: o gradiente da marca do resto do app, com o mesmo
-   halo índigo atrás do cartão, bem mais suave. */
+/* Uma cena só, de ponta a ponta: o palco do Jarvis se estende por baixo
+   do formulário. Com a metade da direita em branco, a tela parecia dois
+   sites colados; assim o formulário é mais um objeto na mesma cena, num
+   painel de vidro para os campos lerem bem em cima do brilho. */
 #panel-login {
-  max-width: none; padding: 24px;
-  display: flex; align-items: center; justify-content: center;
+  max-width: none; padding: 0;
   min-height: 100dvh;
-  /* Halo mais forte e mais fechado que o do tema escuro: a 0,14 e 760 px ele
-     se diluía no gradiente e parecia só um fundo levemente lilás. Aqui ele
-     abraça o cartão e se lê como intencional. */
+  display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
   background:
-    radial-gradient(620px 460px at 50% 46%, rgba(85, 88, 212, 0.22), transparent 66%),
-    radial-gradient(1000px 340px at 50% 116%, rgba(110, 204, 100, 0.12), transparent 70%),
-    linear-gradient(165deg, #F4F4FE 0%, #F7F8FA 45%, #F0FBF4 100%);
+    radial-gradient(560px 460px at 27% 54%, rgba(99, 102, 241, 0.18), transparent 70%),
+    radial-gradient(620px 520px at 70% 54%, rgba(99, 102, 241, 0.09), transparent 70%),
+    radial-gradient(900px 420px at 88% 112%, rgba(110, 204, 100, 0.16), transparent 70%),
+    linear-gradient(160deg, #EEF0FF 0%, #F4F4FE 52%, #EEF9F1 100%);
 }
 :root[data-escuro="1"] #panel-login {
   background:
-    radial-gradient(760px 520px at 50% 45%, rgba(85, 88, 212, 0.42), transparent 68%),
-    radial-gradient(1000px 340px at 50% 116%, rgba(110, 204, 100, 0.14), transparent 70%),
-    var(--gray-950);
+    radial-gradient(600px 500px at 27% 54%, rgba(99, 102, 241, 0.28), transparent 70%),
+    radial-gradient(620px 520px at 70% 54%, rgba(99, 102, 241, 0.12), transparent 70%),
+    radial-gradient(900px 420px at 88% 112%, rgba(110, 204, 100, 0.10), transparent 70%),
+    #0C0E14;
 }
-.login-wrap { display: flex; justify-content: center; width: 100%; }
-.login-card {
-  background: var(--bg-card);
+
+/* -- o palco -- */
+.login-palco {
+  position: relative; overflow: hidden; isolation: isolate;
+  display: flex; flex-direction: column;
+  padding: 36px 48px 44px;
+}
+/* uma grade de pontos bem fraca, que some nas bordas: textura de dado,
+   sem virar papel quadriculado */
+.login-palco::before {
+  content: ''; position: absolute; inset: 0; z-index: -1;
+  background-image: radial-gradient(circle, rgba(85, 88, 212, 0.16) 1px, transparent 1.6px);
+  background-size: 22px 22px;
+  -webkit-mask-image: radial-gradient(ellipse 60% 55% at 50% 52%, #000 20%, transparent 75%);
+  mask-image: radial-gradient(ellipse 60% 55% at 50% 52%, #000 20%, transparent 75%);
+}
+:root[data-escuro="1"] .login-palco::before {
+  background-image: radial-gradient(circle, rgba(165, 168, 243, 0.12) 1px, transparent 1.6px);
+}
+.login-palco .logo-login { height: 30px; width: auto; margin: 0; align-self: flex-start; animation: fadeIn 0.5s ease-out both; }
+
+.login-cena {
+  flex: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 18px;
+}
+.login-palco svg.login-jarvis { width: 196px; height: 196px; margin: -8px 0 -14px; }
+/* A entrada fica no contêiner: no próprio Jarvis ela disputaria o
+   `animation` com os gestos, e voltaria a tocar a cada troca de estado. */
+.login-cena { animation: fadeInUp 0.6s ease-out 0.1s both; }
+/* sem o contorno da cor do cartão: o fundo aqui é gradiente (como no passeio) */
+.login-palco .j-corpo, .login-palco .j-satelite { stroke: none; }
+/* No login o olho pisca; quando ele pensa ou consulta, o olhar é o do estado. */
+.login-jarvis.jarvis--pensando .j-olho { animation: jarvisOlhar 2.4s ease-in-out infinite; }
+.login-jarvis.jarvis--consultando .j-olho { animation: jarvisVarre 1.1s ease-in-out infinite; }
+/* errou: ele balança a cabeça, uma vez */
+.login-jarvis.login-nega { transform-origin: 50% 85%; animation: jarvisNega 0.55s ease-in-out; }
+@keyframes jarvisNega {
+  0%, 100% { transform: rotate(0); }
+  20% { transform: rotate(-8deg); }
+  45% { transform: rotate(7deg); }
+  68% { transform: rotate(-4deg); }
+  86% { transform: rotate(2deg); }
+}
+
+/* A conversa de exemplo, em cima do Jarvis. Pergunta e resposta ocupam
+   linhas fixas: a cena não pula de altura a cada troca. */
+.login-demo {
+  width: min(420px, 100%); min-height: 118px;
+  display: grid; grid-template-rows: auto auto; align-content: end; gap: 10px;
+}
+.login-demo > * { animation: demoEntra 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes demoEntra {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes demoSai { to { opacity: 0; transform: translateY(-6px); } }
+.demo-pergunta {
+  grid-row: 1; justify-self: end;
+  max-width: 330px;
+  background: var(--bg-card); color: var(--gray-800);
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-2xl);
-  box-shadow: var(--shadow-xl);
-  padding: 40px 36px 36px;
-  width: 100%; max-width: 420px;
-  display: flex; flex-direction: column; gap: 16px;
-  animation: fadeInUp 0.5s ease-out both;
-  position: relative;
-  overflow: hidden;
+  border-radius: 16px 16px 4px 16px;
+  padding: 10px 14px;
+  font-size: 14px; line-height: 1.5;
+  box-shadow: 0 6px 20px rgba(52, 56, 120, 0.10);
+  animation: demoEntra 0.45s cubic-bezier(0.22, 1, 0.36, 1) 0.2s both, demoSai 0.35s ease-in 6s forwards;
 }
-/* fio do gradiente no topo do cartão: a assinatura da marca, com moderação */
-.login-card::before {
-  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
-  background: var(--primary-600);
+.demo-pergunta--jarvis {
+  justify-self: start; border-radius: 16px 16px 16px 4px;
+  border-color: var(--primary-200);
+  animation: demoEntra 0.45s cubic-bezier(0.22, 1, 0.36, 1) 0.15s both;
 }
-.login-card .logo-login { animation: popIn 0.55s cubic-bezier(0.22, 1.2, 0.36, 1) both; margin-top: 2px; }
-.login-produto {
+.demo-consulta, .demo-resposta {
+  grid-row: 2; grid-column: 1; justify-self: start;
+  display: inline-flex; align-items: center; gap: 7px;
+  border-radius: var(--radius-full);
+  padding: 7px 13px;
+  font-size: 12.5px;
+}
+.demo-consulta {
+  background: var(--primary-950); color: #C7C9F7;
+  font-family: var(--font-mono); font-size: 12px;
+  animation: demoEntra 0.4s ease-out 1.3s both, demoSai 0.3s ease-in 3.3s forwards;
+}
+.demo-consulta b { color: var(--brand-green); font-weight: 500; }
+.demo-consulta i {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--primary-300);
+  animation: cenaDigita 1.1s ease-in-out infinite;
+}
+.demo-consulta i:nth-child(2) { animation-delay: 0.15s; }
+.demo-consulta i:nth-child(3) { animation-delay: 0.3s; margin-right: 3px; }
+.demo-resposta {
+  background: var(--success-bg); color: var(--green-800); font-weight: 600;
+  animation: demoEntra 0.4s cubic-bezier(0.22, 1.2, 0.36, 1) 3.55s both, demoSai 0.35s ease-in 6s forwards;
+}
+.demo-resposta::before {
+  content: ''; width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+  background: var(--green-600)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 12.5l4 4 8-9'/%3E%3C/svg%3E")
+    center / 10px no-repeat;
+}
+:root[data-escuro="1"] .demo-resposta { color: var(--green-300); }
+:root[data-escuro="1"] .demo-pergunta { background: var(--bg-elevado); border-color: rgba(255, 255, 255, 0.06); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); }
+:root[data-escuro="1"] .demo-pergunta--jarvis { border-color: rgba(123, 131, 232, 0.4); }
+
+.login-lema {
   text-align: center;
-  font-size: 11px; font-weight: 600;
-  letter-spacing: 1.2px; text-transform: uppercase;
-  color: var(--gray-400);
-  margin-top: -8px; margin-bottom: 10px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--border-light);
+  font-size: 22px; font-weight: 700; letter-spacing: -0.4px; line-height: 1.3;
+  color: var(--gray-900);
+  margin-top: 4px;
 }
-.login-card h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; text-align: center; }
-.login-sub { font-size: 13.5px; color: var(--gray-500); text-align: center; margin-top: -10px; margin-bottom: 4px; }
-.login-footnote { text-align: center; font-size: 12px; color: var(--gray-400); margin-top: 6px; }
+.login-lema span { display: block; margin-top: 6px; font-size: 15px; font-weight: 400; letter-spacing: 0; color: var(--gray-600); }
+
+/* -- o formulário -- */
+/* O cartão fica na altura do Jarvis, não no meio da tela: o Jarvis está
+   abaixo do centro da cena (a conversa de exemplo vem em cima dele e o
+   logotipo empurra tudo um pouco para baixo), e o padding de cima maior
+   desce o centro do cartão até ele. E encosta no lado de dentro da metade,
+   perto do Jarvis: centrado na metade, ficava longe dele e colado à borda. */
+.login-lado {
+  display: flex; align-items: center; justify-content: flex-start;
+  padding: 130px 32px 48px clamp(24px, 4vw, 64px);
+}
+.login-card {
+  width: 100%; max-width: 448px;
+  display: flex; flex-direction: column; gap: 18px;
+  padding: 40px 38px 34px;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(16px) saturate(1.2); -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 24px;
+  box-shadow: 0 24px 60px rgba(52, 56, 120, 0.12), 0 2px 8px rgba(52, 56, 120, 0.05);
+  animation: fadeInUp 0.5s ease-out 0.1s both;
+}
+:root[data-escuro="1"] .login-card {
+  background: rgba(21, 24, 35, 0.72);
+  border-color: rgba(255, 255, 255, 0.07);
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.login-produto {
+  font-size: 11.5px; font-weight: 700;
+  letter-spacing: 0.9px; text-transform: uppercase;
+  color: var(--primary-600);
+}
+.login-card h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.6px; line-height: 1.2; color: var(--gray-900); }
+.login-sub, .login-enviado { font-size: 14.5px; line-height: 1.55; color: var(--gray-600); margin-top: -8px; }
+.login-footnote { font-size: 12px; line-height: 1.6; color: var(--gray-400); margin-top: 6px; text-align: center; }
 
 /* Login por código: e-mail, depois o código. */
 .login-etapa { display: flex; flex-direction: column; gap: 16px; animation: fadeIn 0.25s ease-out; }
 .login-etapa[hidden] { display: none; }
-.login-enviado { font-size: 13.5px; line-height: 1.55; color: var(--gray-600); text-align: center; }
 /* O e-mail vai inteiro na própria linha: quebrado no "@" ele deixa de
    parecer um endereço. */
 .login-enviado strong { display: block; color: var(--gray-900); font-weight: 600; overflow-wrap: anywhere; }
 .login-spam { display: block; margin-top: 4px; font-size: 12.5px; color: var(--gray-500); }
-/* Seis dígitos grandes e espaçados: é um número para copiar do e-mail, e
-   precisa ser conferido de relance. */
-.input-codigo {
-  text-align: center;
-  font-size: 26px; font-weight: 700;
-  letter-spacing: 12px; padding-left: 28px;
-  font-variant-numeric: tabular-nums;
+
+/* O domínio dentro do campo, logo depois do nome. */
+.campo-email { position: relative; }
+.campo-email .input-field { font-size: 16px; padding: 13px 16px; }
+.campo-email-dominio {
+  position: absolute; left: 17.5px; right: 16px; top: 50%; transform: translateY(-50%);
+  font: 400 16px var(--font-family); color: var(--gray-400);
+  white-space: pre; overflow: hidden; pointer-events: none;
+  transition: opacity var(--transition-fast);
 }
-.input-codigo::placeholder { color: var(--gray-300); letter-spacing: 12px; }
+.campo-email-eco { visibility: hidden; }
+.campo-email.com-arroba .campo-email-dominio { opacity: 0; }
+/* vazio, o placeholder já está lá; o domínio completa a frase dele */
+.campo-email.vazio .campo-email-dominio { color: var(--gray-300); }
+
+/* Seis casas desenhadas; o campo de verdade fica por cima, invisível. */
+.campo-codigo { position: relative; }
+.codigo-casas { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.codigo-casas span {
+  height: 58px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border-default); border-radius: 12px;
+  font-size: 26px; font-weight: 700; color: var(--gray-900);
+  font-variant-numeric: tabular-nums;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+}
+/* um respiro no meio: 123 456 se confere de relance */
+.codigo-casas span:nth-child(4) { margin-left: 8px; }
+.codigo-casas span.cheia { border-color: var(--primary-300); animation: casaEnche 0.22s ease-out; }
+@keyframes casaEnche { 50% { transform: scale(1.06); } }
+.codigo-casas span.atual { border-color: var(--primary-500); box-shadow: 0 0 0 3px var(--primary-100); }
+.codigo-casas span.atual:empty::after {
+  content: ''; width: 2px; height: 26px; border-radius: 1px;
+  background: var(--primary-500);
+  animation: cursorPisca 1.05s steps(1) infinite;
+}
+@keyframes cursorPisca { 50% { opacity: 0; } }
+.campo-codigo .input-codigo {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; cursor: text;
+  font-size: 16px; letter-spacing: normal; padding: 0; text-align: left;
+}
+:root[data-escuro="1"] .codigo-casas span { background: var(--bg-elevado); border-color: rgba(255, 255, 255, 0.08); }
+:root[data-escuro="1"] .codigo-casas span.cheia { border-color: rgba(165, 168, 243, 0.45); }
+
+/* errou: o campo treme junto com o Jarvis */
+.treme { animation: treme 0.4s ease-in-out; }
+@keyframes treme {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(5px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(2px); }
+}
+
 .login-acoes {
-  display: flex; justify-content: center; align-items: center; gap: 8px;
-  font-size: 13px; color: var(--gray-400); margin-top: -4px;
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--gray-400); margin-top: -6px;
 }
 .login-acoes[hidden] { display: none; }
 .login-link {
@@ -507,12 +785,30 @@ body.bg-gradiente {
   color: var(--primary-600); background: none; border: none; cursor: pointer;
   padding: 4px 6px; border-radius: var(--radius-sm);
 }
+.login-acoes .login-link:first-child { margin-left: -6px; }
 .login-link:hover:not(:disabled) { background: var(--primary-50); color: var(--primary-700); }
 .login-link:disabled { color: var(--gray-400); cursor: default; font-weight: 500; }
-/* No fundo claro, sombra leve basta; no escuro o cartão precisa de mais
-   separação para não "flutuar" no índigo. */
-.login-card { box-shadow: 0 18px 48px rgba(52, 56, 120, 0.12), 0 2px 6px rgba(15, 17, 25, 0.06); }
-:root[data-escuro="1"] .login-card { box-shadow: 0 24px 60px rgba(15, 17, 25, 0.35), 0 2px 8px rgba(15, 17, 25, 0.2); }
+:root[data-escuro="1"] .login-produto { color: var(--primary-300); }
+
+/* Celular e tablet em pé: o palco vira uma faixa no alto, só com o Jarvis
+   (a cena de exemplo não cabe e empurraria o campo para fora da tela). */
+@media (max-width: 900px) {
+  #panel-login { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .login-palco {
+    padding: 20px 20px 4px;
+    flex-direction: row; align-items: center; justify-content: space-between;
+  }
+  .login-palco .logo-login { height: 26px; align-self: center; }
+  .login-cena { flex: 0 0 auto; }
+  .login-demo, .login-lema, .login-palco::before { display: none; }
+  .login-palco svg.login-jarvis { width: 64px; height: 64px; }
+  .login-lado { align-items: flex-start; padding: 12px 16px calc(24px + env(safe-area-inset-bottom)); }
+  .login-card { padding: 28px 22px 24px; border-radius: 20px; }
+  .login-card h1 { font-size: 25px; }
+  .codigo-casas { gap: 6px; }
+  .codigo-casas span { height: 52px; font-size: 23px; }
+  .codigo-casas span:nth-child(4) { margin-left: 4px; }
+}
 
 /* ============================================================
    CHAT — estrutura
@@ -622,24 +918,18 @@ body.bg-gradiente {
   text-align: left;
   transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
 }
-.conversa-item:hover { background: var(--bg-card); border-color: var(--border-light); }
-.conversa-item.ativa {
-  background: var(--bg-card);
-  border-color: var(--primary-100);
-  box-shadow: var(--shadow-sm);
-}
-/* Faixa em índigo sólido: o gradiente verde→índigo nesses 3 px virava um
-   borrão de duas cores e destoava do resto, que já é chapado. */
-.conversa-item.ativa::before {
-  content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px;
-  border-radius: 2px;
-  background: var(--primary-600);
-}
+/* A conversa aberta é uma faixa cinza, e mais nada. Antes eram quatro sinais
+   para dizer a mesma coisa — cartão branco, borda índigo, sombra, faixa na
+   lateral e o título colorido —, e a lista é apoio: quem está lendo a
+   resposta não precisa que a barra lateral dispute com ela. O repouso e o
+   hover ficam um degrau abaixo, na mesma escala de cinza. */
+.conversa-item:hover { background: var(--gray-50); }
+.conversa-item.ativa { background: var(--gray-100); }
 .conversa-titulo {
   font-size: 13.5px; font-weight: 600; color: var(--gray-800);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.conversa-item.ativa .conversa-titulo { color: var(--primary-800); }
+.conversa-item.ativa .conversa-titulo { color: var(--gray-900); }
 .conversa-vazia { font-size: 13px; color: var(--gray-500); padding: 8px 6px; line-height: 1.5; }
 /* Dentro de uma pasta vazia: uma linha curta, sem competir com a lista. */
 .pasta-conversas .conversa-vazia { font-size: 12px; color: var(--gray-400); padding: 4px 6px 6px; }
@@ -679,14 +969,17 @@ body.bg-gradiente {
 .mensagens {
   flex: 1 1 auto; min-height: 0;
   overflow-y: auto; overflow-x: hidden;
-  display: flex; flex-direction: column; gap: 18px;
+  display: flex; flex-direction: column; gap: 26px;
   padding: 6px var(--pad-chat) 12px;
   margin: 0 calc(var(--pad-chat) * -1);
   scroll-behavior: smooth;
   scrollbar-gutter: stable;
 }
 .mensagens > * { width: 100%; max-width: var(--coluna); margin-left: auto; margin-right: auto; }
-.mensagens > :first-child { margin-top: auto; }
+/* Só a tela de boas-vindas desce para o meio. A conversa começa no alto:
+   empurrada para baixo, uma conversa curta abria na metade da página e
+   parecia que faltava coisa em cima. */
+.mensagens > .boas-vindas:first-child { margin-top: auto; }
 
 /* Fina e discreta, mas visível: com `scrollbar-width` definido o Chromium
    ignora as regras `::-webkit-scrollbar`, então o desenho fica só nas
@@ -744,21 +1037,23 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
 }
 .sugestao-texto { font-size: 13.5px; font-weight: 500; color: var(--gray-800); line-height: 1.45; }
 
-/* ── Mensagens ── */
+/* ── Mensagens ──
+   A pergunta é a única coisa com moldura na conversa: um balão neutro, sem
+   cor de marca nem sombra. A resposta corre solta na página (ver
+   `.cartao-aberto`) — é o que separa uma IA de um chatbot de atendimento. */
 .msg { display: flex; gap: 12px; animation: fadeInUp 0.35s ease-out both; }
+.msg-ia { align-items: flex-start; }
 .msg-usuario { justify-content: flex-end; }
 .bolha-usuario {
-  max-width: min(72%, 640px);
-  background: var(--primary-600);
-  color: #fff;
-  padding: 11px 16px;
-  border-radius: 16px 16px 4px 16px;
-  font-size: 14.5px; line-height: 1.55;
-  box-shadow: 0 4px 12px rgba(85, 88, 212, 0.22);
+  max-width: min(74%, 620px);
+  background: var(--gray-100);
+  color: var(--gray-900);
+  padding: 11px 17px;
+  border-radius: 18px;
+  font-size: 15px; line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.bolha-usuario .msg-hora { display: block; text-align: right; font-size: 11px; opacity: 0.7; margin-top: 4px; }
 
 /* ── Jarvis ──
    O mascote é o próprio avatar: nada de quadradinho índigo atrás dele.
@@ -881,16 +1176,19 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
   .jarvis *, .jarvis { animation: none !important; }
 }
 
+/* A cabeça do Jarvis fica ao lado da resposta, na coluna da esquerda. O que
+   saiu do desenho foi a moldura em volta do texto — ele não. */
 .ia-avatar {
-  width: 38px; height: 38px;
+  width: 34px; height: 34px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
 }
+
 /* Ao passar o mouse, ele vira o olhar para quem apontou: o olho sai da
    ponta da viseira, vai ao centro, cresce um pouco, segura e volta. É o
    único gesto do olho que não é piscada nem varredura — assim cada estado
    continua com um movimento só dele. */
-.ia-avatar:hover .j-olho { animation: jarvisOlhaPraVoce 1s ease-out; }
+.ia-avatar:hover .j-olho,
+.boas-vindas-marca:hover .j-olho { animation: jarvisOlhaPraVoce 1s ease-out; }
 @keyframes jarvisOlhaPraVoce {
   0%        { transform: translateX(0) scale(1); }
   22%       { transform: translateX(-8px) scale(1.2); }
@@ -899,8 +1197,8 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
   100%      { transform: translateX(0) scale(1); }
 }
 
-/* A coluna do lado do avatar: cartão em cima, continuações embaixo. */
-.msg-corpo { display: flex; flex-direction: column; min-width: 0; max-width: min(92%, 780px); }
+/* A coluna da resposta: o corpo em cima, continuações embaixo. */
+.msg-corpo { display: flex; flex-direction: column; min-width: 0; width: 100%; }
 .msg-corpo .cartao-ia { max-width: none; }
 
 .cartao-ia {
@@ -908,11 +1206,33 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
   max-width: min(92%, 780px);
   background: var(--bg-card);
   border: 1px solid var(--border-default);
-  border-radius: 3px 14px 14px 14px;
+  border-radius: 14px;
   box-shadow: none;
   overflow: hidden;
 }
 .cartao-ia-corpo { padding: 14px 18px; }
+
+/* ── A resposta comum não tem moldura ──
+   Cartão com rabicho e avatar ao lado é desenho de chatbot de atendimento.
+   A resposta que deu certo é o conteúdo da página: texto direto no fundo,
+   na largura de leitura. A moldura fica para a exceção — pedido de detalhe,
+   sem dado, falha —, e aí ela quer mesmo ser notada. */
+.cartao-ia.cartao-aberto {
+  background: transparent; border: none; border-radius: 0;
+  max-width: none; overflow: visible;
+}
+/* O respiro embaixo é do fio do rodapé: sem ele o botão de baixar a planilha
+   encostava na linha do "Ver fonte e consulta", como se fosse parte dela. */
+.cartao-aberto > .cartao-ia-corpo { padding: 2px 0 16px; }
+.cartao-aberto .cartao-ia-rotulo { margin-bottom: 6px; color: var(--gray-500); }
+.cartao-aberto .md { font-size: 15px; line-height: 1.7; }
+.cartao-aberto .md > * + * { margin-top: 12px; }
+/* Sem as bordas do cartão, o rodapé e o gráfico não precisam mais recuar
+   para dentro dele: alinham com o texto. */
+.cartao-aberto .grafico { margin-left: 0; margin-right: 0; background: transparent; }
+.cartao-aberto .fonte-barra { padding-left: 0; padding-right: 0; }
+.cartao-aberto .fonte,
+.cartao-aberto:hover .fonte { background: none; border-top-color: var(--border-light); }
 .cartao-ia-rotulo {
   display: inline-flex; align-items: center; gap: 6px;
   font-size: 11px; font-weight: 700;
@@ -969,6 +1289,12 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
   color: var(--gray-800);
   white-space: nowrap;
 }
+/* Coluna de número com largura fixa: duas tabelas empilhadas na mesma
+   resposta (por GR e por rede, por exemplo) têm rótulos de tamanhos
+   diferentes, e sem isso cada uma quebrava as colunas num lugar. Com a
+   largura fixa nos números, a coluna flexível é só a do rótulo — e os
+   números das duas caem na mesma vertical. */
+.md th.num, .md td.num { width: 132px; }
 .md .num { text-align: right; font-variant-numeric: tabular-nums; }
 .md tbody tr { transition: background var(--transition-fast); }
 /* A zebra era um cinza claro fixo: no tema escuro virava uma faixa quase
@@ -1135,33 +1461,27 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
 .btn-copiar:hover { background: rgba(255,255,255,0.16); }
 .btn-copiar svg { width: 12px; height: 12px; }
 
-/* ── "Pensando": a IA está consultando ── */
+/* ── "Pensando": a IA está consultando ──
+   Uma linha de texto no lugar da resposta, com o mascote na coluna do avatar
+   — a espera ocupa a mesma forma que a resposta vai ocupar. O brilho que
+   corre pela frase é o que diz que ainda está andando; a barra de progresso
+   que havia aqui prometia uma medida que ninguém tem. */
 .pensando {
-  display: flex; align-items: center; gap: 12px;
-  padding: 14px 18px;
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 5px 0 0;
 }
-.jarvis-espera { width: 30px; height: 30px; flex-shrink: 0; display: block; }
-.cartao-pensando { margin-left: 46px; }
-@media (max-width: 846px) { .cartao-pensando { margin-left: 0; } }
-
-.pontos { display: inline-flex; gap: 5px; }
-.pontos span {
-  width: 7px; height: 7px; border-radius: 50%;
-  background: var(--primary-300);
-  animation: quicar 1.2s ease-in-out infinite;
+.pensando-texto {
+  font-size: 15px; line-height: 1.6; font-weight: 500;
+  background: linear-gradient(90deg, var(--gray-400) 20%, var(--gray-900) 45%, var(--gray-900) 55%, var(--gray-400) 80%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+  animation: brilho 2.4s linear infinite;
 }
-.pontos span:nth-child(2) { animation-delay: 0.15s; background: var(--primary-400); }
-.pontos span:nth-child(3) { animation-delay: 0.3s; background: var(--primary-600); }
-.pensando-texto { font-size: 13.5px; color: var(--gray-600); }
-.pensando-texto strong { font-weight: 600; color: var(--gray-800); }
-.pensando-tempo { font-size: 12px; color: var(--gray-400); font-variant-numeric: tabular-nums; margin-left: auto; }
-.pensando-trilha {
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--primary-500), transparent);
-  background-size: 50% 100%;
-  background-repeat: no-repeat;
-  animation: trilha 1.6s ease-in-out infinite;
-}
+/* O negrito herda o recorte do pai: com cor própria ele apagaria o brilho. */
+.pensando-texto strong { font-weight: 700; color: inherit; -webkit-text-fill-color: inherit; }
+@keyframes brilho { from { background-position: 130% 0; } to { background-position: -130% 0; } }
+.pensando-tempo { font-size: 12px; color: var(--gray-400); font-variant-numeric: tabular-nums; }
 
 .msg-erro-acao {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
@@ -1179,9 +1499,12 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
   padding: 8px 8px 8px 18px;
   transition: border-color var(--transition-base), box-shadow var(--transition-base);
 }
+/* Ao escrever, só a borda escurece um tom. O halo índigo de 3px chamava mais
+   atenção que a própria pergunta — e quem está digitando já sabe onde está o
+   cursor. */
 .composer:focus-within {
-  border-color: var(--primary-400);
-  box-shadow: 0 0 0 3px var(--primary-100), var(--shadow-lg);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-lg);
 }
 .composer-campo {
   flex: 1;
@@ -1209,6 +1532,15 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
 .composer-enviar:disabled { background: var(--gray-200); color: var(--gray-400); box-shadow: none; cursor: not-allowed; }
 .composer-enviar svg { width: 18px; height: 18px; }
 .composer-dica { flex-shrink: 0; text-align: center; font-size: 11.5px; color: var(--gray-400); margin-top: -4px; }
+/* Esperando a resposta: o mesmo botão vira o de parar. Trocar o ícone no
+   lugar do botão, em vez de abrir outro ao lado, é o que faz a ação estar
+   onde a mão já está. */
+.composer-enviar .icone-parar { display: none; }
+.composer-enviar.parar .icone-enviar { display: none; }
+.composer-enviar.parar .icone-parar { display: block; }
+/* A cor é a mesma do enviar: o que muda de estado é o ícone, não a
+   identidade do botão. Pintá-lo de outra cor dava um alarme que a ação não
+   tem — interromper é normal, não é erro. */
 
 /* ---------------------------------------------------------------- anexo */
 /* O clipe fica à esquerda do campo, discreto: o anexo é exceção, não o
@@ -1226,17 +1558,48 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
 .composer-anexar:disabled { cursor: not-allowed; opacity: 0.5; }
 .composer-anexar svg { width: 19px; height: 19px; }
 
+/* ---------------------------------------------------------------- ditado */
+/* O microfone espelha o clipe: mesmo tamanho, mesma discrição. Ouvindo, fica
+   vermelho e pulsa — quem está falando precisa ver que o navegador ouve sem
+   ter de ler nada. */
+.composer-ditar {
+  width: 42px; height: 42px; flex-shrink: 0;
+  border: none; border-radius: 12px; background: transparent;
+  color: var(--gray-400);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: color var(--transition-base), background var(--transition-base);
+}
+.composer-ditar:hover { color: var(--primary-600); background: var(--primary-50); }
+.composer-ditar svg { width: 19px; height: 19px; }
+.composer-ditar[aria-pressed="true"] {
+  color: var(--error); background: var(--error-bg);
+  animation: ouvindo 1.6s ease-in-out infinite;
+}
+.composer-ditar[aria-pressed="true"]:hover { color: var(--error); background: var(--error-bg); }
+@keyframes ouvindo {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(229, 72, 77, 0.35); }
+  50% { box-shadow: 0 0 0 5px rgba(229, 72, 77, 0); }
+}
+
 .anexo-chip {
   width: 100%; max-width: var(--coluna); margin: 0 auto -4px;
   display: flex; align-items: center; gap: 10px;
   background: var(--bg-card);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
-  padding: 8px 8px 8px 12px;
+  padding: 8px;
   font-size: 13px; color: var(--gray-700);
 }
 .anexo-chip[hidden] { display: none; }
-.anexo-chip-icone { width: 18px; height: 18px; flex-shrink: 0; color: var(--primary-600); }
+/* Mesmo ladrilho verde da ficha na conversa: o que está preso ao compositor
+   e o que já foi enviado são a mesma coisa, e se parecem. */
+.anexo-chip-icone {
+  width: 34px; height: 34px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 8px; background: var(--xlsx); color: #fff;
+}
+.anexo-chip-icone svg { width: 18px; height: 18px; }
 .anexo-chip-texto { flex: 1; min-width: 0; }
 .anexo-chip-nome { font-weight: 600; color: var(--gray-900); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .anexo-chip-detalhe { font-size: 12px; color: var(--gray-500); }
@@ -1278,24 +1641,79 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
 }
 @keyframes girar-previa { to { transform: rotate(360deg); } }
 
-/* Imagem na bolha da pergunta: a miniatura que ficou na conversa. Clicar
-   abre maior. */
-.bolha-imagem { display: block; margin-bottom: 8px; }
+/* Imagem na bolha da pergunta: um quadrado pequeno, como nas outras IAs. O
+   print inteiro no meio da conversa empurra a leitura para baixo e ninguém
+   volta para olhar; quem quiser ver clica e abre no tamanho real. */
+.bolha-imagem {
+  display: block; margin-bottom: 8px;
+  padding: 0; border: none; background: none; cursor: pointer;
+}
 .bolha-imagem img {
-  display: block; max-width: min(280px, 100%); max-height: 220px;
-  border-radius: 10px; background: #fff;
+  display: block; width: 84px; height: 84px; object-fit: cover;
+  border-radius: 12px; background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  transition: transform var(--transition-fast);
 }
+.bolha-imagem:hover img { transform: scale(1.03); }
 
-/* O anexo dentro da bolha da pergunta: só o nome. O arquivo em si não
-   existe mais depois da resposta (ADR-0024). */
-.bolha-anexo {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 12.5px; opacity: 0.9;
-  margin-bottom: 6px; padding-bottom: 6px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.25);
+/* Visor da imagem: a miniatura abre aqui dentro, sobre a conversa. */
+.visor {
+  position: fixed; inset: 0; z-index: 1300;
+  background: rgba(15, 17, 25, 0.82);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 40px;
+  animation: fadeIn 0.18s ease-out;
 }
-.bolha-anexo svg { width: 14px; height: 14px; flex-shrink: 0; }
-.bolha-anexo span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.visor[hidden] { display: none; }
+.visor img {
+  max-width: 100%; max-height: 100%;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+  background: #fff;
+}
+.visor-fechar {
+  position: absolute; top: 18px; right: 18px;
+  width: 40px; height: 40px;
+  border: none; border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.12); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.visor-fechar:hover { background: rgba(255, 255, 255, 0.24); }
+.visor-fechar svg { width: 18px; height: 18px; }
+
+/* O anexo dentro da bolha da pergunta: uma ficha do arquivo, com o verde do
+   Excel no ladrilho — o formato se reconhece antes de ler o nome. O arquivo
+   em si não existe mais depois da resposta (ADR-0024); isto é a lembrança
+   dele. */
+/* `inline-flex` para a ficha caber no arquivo e parar: esticada na largura
+   do balão, sobrava um vão branco ao lado do nome. */
+.bolha-anexo {
+  display: inline-flex; align-items: center; gap: 10px; max-width: 100%;
+  margin-bottom: 8px; padding: 7px 12px 7px 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  text-align: left;
+}
+.bolha-anexo-ladrilho {
+  width: 32px; height: 32px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 8px; background: var(--xlsx); color: #fff;
+}
+.bolha-anexo-ladrilho svg { width: 17px; height: 17px; }
+/* Imagem antiga, sem miniatura guardada: a ficha aparece, mas em cinza — o
+   verde é do Excel e só dele. */
+.bolha-anexo-ladrilho.ladrilho-imagem,
+.anexo-chip-icone.ladrilho-imagem { background: var(--gray-600); }
+.bolha-anexo-texto { display: grid; min-width: 0; }
+.bolha-anexo-nome {
+  font-size: 13px; font-weight: 600; color: var(--gray-900);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bolha-anexo-tipo { font-size: 11.5px; color: var(--gray-500); }
 
 .planilha-preenchida {
   display: inline-flex; align-items: center; gap: 8px;
@@ -1309,6 +1727,552 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
 .planilha-preenchida:hover:not(:disabled) { background: var(--green-100); }
 .planilha-preenchida:disabled { opacity: 0.6; cursor: wait; }
 .planilha-preenchida svg { width: 16px; height: 16px; }
+
+/* ============================================================
+   PASSEIO (apresentação do Jarvis)
+   Seis quadros, um assunto cada, em tela cheia. Em todos o mascote aparece
+   fazendo o que o texto conta — os estados são os mesmos do app (vivo,
+   pensando, consultando), e os objetos da cena entram em volta dele. É de
+   propósito que nada aqui seja imagem: tudo é o mesmo SVG e o mesmo CSS do
+   produto, e por isso o passeio nunca fica desatualizado em relação a ele.
+   Num cartão de 440px as cenas eram miniaturas; aqui elas são o assunto e
+   o texto é legenda.
+   ============================================================ */
+.walk {
+  position: fixed; inset: 0; z-index: 1400;
+  isolation: isolate;
+  display: flex; flex-direction: column;
+  /* para onde a cena desliza: o quadro seguinte vem da direita */
+  --de: 28px;
+}
+.walk[data-direcao="tras"] { --de: -28px; }
+.walk[hidden] { display: none; }
+/* O fundo fica num pseudo-elemento para poder sumir sozinho na saída:
+   o Jarvis, que é filho do `.walk`, não pode desbotar junto enquanto voa
+   de volta para a lateral. */
+.walk::before {
+  content: ''; position: absolute; inset: 0; z-index: -1;
+  background:
+    radial-gradient(ellipse 55% 45% at 50% 38%, color-mix(in srgb, var(--primary-500) 13%, transparent), transparent 70%),
+    radial-gradient(ellipse 40% 30% at 50% 50%, color-mix(in srgb, var(--brand-green) 8%, transparent), transparent 70%),
+    color-mix(in srgb, var(--bg-page) 95%, transparent);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  animation: fadeIn 0.3s ease-out both;
+}
+.walk-progresso, .walk-fechar, .walk-legenda, .walk-acoes, .walk-dica {
+  animation: fadeIn 0.35s ease-out 0.2s both;
+}
+.walk::before, .walk-progresso, .walk-fechar, .walk-legenda, .walk-acoes, .walk-dica, .walk-objetos {
+  transition: opacity 0.26s ease-in;
+}
+.walk.saindo::before,
+.walk.saindo .walk-progresso, .walk.saindo .walk-fechar, .walk.saindo .walk-legenda,
+.walk.saindo .walk-acoes, .walk.saindo .walk-dica, .walk.saindo .walk-objetos { opacity: 0; }
+/* O mascote de onde o Jarvis saiu fica vazio enquanto ele está no palco:
+   são o mesmo personagem, não dois. */
+.jarvis-emprestado { visibility: hidden; }
+
+/* -- progresso, como nos stories: um traço por quadro -- */
+.walk-progresso {
+  position: absolute; top: 18px; left: 50%; transform: translateX(-50%);
+  width: min(520px, calc(100% - 150px));
+  display: flex; gap: 6px;
+}
+.walk-ponto {
+  flex: 1; height: 20px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  display: flex; align-items: center;
+}
+.walk-ponto i {
+  display: block; width: 100%; height: 4px; border-radius: var(--radius-full);
+  background: var(--gray-200); overflow: hidden; position: relative;
+  transition: background var(--transition-base);
+}
+.walk-ponto:hover i { background: var(--gray-300); }
+.walk-ponto.feito i { background: var(--primary-500); }
+.walk-ponto.atual i::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit;
+  background: var(--primary-500);
+  transform-origin: left;
+  animation: cenaBarra 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.walk-fechar {
+  position: absolute; top: 12px; right: 14px;
+  display: flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 10px 0 12px;
+  border: none; border-radius: var(--radius-full);
+  background: none; color: var(--gray-500);
+  font: 500 13px var(--font-family); cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.walk-fechar:hover { background: var(--gray-100); color: var(--gray-800); }
+.walk-fechar svg { width: 14px; height: 14px; }
+
+/* -- o palco: a cena em cima, a legenda embaixo -- */
+.walk-palco {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 64px 24px 28px;
+  text-align: center;
+}
+/* A cena é uma caixa de 220x150 onde tudo é posicionado em coordenada
+   fixa, e só ela escala: assim é a mesma em qualquer tela. O `transform`
+   não ocupa espaço no layout, então a margem abre o que a escala cresce. */
+.walk-cena {
+  --escala: 2;
+  position: relative; width: 220px; height: 150px; flex-shrink: 0;
+  transform: scale(var(--escala));
+  margin: calc(75px * (var(--escala) - 1)) 0;
+}
+/* o chão: uma sombra macia embaixo do Jarvis, para ele estar em algum lugar */
+.walk-cena::after {
+  content: ''; position: absolute; left: 50%; bottom: 10px;
+  width: 54px; height: 7px; margin-left: -27px; border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--gray-950) 16%, transparent), transparent);
+}
+.walk-objetos { position: absolute; inset: 0; }
+.walk-ator {
+  position: absolute; left: 50%; bottom: 2px; z-index: 1;
+  width: 80px; height: 80px; margin-left: -40px;
+  display: block; cursor: pointer;
+}
+/* Sem o contorno da cor do cartão: na conversa ele abre a folga entre o
+   anel e o corpo, mas aqui o fundo é um gradiente e o contorno virava um
+   anel branco em volta do Jarvis. Grande assim, o anel não precisa de folga. */
+.walk-ator .j-corpo,
+.walk-ator .j-satelite { stroke: none; }
+.walk-ator.pula { animation: walkPula 0.5s cubic-bezier(0.22, 1.2, 0.36, 1); }
+@keyframes walkPula {
+  0%   { transform: translateY(0) scale(1, 1); }
+  25%  { transform: translateY(1px) scale(1.06, 0.94); }
+  55%  { transform: translateY(-7px) scale(0.97, 1.03); }
+  100% { transform: translateY(0) scale(1, 1); }
+}
+
+.walk-legenda { max-width: 520px; min-height: 148px; margin-top: 8px; }
+.walk-legenda > * { animation: walkDesliza 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.walk-legenda > :nth-child(2) { animation-delay: 0.04s; }
+.walk-legenda > :nth-child(3) { animation-delay: 0.09s; }
+@keyframes walkDesliza {
+  from { opacity: 0; transform: translateX(var(--de)); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.walk-contador {
+  display: block;
+  font-size: 11.5px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase;
+  color: var(--primary-600);
+}
+.walk-titulo {
+  font-size: 28px; font-weight: 700; color: var(--gray-900);
+  letter-spacing: -0.5px; line-height: 1.2; margin-top: 6px;
+}
+.walk-texto {
+  font-size: 16px; line-height: 1.6; color: var(--gray-600);
+  margin: 10px auto 0; max-width: 460px;
+}
+
+.walk-acoes {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  width: min(360px, 100%); margin-top: 18px;
+}
+.walk-proximo { flex: 1; padding-top: 11px; padding-bottom: 11px; font-size: 14.5px; }
+/* No último quadro o botão chama para o que vem depois do passeio. */
+.walk-proximo--fim { animation: walkChama 1.6s ease-out 0.6s 2; }
+@keyframes walkChama {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary-500) 45%, transparent); }
+  100% { box-shadow: 0 0 0 14px transparent; }
+}
+.walk-link {
+  border: none; background: none; cursor: pointer;
+  font: 500 14px var(--font-family); color: var(--gray-500);
+  padding: 10px 14px; border-radius: var(--radius-md);
+}
+.walk-link:hover { color: var(--gray-800); background: var(--gray-100); }
+.walk-link[hidden] { display: none; }
+.walk-dica { margin-top: 14px; font-size: 12px; color: var(--gray-400); }
+@media (hover: none) { .walk-dica { display: none; } }
+
+.walk-objetos > * { position: absolute; animation: cenaEntra 0.5s ease-out both; }
+@keyframes cenaEntra {
+  from { opacity: 0; transform: translate(calc(var(--de) / 2), 8px) scale(0.94); }
+  to   { opacity: 1; transform: translate(0, 0) scale(1); }
+}
+@keyframes cenaSome { to { opacity: 0; transform: scale(0.9); } }
+
+/* 1. oi: o mascote sozinho, respirando, e acena ao chegar */
+.cena-brilho {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--brand-green);
+  animation: cenaEntra 0.5s ease-out both, cenaPulsa 2.4s ease-in-out infinite;
+}
+.cena-brilho--1 { left: 42px;  top: 34px; animation-delay: 0.1s, 0.6s; }
+.cena-brilho--2 { right: 46px; top: 22px; width: 11px; height: 11px; background: var(--primary-400); animation-delay: 0.25s, 0.9s; }
+.cena-brilho--3 { right: 34px; bottom: 44px; width: 6px; height: 6px; animation-delay: 0.4s, 1.2s; }
+@keyframes cenaPulsa {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50%      { opacity: 1;    transform: scale(1.15); }
+}
+.cena-oi {
+  left: 132px; top: 50px;
+  background: var(--bg-card); border: 1px solid var(--border-default);
+  border-radius: 10px 10px 10px 3px; padding: 3px 7px;
+  font-size: 9px; font-weight: 700; color: var(--gray-800);
+  box-shadow: var(--shadow-sm);
+  animation-delay: 0.9s;
+}
+.walk[data-quadro="0"] .walk-ator .jarvis {
+  transform-origin: 50% 90%;
+  animation: jarvisAcena 0.85s ease-in-out 0.8s 2;
+}
+
+/* 2. a conversa: a pergunta entra, ele pensa, e a resposta chega */
+.cena-balao {
+  border-radius: 12px;
+  font-size: 8.5px; line-height: 1.5;
+  padding: 7px 9px;
+  box-shadow: var(--shadow-sm);
+}
+.cena-balao--pergunta {
+  right: 0; top: 2px; max-width: 148px;
+  background: var(--gray-100); color: var(--gray-800);
+  border-bottom-right-radius: 3px;
+  animation-delay: 0.15s;
+}
+.cena-balao--resposta, .cena-balao--numero {
+  left: 2px; top: 62px;
+  background: var(--bg-card); border: 1px solid var(--border-default);
+  border-bottom-left-radius: 3px;
+}
+.cena-balao--resposta {
+  display: flex; gap: 4px; align-items: center;
+  animation: cenaEntra 0.5s ease-out 0.5s both, cenaSome 0.25s ease-in 2s forwards;
+}
+.cena-balao--resposta i {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--primary-300);
+  animation: cenaDigita 1.1s ease-in-out infinite;
+}
+.cena-balao--resposta i:nth-child(2) { animation-delay: 0.15s; background: var(--primary-400); }
+.cena-balao--resposta i:nth-child(3) { animation-delay: 0.3s;  background: var(--primary-600); }
+@keyframes cenaDigita {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+  30%           { transform: translateY(-4px); opacity: 1; }
+}
+.cena-balao--numero { color: var(--gray-600); white-space: nowrap; animation-delay: 2.15s; }
+.cena-balao--numero b { font-size: 11px; color: var(--primary-600); }
+/* quando o número chega, ele comemora com um pulinho */
+.walk[data-quadro="1"] .walk-ator .jarvis { animation: walkComemora 0.5s ease-out 2.15s; }
+@keyframes walkComemora {
+  0%, 100% { transform: translateY(0) scale(1); }
+  45%      { transform: translateY(-6px) scale(1.05); }
+}
+
+/* 3. a fonte: a consulta se escreve, o resultado sai, e nada é alterado */
+.cena-sql {
+  left: 0; top: 6px; width: 132px;
+  background: var(--primary-950); color: #C7C9F7;
+  text-align: left;
+  border-radius: 8px; padding: 8px 9px;
+  font-family: var(--font-mono); font-size: 7.5px; line-height: 1.7;
+  box-shadow: var(--shadow-md);
+  animation-delay: 0.1s;
+}
+.cena-sql b { color: var(--brand-green); font-weight: 500; }
+.cena-sql > span {
+  display: block; white-space: nowrap;
+  clip-path: inset(0 100% 0 0);
+  animation: cenaEscreve 0.55s steps(20, end) forwards;
+}
+.cena-sql > span:nth-child(1) { animation-delay: 0.4s; }
+.cena-sql > span:nth-child(2) { animation-delay: 0.95s; }
+.cena-sql > span:nth-child(3) { animation-delay: 1.5s; }
+@keyframes cenaEscreve { to { clip-path: inset(0 0 0 0); } }
+.cena-tabela {
+  right: 0; top: 70px; width: 86px;
+  display: flex; flex-direction: column; gap: 5px;
+  background: var(--bg-card); border: 1px solid var(--border-default);
+  border-radius: 8px; padding: 8px;
+  box-shadow: var(--shadow-sm);
+  animation-delay: 2.05s;
+}
+.cena-tabela i {
+  height: 5px; width: var(--w); border-radius: 3px; background: var(--gray-200);
+  transform-origin: left;
+  animation: cenaBarra 0.45s ease-out both;
+}
+.cena-tabela i:nth-child(1) { animation-delay: 2.2s; background: var(--primary-200); }
+.cena-tabela i:nth-child(2) { animation-delay: 2.32s; }
+.cena-tabela i:nth-child(3) { animation-delay: 2.44s; }
+@keyframes cenaBarra { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.cena-cadeado {
+  left: 4px; top: 76px;
+  display: flex; align-items: center; gap: 4px;
+  background: var(--success-bg); color: var(--green-800);
+  border-radius: var(--radius-full); padding: 3px 7px 3px 5px;
+  font-size: 7.5px; font-weight: 700;
+  animation-delay: 2.7s;
+}
+.cena-cadeado::before {
+  content: ''; width: 5px; height: 5px; border-radius: 50%; background: var(--green-600);
+}
+:root[data-escuro="1"] .cena-cadeado { color: var(--green-300); }
+
+/* 4. o porquê: três hipóteses, os fios testam cada uma, fica a que explica */
+.cena-hipotese {
+  background: var(--bg-card); border: 1px solid var(--border-default);
+  border-radius: var(--radius-full); padding: 4px 10px;
+  font-size: 8.5px; font-weight: 600; color: var(--gray-700);
+  box-shadow: var(--shadow-sm);
+}
+.cena-hipotese--1 { left: 6px;  top: 30px; animation: cenaEntra 0.5s ease-out 0.1s both, cenaDescarta 0.4s ease-out 2s forwards; }
+.cena-hipotese--2 { left: 50%; top: 22px; margin-left: -26px; animation: cenaEntra 0.5s ease-out 0.25s both, cenaConfirma 0.45s cubic-bezier(0.22, 1.2, 0.36, 1) 2.2s forwards; }
+.cena-hipotese--3 { right: 4px; top: 30px; animation: cenaEntra 0.5s ease-out 0.4s both, cenaDescarta 0.4s ease-out 1.8s forwards; }
+@keyframes cenaDescarta {
+  to { opacity: 0.4; text-decoration: line-through; box-shadow: none; }
+}
+@keyframes cenaConfirma {
+  to {
+    transform: scale(1.12);
+    border-color: var(--green-400); background: var(--success-bg); color: var(--green-800);
+  }
+}
+:root[data-escuro="1"] .cena-hipotese--2 { --green-800: var(--green-300); }
+.cena-fios { left: 0; top: 0; width: 220px; height: 150px; animation-delay: 0.5s; }
+.cena-fios path {
+  fill: none; stroke: var(--primary-300); stroke-width: 1.4; stroke-linecap: round;
+  stroke-dasharray: 70; stroke-dashoffset: 70;
+  animation: cenaFio 0.7s ease-out forwards;
+}
+.cena-fios path:nth-child(1) { animation: cenaFio 0.7s ease-out 0.6s forwards, cenaFioApaga 0.4s 2s forwards; }
+.cena-fios path:nth-child(2) { animation: cenaFio 0.7s ease-out 0.75s forwards, cenaFioAcende 0.4s 2.2s forwards; }
+.cena-fios path:nth-child(3) { animation: cenaFio 0.7s ease-out 0.9s forwards, cenaFioApaga 0.4s 1.8s forwards; }
+@keyframes cenaFio { to { stroke-dashoffset: 0; } }
+@keyframes cenaFioApaga { from { stroke-dashoffset: 0; } to { stroke-dashoffset: 0; opacity: 0.2; } }
+@keyframes cenaFioAcende { from { stroke-dashoffset: 0; } to { stroke-dashoffset: 0; stroke: var(--green-500); stroke-width: 2; } }
+
+/* 5. os anexos: a planilha se preenche, o print é lido e vai embora */
+.cena-folha {
+  left: 2px; top: 12px; width: 74px;
+  background: var(--bg-card); border: 1px solid var(--border-default);
+  border-radius: 8px; padding: 8px;
+  display: flex; flex-direction: column; gap: 5px;
+  box-shadow: var(--shadow-md);
+  animation-delay: 0.1s;
+}
+.cena-folha b { height: 14px; border-radius: 4px; background: var(--xlsx); }
+.cena-folha i {
+  height: 4px; width: var(--w); border-radius: 3px; background: var(--gray-200);
+  transform-origin: left; animation: cenaBarra 0.4s ease-out both;
+}
+.cena-folha i:nth-child(2) { animation-delay: 0.5s; }
+.cena-folha i:nth-child(3) { animation-delay: 0.6s; }
+.cena-folha i:nth-child(4) { animation-delay: 0.7s; }
+.cena-print {
+  right: 6px; top: 18px; width: 64px; height: 48px;
+  border-radius: 8px; overflow: hidden;
+  background: linear-gradient(160deg, var(--primary-400), var(--primary-600));
+  box-shadow: var(--shadow-md);
+  animation: cenaEntra 0.5s ease-out 0.3s both, cenaDescartaPrint 0.6s cubic-bezier(0.55, 0, 0.75, 0.3) 2.1s forwards;
+}
+/* depois de lido, o print encolhe em direção ao Jarvis e some: não fica
+   guardado (ADR-0024) */
+@keyframes cenaDescartaPrint {
+  to { opacity: 0; transform: translate(-38px, 58px) scale(0.15) rotate(-12deg); }
+}
+.cena-descartado {
+  right: 8px; top: 34px;
+  background: var(--gray-100); color: var(--gray-500);
+  border-radius: var(--radius-full); padding: 3px 8px;
+  font-size: 7.5px; font-weight: 600;
+  animation-delay: 2.6s;
+}
+/* o morro e o sol de um ícone de imagem, para o print não ser um retângulo
+   colorido sem assunto */
+.cena-print::before {
+  content: ''; position: absolute; left: 10px; bottom: 0;
+  width: 0; height: 0;
+  border-left: 18px solid transparent; border-right: 18px solid transparent;
+  border-bottom: 22px solid rgba(255, 255, 255, 0.55);
+}
+.cena-print::after {
+  content: ''; position: absolute; right: 11px; top: 9px;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--brand-green);
+}
+
+/* 6. o fim: as barras crescendo */
+.cena-grafico {
+  left: 50%; top: 14px; margin-left: -56px;
+  width: 112px; height: 62px;
+  display: flex; align-items: flex-end; justify-content: space-between;
+}
+.cena-grafico i {
+  width: 20px; height: var(--h); border-radius: 5px 5px 2px 2px;
+  background: var(--primary-500);
+  transform-origin: bottom;
+  animation: cenaCresce 0.55s cubic-bezier(0.22, 1.2, 0.36, 1) both;
+}
+.cena-grafico i:nth-child(1) { animation-delay: 0.15s; }
+.cena-grafico i:nth-child(2) { animation-delay: 0.25s; background: var(--primary-600); }
+.cena-grafico i:nth-child(3) { animation-delay: 0.35s; }
+.cena-grafico i:nth-child(4) { animation-delay: 0.45s; background: var(--brand-green); }
+@keyframes cenaCresce { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+
+/* A cena encolhe com a tela; a legenda nunca some. */
+@media (max-height: 820px) { .walk-cena { --escala: 1.7; } }
+@media (max-height: 680px) { .walk-cena { --escala: 1.35; } .walk-legenda { min-height: 128px; } }
+@media (max-width: 640px) {
+  .walk-cena { --escala: 1.45; }
+  .walk-palco { padding: 56px 18px calc(20px + env(safe-area-inset-bottom)); justify-content: flex-end; }
+  .walk-progresso { width: calc(100% - 120px); left: 18px; transform: none; }
+  .walk-titulo { font-size: 23px; }
+  .walk-texto { font-size: 15px; }
+  .walk-legenda { min-height: 170px; }
+  .walk-acoes { width: 100%; }
+}
+
+/* -- convites para o passeio (só para quem ainda não fez) -- */
+.sidebar-marca .marca-jarvis { position: relative; }
+.marca-convite {
+  position: absolute; top: 1px; right: 0;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--brand-green);
+  box-shadow: 0 0 0 2px var(--bg-lateral);
+}
+.marca-convite[hidden] { display: none; }
+.marca-convite::after,
+.convite-passeio-ponto::after {
+  content: ''; position: absolute; inset: 0; border-radius: 50%;
+  background: var(--brand-green);
+  animation: conviteOnda 2.4s ease-out 1.5s 3 both;
+}
+@keyframes conviteOnda {
+  0%   { transform: scale(1); opacity: 0.6; }
+  70%, 100% { transform: scale(2.6); opacity: 0; }
+}
+
+/* o mascote grande das boas-vindas também abre o passeio */
+button.boas-vindas-marca {
+  border: none; background: none; padding: 0; cursor: pointer;
+  border-radius: var(--radius-full);
+}
+button.boas-vindas-marca .jarvis { transition: transform var(--transition-base); }
+button.boas-vindas-marca:hover .jarvis { transform: scale(1.05); }
+/* Quem ainda não fez o passeio ganha um aceno, uma vez, depois que a tela
+   assentou — um "oi" no canto do olho, não uma sirene. */
+.boas-vindas--convite .boas-vindas-marca .jarvis {
+  transform-origin: 50% 90%;
+  animation: jarvisAcena 0.85s ease-in-out 1.3s 2;
+}
+.convite-passeio {
+  display: inline-flex; align-items: center; gap: 10px;
+  margin: -8px 0 22px; padding: 8px 12px 8px 12px;
+  border: 1px solid var(--primary-200); border-radius: var(--radius-full);
+  background: var(--primary-50); color: var(--gray-700);
+  font: 400 13.5px var(--font-family); cursor: pointer;
+  transition: border-color var(--transition-base), background var(--transition-base), box-shadow var(--transition-base);
+  animation: fadeInUp 0.5s ease-out 0.45s both;
+}
+.convite-passeio strong { font-weight: 600; color: var(--primary-700); }
+.convite-passeio:hover { border-color: var(--primary-400); box-shadow: var(--shadow-sm); }
+.convite-passeio svg { width: 15px; height: 15px; color: var(--primary-600); transition: transform var(--transition-base); }
+.convite-passeio:hover svg { transform: translateX(3px); }
+.convite-passeio-ponto {
+  position: relative; flex-shrink: 0;
+  width: 8px; height: 8px; border-radius: 50%; background: var(--brand-green);
+}
+
+
+/* -- Aviso de cota --
+   Uma faixa âmbar acima do campo de pergunta, a partir de 80%. Âmbar e não
+   vermelho: não é erro, é um aviso de que o fim está perto. */
+.aviso-cota {
+  width: 100%; max-width: var(--coluna);
+  margin: 0 auto 8px;
+  padding: 9px 14px;
+  border: 1px solid #F5D9A8;
+  border-radius: var(--radius-lg);
+  background: var(--warning-bg);
+  color: #8A5A00;
+  font-size: 13px; line-height: 1.45; font-weight: 500;
+  text-align: center;
+  animation: fadeInUp 0.3s ease-out both;
+}
+.aviso-cota[hidden] { display: none; }
+.aviso-cota.cheia { border-color: #EDBE7A; font-weight: 600; }
+:root[data-escuro="1"] .aviso-cota {
+  border-color: #4A3A18; color: #F5C26B;
+}
+
+/* -- Limites de uso --
+   Uma linha por janela: rótulo e prazo à esquerda, barra no meio,
+   porcentagem à direita. É a forma que deixa os dois limites comparáveis
+   num olhar — empilhados, cada um ocupava três alturas e o painel parecia
+   um formulário. A barra enche ao abrir e fica âmbar perto do fim (80%). */
+.cota { display: flex; flex-direction: column; gap: 22px; }
+.cota-carregando { min-height: 120px; }
+
+/* Colunas de largura fixa nas pontas: com `auto`, cada linha media o próprio
+   rótulo e as barras terminavam em pontos diferentes — duas réguas que não
+   se comparam. */
+.cota-item {
+  display: grid;
+  grid-template-columns: 134px minmax(0, 1fr) 82px;
+  align-items: center; gap: 16px;
+}
+.cota-rotulo { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cota-rotulo strong { font-size: 14.5px; font-weight: 600; color: var(--gray-900); }
+.cota-rotulo span { font-size: 12px; line-height: 1.45; color: var(--gray-500); }
+/* A porcentagem responde "quanto já foi"; a contagem responde "quantas
+   ainda dá". As duas do mesmo lado, uma sob a outra, deixam a legenda da
+   esquerda com uma frase só — e nada quebra em duas linhas. */
+.cota-pct {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+  text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.cota-pct strong { font-size: 13px; font-weight: 600; color: var(--gray-700); }
+.cota-pct span { font-size: 11.5px; color: var(--gray-400); }
+
+.cota-barra {
+  height: 6px; border-radius: var(--radius-full);
+  background: var(--gray-100); overflow: hidden;
+}
+.cota-barra i {
+  display: block; height: 100%; width: var(--p);
+  border-radius: var(--radius-full);
+  background: var(--primary-500);
+  transform-origin: left;
+  animation: cotaEnche 0.8s cubic-bezier(0.22, 1, 0.36, 1) 0.1s both;
+}
+@keyframes cotaEnche { from { transform: scaleX(0); } }
+.cota-item--perto .cota-barra i,
+.cota-item--cheia .cota-barra i { background: var(--warning); }
+.cota-item--perto .cota-rotulo span,
+.cota-item--cheia .cota-rotulo span { color: #9A6700; font-weight: 500; }
+:root[data-escuro="1"] .cota-item--perto .cota-rotulo span,
+:root[data-escuro="1"] .cota-item--cheia .cota-rotulo span { color: #F5C26B; }
+
+.cota-nota { font-size: 12px; line-height: 1.5; color: var(--gray-400); }
+.cota-rodape {
+  display: flex; align-items: center; gap: 8px;
+  padding-top: 14px; border-top: 1px solid var(--border-light);
+  font-size: 12px; color: var(--gray-400);
+}
+.cota-atualizar {
+  width: 24px; height: 24px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: var(--radius-sm);
+  background: none; color: var(--gray-400); cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+.cota-atualizar:hover { color: var(--gray-700); background: var(--gray-100); }
+.cota-atualizar svg { width: 14px; height: 14px; }
+
+/* Na tela estreita a barra não cabe na mesma linha do rótulo. */
+@media (max-width: 560px) {
+  .cota-item { grid-template-columns: 1fr auto; gap: 10px 12px; }
+  .cota-barra { grid-column: 1 / -1; order: 3; }
+}
 
 /* ============================================================
    TOAST
@@ -1340,8 +2304,6 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
   70% { transform: scale(1.08); }
   100% { transform: scale(1); opacity: 1; }
 }
-@keyframes quicar { 0%, 60%, 100% { transform: translateY(0); opacity: 0.6; } 30% { transform: translateY(-5px); opacity: 1; } }
-@keyframes trilha { 0% { background-position: -50% 0; } 100% { background-position: 150% 0; } }
 
 /* ============================================================
    TABLET E CELULAR
@@ -1374,6 +2336,7 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
   .boas-vindas h1 { font-size: 25px; }
   .bolha-usuario { max-width: 88%; }
   .cartao-ia { max-width: 100%; }
+  /* Na tela estreita a coluna do avatar custa largura de leitura. */
   .msg-ia .ia-avatar { display: none; }
 }
 
@@ -1442,8 +2405,12 @@ button.secao-cabeca {
 .conversa-linha, .pasta-linha {
   position: relative;
   display: flex; align-items: center;
-  animation: fadeInUp 0.35s ease-out both;
 }
+/* A entrada escalonada é da PRIMEIRA vez que a lista aparece. Antes ela era
+   incondicional, e como toda ação redesenha a lista — arquivar, mover,
+   receber uma resposta —, a barra inteira repetia a animação a cada clique.
+   Parecia um refresh. */
+.conversa-lista.estreando .conversa-linha { animation: fadeInUp 0.35s ease-out both; }
 .conversa-linha .conversa-item { flex: 1; min-width: 0; padding-right: 36px; }
 .item-acoes {
   position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
@@ -1541,6 +2508,9 @@ button.secao-cabeca {
   transition: transform var(--transition-base);
 }
 .modal-overlay.aberto .modal { transform: none; }
+/* Os limites pedem mais largura que um diálogo de confirmação: a barra é o
+   assunto, e espremida entre o rótulo e a porcentagem ela vira um risco. */
+.modal.largo { max-width: 560px; }
 .modal-head { padding: 20px 24px 12px; }
 .modal-head h2 { font-size: 17px; font-weight: 700; letter-spacing: -0.2px; }
 .modal-corpo { padding: 4px 24px 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }

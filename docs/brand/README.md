@@ -7,9 +7,21 @@ O Jarvis é o copiloto de dados da Ease Labs (o nome do produto; o papel,
 
 - `jarvis-mascote.png` — peça principal gerada pela IA de imagem: corpo,
   viseira, olho e a órbita verde. É a referência de desenho.
-- `jarvis-icone.png` — a mesma peça reduzida, sem órbita. Dela sai o
-  `app/web/static/web/favicon.png` (recortado, com 15% de respiro e fundo
-  transparente).
+- `jarvis-icone.png` — a mesma peça reduzida, sem órbita.
+
+## Ícone do app (favicon)
+
+`app/web/static/web/favicon.svg` é o ícone: o mascote, com a órbita, sobre
+um ladrilho índigo profundo (`#2E3190` → `#161747`) com um brilho verde no
+canto. O ladrilho existe porque a silhueta solta sumia na aba escura do
+navegador e virava uma mancha roxa em 16 px. Dele saem, renderizados do
+mesmo SVG:
+
+- `favicon-32.png` — reserva para navegador que não lê SVG;
+- `apple-touch-icon.png` (180 px) — tela inicial do iPhone, sem cantos
+  arredondados (o iOS arredonda sozinho).
+
+Mudou o SVG, gere os dois PNGs de novo a partir dele.
 
 ## Como o app desenha
 
