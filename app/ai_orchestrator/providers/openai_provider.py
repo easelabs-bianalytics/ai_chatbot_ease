@@ -173,6 +173,14 @@ class GraficoEstruturado(BaseModel):
         description="coluna de categoria que vira uma série por valor (formato longo); vazia se não houver",
     )
     empilhado: bool = Field(default=False, description="empilhar as séries (barras e área)")
+    vega_lite: str = Field(
+        default="",
+        description=(
+            "especificação Vega-Lite em JSON, SEM data (o sistema põe os dados da consulta); "
+            "para qualquer gráfico além de linha/barras/área/pizza simples, ou quando pedirem um tipo; "
+            "vazia se não usar"
+        ),
+    )
     titulo: str = Field(default="", description="título curto do gráfico")
 
 

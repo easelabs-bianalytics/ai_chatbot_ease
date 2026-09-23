@@ -332,6 +332,15 @@
   <!-- Chart.js 4.4.7 (MIT) servido pelo próprio app: em produção o ECS roda
        dentro da VPC e não deve depender de CDN para desenhar um gráfico. -->
   <script src="{% static 'web/vendor/chart.umd.min.js' %}"></script>
+  <!-- Vega-Lite (ADR-0026), também servido pelo próprio app. Carrega só
+       quando aparece o primeiro gráfico que precisa dele: são ~840 KB que a
+       maioria das conversas não usa. -->
+  <script id="bibliotecasVega" type="application/json">{
+    "vega": "{% static 'web/vendor/vega.min.js' %}",
+    "vegaLite": "{% static 'web/vendor/vega-lite.min.js' %}",
+    "vegaEmbed": "{% static 'web/vendor/vega-embed.min.js' %}",
+    "interpretador": "{% static 'web/vendor/vega-interpreter.min.js' %}"
+  }</script>
   <script src="{% static 'web/app.js' %}"></script>
 </body>
 </html>

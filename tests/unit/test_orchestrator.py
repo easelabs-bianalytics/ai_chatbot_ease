@@ -5,6 +5,8 @@ IA não sabe, quando a consulta é recusada, quando o banco falha e quando a
 resposta cita número que não existe.
 """
 
+import json
+
 import pytest
 
 from ai_orchestrator.models import AICall, AIReply, CatalogGap
@@ -762,6 +764,34 @@ def test_grafico_por_categoria_empilhado(conversa, catalogo):
         "tipo": "barras", "x": "competencia", "series": ["px"], "titulo": "",
         "grupo": "especialidade", "empilhado": True,
     }
+
+
+def test_grafico_em_vega_lite_vai_limpo_e_sem_dado(conversa, catalogo):
+    """ADR-0026: "um gráfico de dispersão" sai em Vega-Lite. O que a IA pôs
+    em `data` sai; quem põe os dados é a tela, com o resultado da consulta."""
+    spec = {"data": {"values": [{"px": 1}]}, "mark": "point",
+            "encoding": {"x": {"field": "competencia", "type": "temporal"}, "y": {"field": "px"}}}
+    reply = _com_grafico(
+        conversa, catalogo,
+        {"tipo": "nenhum", "x": "", "series": [], "vega_lite": json.dumps(spec), "titulo": ""},
+        resultado=PX_POR_ESPECIALIDADE, texto="Neurologia lidera com 950 PX em fev/2026.",
+    )
+
+    grafico = reply.raw_response["grafico"]
+    assert grafico["tipo"] == "vega"
+    assert "data" not in grafico["vega"]
+    assert grafico["vega"]["mark"] == "point"
+
+
+def test_vega_lite_invalido_cai_no_formato_simples(conversa, catalogo):
+    reply = _com_grafico(
+        conversa, catalogo,
+        {"tipo": "barras", "x": "especialidade", "series": ["px"], "titulo": "",
+         "vega_lite": json.dumps({"mark": "bar", "encoding": {"x": {"field": "rede"}}})},
+        resultado=PX_POR_ESPECIALIDADE, texto="Neurologia lidera com 950 PX em fev/2026.",
+    )
+
+    assert reply.raw_response["grafico"]["tipo"] == "barras"
 
 
 @pytest.mark.parametrize(

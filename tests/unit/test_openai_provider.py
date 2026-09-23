@@ -466,7 +466,7 @@ def test_sugestao_de_grafico_volta_junto_com_a_resposta(catalogo):
 
     assert resposta.chart == {
         "tipo": "linha", "x": "mes", "series": ["unidades"], "grupo": "", "empilhado": False,
-        "titulo": "Unidades por mês",
+        "vega_lite": "", "titulo": "Unidades por mês",
     }
 
 

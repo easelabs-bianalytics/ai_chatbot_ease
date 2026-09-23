@@ -36,6 +36,7 @@ from ai_orchestrator.providers.base import (
 )
 from ai_orchestrator.providers.fake import FakeAIProvider
 from ai_orchestrator.prompts import PROMPT_VERSION
+from ai_orchestrator import vega
 from ai_orchestrator.rules import apply_rules
 from attachments import deposito, planilha as planilha_anexada
 from attachments.limites import SEGUNDOS_DA_SAIDA, AnexoRecusado
@@ -450,7 +451,18 @@ def _grafico(sugestao, resultado, message, plano) -> dict | None:
     A IA só escolhe o tipo e as colunas; o desenho usa os números da
     consulta. Coluna inexistente, série que não é número ou resultado de uma
     linha só não viram gráfico — melhor nenhum gráfico do que um errado."""
-    if not sugestao or sugestao.get("tipo") not in TIPOS_DE_GRAFICO or resultado.row_count < 2:
+    if not sugestao or resultado.row_count < 1:
+        return None
+    if sugestao.get("vega_lite"):
+        # ADR-0026: qualquer gráfico, escrito em Vega-Lite. A especificação sai
+        # daqui sem fonte de dado nem endereço; a tela injeta o resultado.
+        spec = vega.validar(sugestao["vega_lite"], resultado.columns, resultado.rows, message.content, plano.sql)
+        if spec is not None:
+            titulo = " ".join(str(sugestao.get("titulo") or "").split())[:80]
+            if titulo and not check_grounding(titulo, resultado.columns, resultado.rows, message.content, plano.sql).ok:
+                titulo = ""
+            return {"tipo": "vega", "vega": spec, "titulo": titulo}
+    if sugestao.get("tipo") not in TIPOS_DE_GRAFICO or resultado.row_count < 2:
         return None
     colunas = list(resultado.columns)
     x = sugestao.get("x")
@@ -1289,7 +1301,9 @@ def _ajustar_grafico(message) -> _Decisao | None:
     if not ajuste:
         return None
     origem, grafico, total = _grafico_a_ajustar(message)
-    if origem is None:
+    if origem is None or grafico.get("tipo") == "vega":
+        # Trocar o desenho de uma especificação Vega-Lite é reescrevê-la:
+        # isso é com a IA, que conhece os campos.
         return None
 
     novo = ajuste_grafico.aplicar(grafico, ajuste)

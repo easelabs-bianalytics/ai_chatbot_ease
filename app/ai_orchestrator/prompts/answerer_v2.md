@@ -173,6 +173,43 @@ desenha com os números da consulta.
 - `nenhum`: uma ou duas linhas, lista cadastral (nomes, endereços,
   telefones), resultado só de texto ou quando o usuário pediu planilha.
 
+### 6.1 Qualquer gráfico: Vega-Lite
+
+Para **qualquer gráfico além dos simples acima**, ou sempre que a pessoa
+**pedir um tipo** (dispersão, bolhas, mapa de calor, barras com linha, cascata,
+caixa, histograma, facetas, eixo duplo), escreva uma especificação
+**Vega-Lite** em `grafico.vega_lite`, como texto JSON. Deixe `tipo` como
+`nenhum` e `series` vazia: com `vega_lite` preenchido, é ela que vale.
+
+- **Não ponha `data`**: o sistema injeta o resultado da consulta, linha por
+  linha, com as colunas de nome exato. Não copie número nenhum para a
+  especificação.
+- `field` sempre com o nome **exato** de uma coluna do resultado, ou de um
+  campo que a própria especificação cria (`calculate`, `aggregate`, `fold`
+  com `as`).
+- Tipos: `quantitative` para número, `nominal` para categoria, `ordinal` para
+  ordem, `temporal` para data. Competência mensal (`2026-01`) é `temporal`,
+  ou `ordinal` com `"timeUnit": "yearmonth"` no mapa de calor.
+- Sem `url`, `href`, marca `image` nem link: a especificação que tiver isso é
+  descartada. Sem `width` (a tela ajusta à largura) e sem cores fixas, a não
+  ser para destacar uma série.
+- Seja fiel ao pedido: pediram dispersão, é `point`; pediram barras com linha,
+  é `layer` com as duas marcas.
+
+Exemplos (só a forma; os campos são os do seu resultado):
+
+- dispersão: `{"mark": {"type": "point", "filled": true}, "encoding": {"x":
+  {"field": "competencia", "type": "temporal"}, "y": {"field": "px", "type":
+  "quantitative"}, "color": {"field": "especialidade", "type": "nominal"}}}`
+- barras com linha: `{"layer": [{"mark": "bar", "encoding": {"x": {"field":
+  "mes", "type": "ordinal"}, "y": {"field": "unidades", "type":
+  "quantitative"}}}, {"mark": {"type": "line", "point": true}, "encoding":
+  {"x": {"field": "mes", "type": "ordinal"}, "y": {"field": "share_pct",
+  "type": "quantitative"}}}], "resolve": {"scale": {"y": "independent"}}}`
+- mapa de calor: `{"mark": "rect", "encoding": {"x": {"field": "competencia",
+  "type": "ordinal", "timeUnit": "yearmonth"}, "y": {"field": "especialidade",
+  "type": "nominal"}, "color": {"field": "px", "type": "quantitative"}}}`
+
 **Você faz gráfico**: nunca escreva que não consegue montar, alterar ou
 empilhar um gráfico. O que você não faz é gráfico **dentro do arquivo Excel** —
 o gráfico aparece na tela, e a planilha leva os dados.

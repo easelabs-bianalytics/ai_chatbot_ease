@@ -1224,11 +1224,121 @@
 
   const blocoGrafico = (fonte, id) => {
     if (!fonte.grafico || !fonte.dados) return '';
+    const area = fonte.grafico.tipo === 'vega'
+      ? `<div class="grafico-vega" data-vega="${id}" role="img"></div>`
+      : `<div class="grafico-area"><canvas data-grafico="${id}" role="img"></canvas></div>`;
     return `
       <div class="grafico">
         ${fonte.grafico.titulo ? `<div class="grafico-titulo">${esc(fonte.grafico.titulo)}</div>` : ''}
-        <div class="grafico-area"><canvas data-grafico="${id}" role="img"></canvas></div>
+        ${area}
       </div>`;
+  };
+
+  // ---------------------------------------------------------- Vega-Lite
+  // Qualquer gráfico que a gramática descreve (ADR-0026). A especificação
+  // chega do servidor já sem fonte de dado nem endereço; os valores entram
+  // aqui, vindos do resultado da consulta. As expressões rodam no
+  // interpretador do Vega, que não executa JavaScript.
+  let vegaCarregado = null;
+  const carregarScript = (src) => new Promise((ok, falha) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = ok;
+    s.onerror = () => falha(new Error(`não carregou ${src}`));
+    document.head.appendChild(s);
+  });
+  const carregarVega = () => {
+    if (!vegaCarregado) {
+      const libs = JSON.parse($('#bibliotecasVega')?.textContent || '{}');
+      // A ordem importa: o Vega-Lite e o Embed procuram o Vega já carregado.
+      vegaCarregado = carregarScript(libs.vega)
+        .then(() => carregarScript(libs.vegaLite))
+        .then(() => carregarScript(libs.vegaEmbed))
+        .then(() => carregarScript(libs.interpretador));
+    }
+    return vegaCarregado;
+  };
+
+  const LOCAL_VEGA = {
+    numero: { decimal: ',', thousands: '.', grouping: [3], currency: ['R$ ', ''] },
+    tempo: {
+      dateTime: '%A, %e de %B de %Y. %X', date: '%d/%m/%Y', time: '%H:%M:%S',
+      periods: ['AM', 'PM'],
+      days: ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'],
+      shortDays: ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'],
+      months: ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'],
+      shortMonths: ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'],
+    },
+  };
+
+  // O tema do Vega sai dos mesmos tokens da interface, como o do Chart.js.
+  const temaVega = () => ({
+    background: token('--bg-card') || '#fff',
+    font: 'Inter, sans-serif',
+    range: { category: CORES },
+    axis: {
+      labelColor: token('--gray-600'), titleColor: token('--gray-600'), gridColor: token('--border-light'),
+      domainColor: token('--border-light'), tickColor: token('--border-light'), labelFontSize: 11, titleFontSize: 11,
+    },
+    // Em colunas: numa linha só, nove especialidades saíam da tela.
+    legend: { labelColor: token('--gray-600'), titleColor: token('--gray-600'), labelFontSize: 11, orient: 'bottom', columns: 4 },
+    // Categoria de nome longo inclinada, não em pé: em pé, "CLINICA GERAL" saía cortado.
+    // Só no eixo de baixo: no de lado (mapa de calor) o nome cabe deitado.
+    axisXBand: { labelAngle: -35, labelLimit: 130 },
+    // Mês como no resto do app ("jan/26"), uma marca por mês: sem o intervalo
+    // o Vega marcava de quinze em quinze dias e repetia o mês.
+    axisTemporal: { format: '%b/%y', tickCount: 'month', labelOverlap: true },
+    title: { color: token('--gray-900'), fontSize: 13, anchor: 'start' },
+    view: { stroke: null },
+    mark: { color: CORES[0] },
+  });
+
+  const VEGAS = new Map();   // div -> view, para refazer ao trocar de tema
+  const desenharVega = async (div) => {
+    const dado = GRAFICOS.get(div.dataset.vega);
+    if (!dado) return;
+    try {
+      await carregarVega();
+    } catch (e) {
+      div.textContent = 'Não consegui carregar o desenho do gráfico. A tabela e a planilha continuam com todos os dados.';
+      return;
+    }
+    const { grafico, dados } = dado;
+    const colunas = dados.columns || [];
+    // "2026-01" e "2026-01-01" sem hora são lidos como meia-noite em UTC, e
+    // no fuso de Brasília viram 31/12 do ano anterior: o mapa de calor
+    // começava em "dez 2025". Com a hora escrita, a data é local.
+    const COMPETENCIA = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/;
+    const local = (v) => {
+      const m = typeof v === 'string' && v.match(COMPETENCIA);
+      return m ? `${m[1]}-${m[2]}-${m[3] || '01'}T00:00:00` : v;
+    };
+    const valores = (dados.rows || []).map((l) => Object.fromEntries(colunas.map((c, i) => [c, local(l[i])])));
+    const spec = JSON.parse(JSON.stringify(grafico.vega));
+    spec.data = { values: valores };
+    const composto = ['hconcat', 'vconcat', 'concat', 'facet', 'repeat'].some((k) => k in spec);
+    if (!composto && spec.width === undefined) spec.width = 'container';
+    if (spec.height === undefined && !composto) spec.height = 280;
+    spec.config = { ...temaVega(), ...(spec.config || {}) };
+    // Nenhum endereço é buscado: a especificação já vem sem eles, e o
+    // carregador recusa o que sobrar.
+    const carregador = window.vega.loader();
+    carregador.sanitize = () => Promise.reject(new Error('o gráfico não busca dado de fora'));
+    try {
+      const { view } = await window.vegaEmbed(div, spec, {
+        renderer: 'svg',
+        ast: true,
+        expr: window.vegaExpressionInterpreter,
+        loader: carregador,
+        formatLocale: LOCAL_VEGA.numero,
+        timeFormatLocale: LOCAL_VEGA.tempo,
+        actions: { export: true, source: false, compiled: false, editor: false },
+        i18n: { PNG_ACTION: 'Baixar como PNG', SVG_ACTION: 'Baixar como SVG' },
+      });
+      VEGAS.set(div, view);
+    } catch (e) {
+      div.textContent = 'Não consegui desenhar este gráfico. A tabela e a planilha continuam com todos os dados.';
+    }
   };
 
   const partesDeData = (valor) => {
@@ -1570,12 +1680,23 @@
       if (nota?.classList.contains('grafico-nota')) nota.remove();
       desenharGrafico(canvas);
     });
+    const vegas = [...VEGAS.entries()];
+    VEGAS.clear();
+    vegas.forEach(([div, view]) => {
+      view.finalize();
+      div.innerHTML = '';
+      desenharVega(div);
+    });
   };
 
   const desenharGraficosNovos = (raiz) => {
     (raiz || document).querySelectorAll('canvas[data-grafico]:not([data-pronto])').forEach((c) => {
       c.dataset.pronto = '1';
       desenharGrafico(c);
+    });
+    (raiz || document).querySelectorAll('[data-vega]:not([data-pronto])').forEach((d) => {
+      d.dataset.pronto = '1';
+      desenharVega(d);
     });
   };
 
