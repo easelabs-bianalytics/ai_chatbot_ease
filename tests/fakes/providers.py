@@ -61,14 +61,24 @@ class ScriptedAIProvider(AIProvider):
         self.plan_requests = []
         self.answer_requests = []
         self.image_requests = []
+        # Ganchos para o teste agir NO MEIO do pipeline — é como se simula
+        # alguém apertando "parar" enquanto a chamada acontece.
+        self.ao_planejar = None
+        self.ao_responder = None
 
     def plan(self, request: PlanRequest) -> Plan:
         self.plan_requests.append(request)
-        return self._proximo(self._planos, "plano")
+        plano = self._proximo(self._planos, "plano")
+        if self.ao_planejar:
+            self.ao_planejar(request)
+        return plano
 
     def answer(self, request: AnswerRequest) -> Answer:
         self.answer_requests.append(request)
-        return self._proximo(self._respostas, "resposta")
+        resposta = self._proximo(self._respostas, "resposta")
+        if self.ao_responder:
+            self.ao_responder(request)
+        return resposta
 
     def read_image(self, request: ImageRequest) -> ImageReading:
         self.image_requests.append(request)

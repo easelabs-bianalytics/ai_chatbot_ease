@@ -25,6 +25,10 @@ class AIReply(models.Model):
         # relatório e a auditoria não confundirem as duas coisas.
         IMAGE_READING = "image_reading", "Leitura de imagem"
         FAILED = "failed", "Falha da IA ou do banco"
+        # Interrompida pela pessoa. Fica como decisão própria para o
+        # relatório não contar como falha nossa o que foi escolha de quem
+        # perguntou — e para o custo já gasto aparecer mesmo assim.
+        CANCELLED = "cancelled", "Interrompida pelo usuário"
 
     message = models.OneToOneField(Message, on_delete=models.CASCADE, related_name="ai_reply")
     decision = models.CharField(max_length=20, choices=Decision.choices)

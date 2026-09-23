@@ -32,6 +32,10 @@ DECISOES = {
     # Anexo de imagem (ADR-0024): respondeu, mas sem banco — fica separado
     # de "Respondeu com dado" para o relatório não misturar as duas coisas.
     AIReply.Decision.IMAGE_READING: "Leu uma imagem",
+    # Interrompida pela pessoa. Aparece com o custo que já tinha sido gasto —
+    # sumir do relatório faria o total do mês mentir — e longe de "Falhou",
+    # que é defeito nosso.
+    AIReply.Decision.CANCELLED: "Interrompida por quem perguntou",
     AIReply.Decision.FAILED: "Falhou",
 }
 

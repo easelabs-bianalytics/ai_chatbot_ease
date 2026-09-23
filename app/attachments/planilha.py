@@ -18,6 +18,8 @@ from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
+from datasource.colunas import FORMATO_PERCENTUAL, e_percentual
+
 from attachments.limites import (
     EXTENSOES_DE_PLANILHA,
     LINHAS_DE_AMOSTRA,
@@ -42,28 +44,16 @@ class Coluna:
 
 
 @dataclass(frozen=True)
-class Estrutura:
-    """O que sabemos da planilha sem mandar o conteúdo para ninguém."""
+class Pagina:
+    """Uma aba da planilha: o cabeçalho dela e quantas linhas tem."""
 
     nome: str
-    aba: str
-    abas: tuple
     colunas: tuple
     linhas: int
 
-    @property
-    def resumo(self) -> str:
-        """O texto que vai ao modelo, com teto de caracteres.
-
-        Formato deliberadamente enxuto: cada coluna em uma linha, com tipo e
-        até dois exemplos. Uma planilha de 40 colunas cabe em ~800 tokens.
-        """
-        partes = [f"Arquivo: {self.nome}"]
-        if len(self.abas) > 1:
-            partes.append(f"Abas: {', '.join(self.abas)} (lendo \"{self.aba}\")")
+    def descrever(self, teto: int) -> str:
         cobertura = " (a amostra abaixo traz todas elas)" if self.linhas <= LINHAS_DE_AMOSTRA else ""
-        partes.append(f"Linhas de dados: {self.linhas}{cobertura}")
-        partes.append("Colunas (nome · tipo · exemplos):")
+        partes = [f"Linhas de dados: {self.linhas}{cobertura}", "Colunas (nome · tipo · exemplos):"]
         for coluna in self.colunas:
             # Coluna de texto costuma ser a chave (rede, representante,
             # produto): vão as oito linhas de amostra, e numa planilha
@@ -74,9 +64,67 @@ class Estrutura:
             exemplos = " | ".join(str(e) for e in coluna.exemplos[:quantos])
             partes.append(f"- {coluna.nome} · {coluna.tipo}" + (f" · {exemplos}" if exemplos else ""))
         texto = "\n".join(partes)
-        if len(texto) > MAX_CARACTERES_DO_RESUMO:
-            texto = texto[:MAX_CARACTERES_DO_RESUMO].rstrip() + "\n(resumo cortado no limite)"
+        if len(texto) > teto:
+            texto = texto[:teto].rstrip() + "\n(resumo cortado no limite)"
         return texto
+
+
+@dataclass(frozen=True)
+class Estrutura:
+    """O que sabemos da planilha sem mandar o conteúdo para ninguém.
+
+    Um arquivo do Excel quase nunca tem uma aba só: a pessoa manda a pasta
+    de trabalho inteira e diz qual quer. Por isso `paginas` traz todas —
+    antes só a primeira era lida, e o modelo respondia que "não consegue ver
+    a Planilha1" para um arquivo que a tinha (caso real de 2026-09-22).
+    """
+
+    nome: str
+    paginas: tuple
+
+    @property
+    def abas(self) -> tuple:
+        return tuple(p.nome for p in self.paginas if p.nome)
+
+    @property
+    def primeira(self) -> Pagina:
+        return self.paginas[0]
+
+    # Compatibilidade com quem só conhece a planilha de uma aba.
+    @property
+    def aba(self) -> str:
+        return self.primeira.nome
+
+    @property
+    def colunas(self) -> tuple:
+        return self.primeira.colunas
+
+    @property
+    def linhas(self) -> int:
+        return self.primeira.linhas
+
+    @property
+    def resumo(self) -> str:
+        """O texto que vai ao modelo, com teto de caracteres.
+
+        Formato deliberadamente enxuto: cada coluna em uma linha, com tipo e
+        até dois exemplos. Uma planilha de 40 colunas cabe em ~800 tokens.
+        Com várias abas, o teto é dividido entre elas: uma pasta de trabalho
+        grande não pode empurrar as últimas abas para fora do resumo.
+        """
+        if len(self.paginas) == 1:
+            cabecalho = f"Arquivo: {self.nome}\n"
+            return cabecalho + self.primeira.descrever(MAX_CARACTERES_DO_RESUMO - len(cabecalho))
+
+        teto = max(400, (MAX_CARACTERES_DO_RESUMO - 200) // len(self.paginas))
+        partes = [
+            f"Arquivo: {self.nome}",
+            f"Abas ({len(self.paginas)}): {', '.join(self.abas)}",
+            "A pergunta precisa dizer de qual aba se trata.",
+        ]
+        for pagina in self.paginas:
+            partes.append(f'\n## Aba "{pagina.nome}"\n' + pagina.descrever(teto))
+        return "\n".join(partes)
 
 
 @dataclass(frozen=True)
@@ -91,6 +139,9 @@ class PedidoDePreenchimento:
     coluna_chave: str
     chave_no_resultado: str
     colunas: tuple
+    # Em qual aba escrever. Vazio = a primeira, que é o caso da planilha de
+    # uma aba só e do CSV.
+    aba: str = ""
 
     @classmethod
     def do_plano(cls, bruto: dict) -> "PedidoDePreenchimento":
@@ -98,6 +149,7 @@ class PedidoDePreenchimento:
             coluna_chave=bruto["coluna_chave"],
             chave_no_resultado=bruto["chave_no_resultado"],
             colunas=tuple((c["coluna_destino"], c["valor_no_resultado"]) for c in bruto["colunas"]),
+            aba=(bruto.get("aba") or "").strip(),
         )
 
 
@@ -187,34 +239,30 @@ def _linhas_do_xlsx(dados: bytes) -> tuple:
         raise AnexoRecusado("Não consegui abrir esse arquivo como planilha.") from exc
 
     try:
-        aba = livro.worksheets[0]
-        abas = tuple(livro.sheetnames)
-        linhas = []
-        for linha in aba.iter_rows(values_only=True):
-            linhas.append(tuple(linha[:MAX_COLUNAS]))
-            if len(linhas) > MAX_LINHAS + 1:
-                raise AnexoRecusado(
-                    f"A planilha tem mais de {MAX_LINHAS:,} linhas.".replace(",", ".")
-                    + " Envie um recorte — por produto, período ou rede."
-                )
-        return linhas, aba.title, abas
+        total = 0
+        abas = []
+        for aba in livro.worksheets:
+            linhas = []
+            for linha in aba.iter_rows(values_only=True):
+                linhas.append(tuple(linha[:MAX_COLUNAS]))
+                total += 1
+                # O limite é da pasta de trabalho inteira, não de cada aba:
+                # é a memória do processo que está sendo protegida.
+                if total > MAX_LINHAS + len(livro.worksheets):
+                    raise AnexoRecusado(
+                        f"A planilha tem mais de {MAX_LINHAS:,} linhas.".replace(",", ".")
+                        + " Envie um recorte — por produto, período ou rede."
+                    )
+            abas.append((aba.title, linhas))
+        return abas
     finally:
         livro.close()
 
 
-def ler_estrutura(nome: str, dados: bytes) -> Estrutura:
-    """Cabeçalhos, tipos e amostra — o que o modelo precisa para propor o
-    casamento, e nada além disso."""
-    validar_nome(nome)
-
-    if _e_csv(nome):
-        linhas, aba, abas = _linhas_do_csv(dados), "", ()
-    else:
-        linhas, aba, abas = _linhas_do_xlsx(dados)
-
+def _pagina(nome_da_aba: str, linhas) -> Pagina | None:
     uteis = [l for l in linhas if any(v not in (None, "") for v in l)]
     if not uteis:
-        raise AnexoRecusado("A planilha está vazia.")
+        return None
 
     cabecalho = uteis[0]
     corpo = uteis[1:]
@@ -224,14 +272,22 @@ def ler_estrutura(nome: str, dados: bytes) -> Estrutura:
         valores = [linha[indice] if indice < len(linha) else None for linha in corpo]
         amostra = [v for v in valores[:LINHAS_DE_AMOSTRA] if v not in (None, "")]
         colunas.append(Coluna(nome=rotulo, tipo=_tipo(valores), exemplos=tuple(amostra)))
+    return Pagina(nome=nome_da_aba, colunas=tuple(colunas), linhas=len(corpo))
 
-    return Estrutura(
-        nome=nome,
-        aba=aba,
-        abas=abas,
-        colunas=tuple(colunas),
-        linhas=len(corpo),
-    )
+
+def ler_estrutura(nome: str, dados: bytes) -> Estrutura:
+    """Cabeçalhos, tipos e amostra de CADA aba — o que o modelo precisa para
+    propor o casamento, e nada além disso."""
+    validar_nome(nome)
+
+    brutas = [("", _linhas_do_csv(dados))] if _e_csv(nome) else _linhas_do_xlsx(dados)
+    # Aba vazia não entra no resumo: ela ocuparia espaço para dizer nada, e
+    # pasta de trabalho do Excel costuma carregar uma ou duas assim.
+    paginas = tuple(p for p in (_pagina(aba, linhas) for aba, linhas in brutas) if p)
+    if not paginas:
+        raise AnexoRecusado("A planilha está vazia.")
+
+    return Estrutura(nome=nome, paginas=paginas)
 
 
 def _para_celula(valor):
@@ -403,6 +459,22 @@ def _preencher_csv(nome, dados, pedido, casador) -> Preenchimento:
     return contagem.resultado(buffer.getvalue().encode("utf-8-sig"), nome)
 
 
+def _aba_pedida(livro, nome_da_aba: str):
+    """A aba que o plano indicou, casando pelo nome normalizado.
+
+    "Planilha 3" e "Planilha3" são a mesma aba para quem escreveu a pergunta;
+    exigir o nome exato faria a resposta falhar por um espaço."""
+    if not nome_da_aba:
+        return livro.worksheets[0]
+    procurado = normalizar(nome_da_aba).replace(" ", "")
+    for aba in livro.worksheets:
+        if normalizar(aba.title).replace(" ", "") == procurado:
+            return aba
+    raise AnexoRecusado(
+        f'A planilha não tem a aba "{nome_da_aba}". Abas: {", ".join(livro.sheetnames)}.'
+    )
+
+
 def _preencher_xlsx(nome, dados, pedido, casador) -> Preenchimento:
     from openpyxl import load_workbook
 
@@ -413,7 +485,7 @@ def _preencher_xlsx(nome, dados, pedido, casador) -> Preenchimento:
     except Exception as exc:
         raise AnexoRecusado("Não consegui abrir esse arquivo como planilha.") from exc
 
-    aba = livro.worksheets[0]
+    aba = _aba_pedida(livro, pedido.aba)
     linha_do_cabecalho = None
     for linha in aba.iter_rows(min_row=1, max_row=min(aba.max_row or 1, 20)):
         if any(c.value not in (None, "") for c in linha):
@@ -429,13 +501,13 @@ def _preencher_xlsx(nome, dados, pedido, casador) -> Preenchimento:
         raise AnexoRecusado(f'A planilha não tem a coluna "{pedido.coluna_chave}".')
 
     destinos = []
-    for destino, _ in pedido.colunas:
+    for destino, origem in pedido.colunas:
         indice = _indice_da_coluna(cabecalho, destino)
         if indice is None:
             indice = len(cabecalho)
             cabecalho.append(destino)
             aba.cell(row=numero_do_cabecalho, column=indice + 1, value=destino)
-        destinos.append(indice)
+        destinos.append((indice, e_percentual(destino) or e_percentual(origem)))
 
     contagem = _Contagem()
     for numero in range(numero_do_cabecalho + 1, (aba.max_row or 0) + 1):
@@ -444,8 +516,13 @@ def _preencher_xlsx(nome, dados, pedido, casador) -> Preenchimento:
             continue
         situacao, valores, no_banco = casador.casar(bruto)
         if contagem.registrar(bruto, situacao, no_banco):
-            for indice, valor in zip(destinos, valores):
-                aba.cell(row=numero, column=indice + 1, value=_para_celula(valor))
+            for (indice, percentual), valor in zip(destinos, valores):
+                celula = aba.cell(row=numero, column=indice + 1, value=_para_celula(valor))
+                # O número continua sendo 9,23 na célula: só o formato mostra
+                # o símbolo. Assim a soma e o gráfico do Excel seguem valendo,
+                # e quem abre o arquivo lê a unidade sem adivinhar.
+                if percentual and isinstance(celula.value, (int, float)):
+                    celula.number_format = FORMATO_PERCENTUAL
 
     buffer = io.BytesIO()
     livro.save(buffer)
@@ -495,7 +572,14 @@ def linhas_das_chaves(nome: str, dados: bytes, pedido: PedidoDePreenchimento, co
     if _e_csv(nome):
         uteis = [l for l in _linhas_do_csv(dados) if any(v not in (None, "") for v in l)]
     else:
-        brutas, _, _ = _linhas_do_xlsx(dados)
+        abas = _linhas_do_xlsx(dados)
+        # A aba é a mesma do preenchimento: pegar a primeira aqui e escrever
+        # na terceira lá devolveria a tabela de outra planilha.
+        procurada = normalizar(pedido.aba).replace(" ", "")
+        brutas = next(
+            (linhas for titulo, linhas in abas if normalizar(titulo).replace(" ", "") == procurada),
+            abas[0][1],
+        )
         uteis = [list(l) for l in brutas if any(v not in (None, "") for v in l)]
     if not uteis:
         return []

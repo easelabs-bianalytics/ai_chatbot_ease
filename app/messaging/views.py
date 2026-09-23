@@ -412,6 +412,34 @@ class MessageListCreateView(APIView):
         )
 
 
+class MessageCancelView(APIView):
+    """Interrompe uma pergunta que ainda está sendo respondida.
+
+    Só escreve o status; quem para de fato é o worker, que o lê entre as
+    etapas (`foi_interrompida`, no orquestrador). Não há nada a matar do
+    lado do banco de negócio: consulta em curso termina sozinha em
+    milissegundos e leitura no RDS não é cobrada por consulta.
+
+    O `update` filtrado é a garantia contra a corrida: se a resposta acabou
+    de ficar pronta, o status já não é mais "recebida" nem "em
+    processamento", nenhuma linha muda e a resposta entregue continua
+    valendo.
+    """
+
+    def post(self, request, conversation_id, message_id):
+        conversation = get_object_or_404(
+            Conversation.objects.visiveis(), pk=conversation_id, user=request.user
+        )
+        mensagem = get_object_or_404(
+            conversation.messages, pk=message_id, direction=Message.Direction.INBOUND
+        )
+        interrompida = Message.objects.filter(
+            pk=mensagem.pk,
+            status__in=(Message.Status.RECEIVED, Message.Status.PROCESSING),
+        ).update(status=Message.Status.CANCELLED)
+        return Response({"interrompida": bool(interrompida)})
+
+
 # Limite da planilha: bem acima das 500 linhas da conversa, porque o arquivo
 # não passa pela IA (não custa token), mas finito, para uma lista gigante
 # não pesar no banco de negócio. O tempo máximo da consulta continua valendo.

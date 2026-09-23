@@ -37,6 +37,10 @@ class Message(models.Model):
         PROCESSED = "processed", "Processada"
         SENT = "sent", "Entregue"
         FAILED = "failed", "Falhou"
+        # A pessoa apertou parar antes de a resposta ficar pronta. O worker
+        # lê este status entre as etapas e para onde estiver — o que já foi
+        # chamado continua registrado, com o custo, na auditoria.
+        CANCELLED = "cancelled", "Interrompida"
 
     conversation = models.ForeignKey(
         Conversation, on_delete=models.CASCADE, related_name="messages"

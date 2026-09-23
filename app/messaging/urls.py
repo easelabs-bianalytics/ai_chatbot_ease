@@ -5,6 +5,7 @@ from messaging.views import (
     ConversationDetailView,
     ConversationListCreateView,
     ConversationOrderView,
+    MessageCancelView,
     MessageExcelView,
     MessageListCreateView,
     MessageMiniaturaView,
@@ -31,6 +32,11 @@ urlpatterns = [
         "conversations/<int:conversation_id>/messages/<int:message_id>/excel/",
         MessageExcelView.as_view(),
         name="message-excel",
+    ),
+    path(
+        "conversations/<int:conversation_id>/messages/<int:message_id>/interromper/",
+        MessageCancelView.as_view(),
+        name="message-cancel",
     ),
     path("anexos/", AnexoView.as_view(), name="anexos"),
     path(

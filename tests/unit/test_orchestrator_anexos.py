@@ -15,7 +15,7 @@ from openpyxl import Workbook, load_workbook
 
 from ai_orchestrator import canned
 from ai_orchestrator.models import AICall, AIReply
-from ai_orchestrator.orchestrator import LINHAS_DO_PREENCHIMENTO, ROTULO_DA_IMAGEM, handle_message
+from ai_orchestrator.orchestrator import LINHAS_DO_PREENCHIMENTO, handle_message
 from ai_orchestrator.providers.base import AIProviderError
 from attachments import deposito
 from attachments.planilha import ler_estrutura
@@ -104,14 +104,18 @@ def test_imagem_e_lida_sem_planejador_e_sem_consulta(conversa, catalogo):
 
 def test_resposta_da_imagem_sai_rotulada_como_nao_sendo_do_banco(conversa, catalogo):
     """É o rótulo que substitui a ancoragem: número lido de print não tem
-    como ser conferido na base, e a pessoa precisa saber disso."""
+    como ser conferido na base, e a pessoa precisa saber disso.
+
+    O aviso é a decisão `IMAGE_READING`, que a tela mostra como "Leitura da
+    imagem". O parágrafo dizendo o mesmo em palavras saiu: ele aparecia em
+    toda leitura e adiava a resposta em três linhas.
+    """
     mensagem = _pergunta_com_anexo(conversa, Message.Anexo.IMAGEM, b"png", "print.png")
 
     reply = _responder(mensagem, catalogo, ScriptedAIProvider(leituras=[leitura("São 120 unidades.")]))
 
-    assert reply.reply_text.startswith(ROTULO_DA_IMAGEM)
-    assert "não do banco de dados" in reply.reply_text
-    assert reply.reply_text.endswith("São 120 unidades.")
+    assert reply.decision == AIReply.Decision.IMAGE_READING
+    assert reply.reply_text == "São 120 unidades."
 
 
 def test_imagem_e_descartada_depois_da_leitura(conversa, catalogo):

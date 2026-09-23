@@ -56,6 +56,8 @@ def test_preenchimento_de_varias_colunas_e_lido(catalogo):
             {"coluna_destino": "PX EASE YTD 2026", "valor_no_resultado": "px_ease"},
             {"coluna_destino": "UNIDADES EASE SELL OUT AGO/2026", "valor_no_resultado": "und"},
         ],
+        # Arquivo de uma aba só: o plano não precisa nomear nenhuma.
+        "aba": "",
     }
 
 

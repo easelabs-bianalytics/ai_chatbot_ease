@@ -15,7 +15,6 @@ from openpyxl import load_workbook
 
 from ai_orchestrator.context import PEDIDO_DE_SECAO
 from ai_orchestrator.models import AIReply
-from ai_orchestrator.orchestrator import ROTULO_DA_IMAGEM
 from attachments import deposito
 from datasource.executors.fake import FakeQueryExecutor
 from messaging.models import Message
@@ -54,8 +53,8 @@ def test_print_de_tabela_vira_planilha_e_e_preenchido_com_o_banco(conversa, cata
     assert linhas[1] == ("Pague Menos", 47.0)
     assert linhas[2] == ("Drogasil", 30.0)
     assert reply.raw_response["imagem"]["virou"] == "planilha"
-    # A resposta veio do banco: sem o rótulo de "li a imagem".
-    assert not reply.reply_text.startswith(ROTULO_DA_IMAGEM)
+    # A resposta veio do banco: a decisão não é a de leitura de imagem.
+    assert reply.decision != AIReply.Decision.IMAGE_READING
 
 
 def test_print_que_pede_conferencia_vira_pergunta_ao_banco(conversa, catalogo):
