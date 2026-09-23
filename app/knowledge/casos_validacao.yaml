@@ -417,6 +417,23 @@ casos:
       inteiro, e a fonte que ainda não chegou no mês atual sai dos dois lados. Conferido: 4.306
       (1–20/09) contra 4.716 (1–20/08), −8,7%; a resposta errada dizia −43,1%.
 
+  - id: B43-seguimento-todas-as-fontes
+    grupo: referencia
+    antes:
+      - Como estão as vendas da Ease Labs deste mês, comparado ao mesmo período do mês anterior?
+    pergunta: Inclui também as vendas extras, o Mercado Público e a Saúde Suplementar nessa comparação
+    esperado: answer_with_data
+    referencia: B43
+    sql_deve_conter: ["extras", "mp", "ss", "pbm"]
+    sql_nao_deve_conter: ["tem_extras"]
+    resposta_deve_conter: ["5.004"]
+    comparar_resultado: false
+    nota: >-
+      Conversa 15 de produção (2026-09-23). O seguimento pede todas as fontes: a IA repetiu a B17,
+      que tira dos dois lados a fonte sem carga no mês atual, devolveu o mesmo 4.306 × 4.716 e disse
+      que tinha considerado o Voucher. O certo soma tudo nos dois períodos (4.306 × 5.004, −14,0%) e
+      diz que Extras, MP e SS de setembro ainda estão zerados por falta de carga.
+
   - id: B03-gr-2tri26
     grupo: referencia
     pergunta: Quantas unidades vendeu a equipe de cada GR no segundo trimestre de 2026?

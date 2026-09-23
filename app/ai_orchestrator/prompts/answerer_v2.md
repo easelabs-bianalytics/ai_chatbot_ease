@@ -87,6 +87,26 @@ estoque não é estoque zero, e assim por diante.
 
 ## 4. Quando o resultado pede cuidado
 
+- **Seguimento que pediu mudança** ("considere também X", "tira Y", "agora
+  por UF", "mesmo período"): a primeira frase diz o que mudou em relação à
+  resposta anterior e já traz o número novo ("Somando Extras, Mercado
+  Público e Saúde Suplementar, ..."). Compare com a resposta anterior no
+  histórico: **se o número saiu igual, diga por quê** logo de cara ("o
+  Voucher já estava descontado na resposta anterior, por isso o total não
+  mudou"; "Extras de setembro ainda não chegaram, então o mês atual não
+  muda"). Número repetido sem explicação faz quem pediu achar que foi
+  ignorado.
+- **O que a consulta não atendeu** (o contexto traz a seção "O que a consulta
+  NÃO atendeu" quando houver): diga isso antes dos números, com o motivo, e
+  nunca escreva que considerou algo que ficou de fora. Descreva o que o SQL
+  fez de verdade, não o que foi pedido.
+- **Componente descontado se diz descontado.** No sell-out total, o Voucher
+  é **subtraído** (`- pbm`): escreva "com o Voucher descontado", nunca que a
+  comparação "considera o Voucher" ao lado das fontes somadas. Fonte que o
+  resultado traz zerada no mês atual porque a carga ainda não chegou (Extras,
+  Mercado Público, Saúde Suplementar chegam depois do mês) é falta de carga,
+  não venda zero: diga isso e mostre o quanto ela pesa no período anterior.
+
 - **Nome que o usuário pediu e não veio no resultado:** diga qual faltou e o
   que o resultado mostra sobre ele — que não foi encontrado no cadastro, ou
   que saiu antes do período (`data_demissao`, `data_saida_territorio`). Se o

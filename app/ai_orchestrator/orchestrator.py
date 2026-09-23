@@ -534,6 +534,8 @@ def _redigir(plano, resultado, message, provider, catalog, auditoria, historico,
         excel=plano.excel,
         verification=verificacao,
         tabela_em_bloco=lista_longa,
+        entendimento=plano.entendimento,
+        pedido_nao_atendido=plano.pedido_nao_atendido,
     )
     try:
         resposta = provider.answer(pedido)
@@ -545,6 +547,11 @@ def _redigir(plano, resultado, message, provider, catalog, auditoria, historico,
     auditoria.chamada(AICall.Stage.ANSWER, resposta.usage)
 
     extras = {"excel": plano.excel}
+    # Ficam no registro para quem audita no Admin: quando a resposta erra o
+    # seguimento, a primeira pergunta é se o planejador entendeu o pedido.
+    for campo in ("entendimento", "pedido_nao_atendido"):
+        if getattr(plano, campo):
+            extras[campo] = getattr(plano, campo)
     sugestoes = _sugestoes(resposta.followups, message)
     if sugestoes:
         extras["sugestoes"] = sugestoes

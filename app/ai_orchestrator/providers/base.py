@@ -104,6 +104,16 @@ class Plan:
     reference_query_id: str = ""
     clarification_question: str = ""
     reason: str = ""
+    # A pergunta como o planejador a entendeu, reescrita inteira — num
+    # seguimento, junta o que já estava na conversa com o que mudou. Sem
+    # este campo, "considere Extras, MP, SS e Voucher também" reaproveitou a
+    # consulta anterior quase igual e devolveu o mesmo número (conversa 15,
+    # 2026-09-23): nada obrigava o modelo a dizer o que tinha mudado.
+    entendimento: str = ""
+    # A parte do pedido que a consulta NÃO atende, e por quê (fonte sem
+    # carga, recorte que não existe, gráfico que não há). Vai para a redação,
+    # que abre a resposta dizendo isso em vez de fingir que atendeu.
+    pedido_nao_atendido: str = ""
     # Texto ao usuário em "não sei" e "fora de escopo": o documento de
     # referência pede orientações específicas (forecast vai para outro app,
     # meta ainda não está disponível) que um texto fixo não cobre.
@@ -165,6 +175,12 @@ class AnswerRequest:
     # Com isto preenchido, `sql`, `columns` e `rows` ficam vazios e a
     # redação escreve a análise que cruza as consultas.
     consultas: tuple = ()
+    # O que o planejador entendeu do pedido e o que a consulta deixou de
+    # fora (ver `Plan`). Sem isto a redação só via a pergunta solta e o
+    # resultado, e não tinha como perceber que o seguimento pediu uma
+    # mudança que não aconteceu.
+    entendimento: str = ""
+    pedido_nao_atendido: str = ""
 
 
 @dataclass(frozen=True)

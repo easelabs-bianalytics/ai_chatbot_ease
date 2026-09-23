@@ -1500,6 +1500,34 @@ Três achados, lidos no registro das conversas:
 
 - [ ] Ir ao ar junto com o resto da Fase 12
 
+### Seguimento que pede mudança (2026-09-23, conversa 15)
+
+- [x] **O incidente:** depois do comparativo setembro × agosto (B17), o
+      usuário pediu "considere Extras, Mercado Público, Saúde Suplementar e
+      Voucher também". A IA repetiu a B17 (que tira dos dois lados a fonte
+      sem carga no mês atual), devolveu o mesmo 4.306 × 4.716 e escreveu que
+      "considera CDD e Voucher". O mesmo padrão aparece em outras conversas:
+      o pedido explícito perde para o padrão do documento, em silêncio
+- [x] **Causa:** nada obrigava o planejador a dizer o que entendeu do
+      seguimento; o prompt tratava toda regra do documento como inviolável,
+      sem separar regra de dado (÷1000, fonte, filtros) de escolha padrão
+      (fontes, período, recorte); e a redação não sabia o que o pedido era
+- [x] Plano ganha `entendimento` (primeiro campo do schema, antes do SQL) e
+      `pedido_nao_atendido`; os dois vão para a redação e para o
+      `raw_response` (Admin)
+- [x] `planner_v2.md`: seção 2.1 (pedido explícito ganha da escolha padrão;
+      regra de dado vale sempre) e seção 8 (seguimento que pede mudança tem de
+      mudar a consulta; pedido já atendido se diz)
+- [x] `answerer_v2.md`: seguimento abre dizendo o que mudou, número igual ao
+      anterior se explica, nunca afirmar o que não foi feito, Voucher é
+      "descontado"
+- [x] Documento: nota na B17 (é padrão, não proibição) e nova **B43**, todas
+      as fontes componente a componente (4.306 × 5.004, −14,0%, conferido no
+      RDS); caso `B43-seguimento-todas-as-fontes`
+- [x] `uv run pytest`: 722 passaram. `run_synthetic_cases` nos casos B17 e B43
+      com o modelo real: as duas respostas certas (US$ 0,13)
+- [ ] Ir ao ar
+
 ---
 
 ## Plano de testes

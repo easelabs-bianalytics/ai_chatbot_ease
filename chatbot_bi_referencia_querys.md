@@ -680,6 +680,13 @@ ORDER BY 1 DESC, 2;
 - **Mesmas fontes dos dois lados.** Extras, Mercado Público e Saúde Suplementar chegam depois do
   mês: a que ainda não tem dado no mês atual sai também do anterior. Diga na resposta quais ficaram
   de fora (`fontes_fora`), e que o número não é o sell out total do mês.
+  O Voucher é **descontado** (`− pbm`), e a resposta diz isso.
+- **Isso é o padrão, não uma proibição.** Se o usuário pedir para incluir as fontes ("considere
+  Extras, Mercado Público e Saúde Suplementar também"), some **todas as fontes nos dois períodos**
+  e traga **cada componente por período** (`cdd`, `extras`, `mp`, `ss`, `voucher` e o total, uma
+  linha por período — B43). É o que mostra que a fonte do mês atual está zerada por falta de carga,
+  enquanto o mês anterior a tem — e por isso a variação do total não é comparável. Repetir a B17
+  e devolver o mesmo número foi o erro de 23/09/2026.
 - Por representante: some a mesma lógica agrupando pelo nome da `forca_vendas` (B02).
 
 ```sql
@@ -737,6 +744,54 @@ GROUP BY p.ini_atual, p.d, p.ini_anterior, p.fim_anterior, f.tem_extras, f.tem_m
 
 Conferido no RDS em 23/09/2026: corte em **20/09**, só o CDD já chegou em setembro; **4.306**
 unidades (1–20/09) contra **4.716** (1–20/08), **−8,7%**. Comparar com agosto inteiro dava −43%.
+
+*"Considere Extras, Mercado Público, Saúde Suplementar e Voucher também"* — o mesmo comparativo, com **todas as
+fontes nos dois períodos**, componente a componente:
+
+```sql
+-- B43 · Mês atual contra o mesmo período do mês anterior, com TODAS as fontes, componente a componente
+WITH corte AS (
+  SELECT MAX(date) AS d FROM cddd.vw_sell_out WHERE cdd > 0
+),
+periodos AS (
+  SELECT d,
+         date_trunc('month', d)::date                          AS ini_atual,
+         (date_trunc('month', d) - INTERVAL '1 month')::date   AS ini_anterior,
+         LEAST((date_trunc('month', d) - INTERVAL '1 month')::date + (d - date_trunc('month', d)::date),
+               date_trunc('month', d)::date - 1)               AS fim_anterior
+  FROM corte
+),
+por_periodo AS (
+  SELECT CASE WHEN s.date >= p.ini_atual THEN 'atual' ELSE 'anterior' END AS periodo,
+         MIN(s.date) AS de, MAX(s.date) AS ate,
+         SUM(s.cdd) AS cdd, SUM(s.extras) AS extras, SUM(s.mp) AS mp, SUM(s.ss) AS ss, SUM(s.pbm) AS pbm,
+         SUM(s.cdd + s.extras + s.mp + s.ss - s.pbm) AS todas,
+         SUM(s.cdd - s.pbm)                          AS so_cdd
+  FROM cddd.vw_sell_out s
+  CROSS JOIN periodos p
+  WHERE s.date BETWEEN p.ini_atual AND p.d
+     OR s.date BETWEEN p.ini_anterior AND p.fim_anterior
+  GROUP BY 1
+)
+-- uma linha por período, com cada componente; a variação vem calculada nas duas linhas
+SELECT periodo, de, ate,
+       ROUND(cdd::numeric, 2) AS cdd, ROUND(extras::numeric, 2) AS extras,
+       ROUND(mp::numeric, 2) AS mercado_publico, ROUND(ss::numeric, 2) AS saude_suplementar,
+       ROUND(pbm::numeric, 2) AS voucher_descontado,
+       ROUND(todas::numeric) AS total_todas_as_fontes,
+       ROUND(so_cdd::numeric) AS total_so_cdd,
+       ROUND((100 * (MAX(todas) FILTER (WHERE periodo = 'atual') OVER () - MAX(todas) FILTER (WHERE periodo = 'anterior') OVER ())
+             / NULLIF(MAX(todas) FILTER (WHERE periodo = 'anterior') OVER (), 0))::numeric, 1) AS var_todas_as_fontes_pct,
+       ROUND((100 * (MAX(so_cdd) FILTER (WHERE periodo = 'atual') OVER () - MAX(so_cdd) FILTER (WHERE periodo = 'anterior') OVER ())
+             / NULLIF(MAX(so_cdd) FILTER (WHERE periodo = 'anterior') OVER (), 0))::numeric, 1) AS var_so_cdd_pct
+FROM por_periodo
+ORDER BY periodo DESC;
+```
+
+Conferido no RDS em 23/09/2026: com todas as fontes, **4.306** (1–20/09) contra **5.004** (1–20/08),
+**−14,0%**; só CDD, −8,7%. A diferença é Extras (189), MP (33) e SS (66) de agosto, que em setembro
+ainda estão zerados por falta de carga. A resposta mostra os dois totais e diz que o −14,0% exagera a
+queda até essas fontes chegarem.
 
 #### Meta × resultado
 

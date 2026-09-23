@@ -135,6 +135,14 @@ class PassoEstruturado(BaseModel):
 
 
 class PlanoEstruturado(BaseModel):
+    # Primeiro campo de propósito: o modelo escreve na ordem do schema, e
+    # dizer o que entendeu ANTES de escrever o SQL é o que faz o seguimento
+    # mudar a consulta em vez de repetir a anterior (conversa 15, 2026-09-23).
+    entendimento: str = Field(
+        default="",
+        description="a pergunta reescrita inteira, como você a entendeu; num seguimento, "
+        "o que vem da conversa + o que o usuário mudou agora",
+    )
     intent: str = Field(
         description="answer_with_data, investigate, conversation, clarify, unknown ou out_of_scope; "
         "conclude só nas rodadas com achados"
@@ -144,6 +152,10 @@ class PlanoEstruturado(BaseModel):
     clarification_question: str = Field(default="", description="pergunta ao usuário")
     user_message: str = Field(default="", description="texto ao usuário em conversation, unknown e out_of_scope")
     reason: str = Field(default="", description="por que esta decisão e esta consulta")
+    pedido_nao_atendido: str = Field(
+        default="",
+        description="o que o usuário pediu e a consulta não faz, e por quê; vazio se atende tudo",
+    )
     excel: bool = Field(default=False, description="true se o usuário pediu os dados em Excel, planilha ou arquivo")
     preenchimento: PreenchimentoEstruturado = Field(
         default_factory=PreenchimentoEstruturado,
@@ -600,6 +612,8 @@ class OpenAIProvider(AIProvider):
             clarification_question=(conteudo.clarification_question or "").strip(),
             user_message=(conteudo.user_message or "").strip(),
             reason=(conteudo.reason or "").strip(),
+            entendimento=(getattr(conteudo, "entendimento", "") or "").strip(),
+            pedido_nao_atendido=(getattr(conteudo, "pedido_nao_atendido", "") or "").strip(),
             excel=bool(getattr(conteudo, "excel", False)),
             preenchimento=_preenchimento(conteudo, pedido=bool(request.planilha)),
             investigacao=_investigacao(conteudo) if intent == Plan.Intent.INVESTIGATE else (),
@@ -619,6 +633,17 @@ class OpenAIProvider(AIProvider):
         # não fechou — e uma queda aparente no último mês parece real.
         entrada += f"\n\n# Hoje\n\n{date.today():%d/%m/%Y}"
         entrada += f"\n\n# Pergunta do usuário\n\n{request.question}"
+        if request.entendimento:
+            entrada += f"\n\n# O que o usuário quer (leitura de quem escreveu a consulta)\n\n{request.entendimento}"
+        if request.pedido_nao_atendido:
+            # Vai com instrução, não só o texto: sem ela a redação descrevia a
+            # consulta como se tivesse feito o pedido (conversa 15).
+            entrada += (
+                "\n\n# O que a consulta NÃO atendeu\n\n"
+                + request.pedido_nao_atendido
+                + "\n\nDiga isso logo no começo da resposta, com o motivo, antes dos números. "
+                "Nunca escreva que considerou algo que está nesta lista."
+            )
         entrada += f"\n\n# Consulta executada\n\n```sql\n{request.sql}\n```"
         if request.reference_query_id:
             entrada += f"\n\n(baseada na consulta de referência {request.reference_query_id})"
