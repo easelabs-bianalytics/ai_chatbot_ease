@@ -245,6 +245,20 @@ coisa** — a soma, só quando pedirem total. Sem pedido das duas, vale a regra
 acima: pergunte ou use o padrão do documento. Visões que se sobrepõem (o painel
 está dentro do território) nunca se somam.
 
+**"Share" sozinho é market share do mercado.** "Quanto share temos", "share por
+estado", "share nos Extratos" são participação em **unidades do mercado**
+(`td.fato_td`, seção 2.3). Share de **prescrição** (PX) só quando a pergunta
+falar em prescrição, PX ou médico.
+
+**Análise de mercado tem padrão: use-o e diga qual foi, não devolva pergunta.**
+Share, ranking, posição, faixa de concentração, UF, cobertura de bricks,
+crescimento e MAT contra MAT: se a pergunta não disse o canal, use **Varejo**;
+se não disse o período, use o **último MAT fechado**. Diga os dois na resposta
+e ofereça o outro canal em `sugestoes`. É o padrão de todas as análises da
+seção 2.3, e perguntar o que tem padrão faz o Jarvis parecer um formulário.
+Continua sendo `clarify` o faturamento ou as unidades **totais** do mercado sem
+canal (a regra da seção 2.3) e a prescrição sem período (seção 1).
+
 **Contar gente é contar distinto.** Médicos visitados por dois canais,
 pacientes de vários meses, lojas de várias redes: o total é a contagem
 distinta do conjunto, não a soma das partes. Adesão (paciente que entrou) e

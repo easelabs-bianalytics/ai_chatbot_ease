@@ -325,6 +325,9 @@ casos:
     esperado: answer_with_data
     referencia: A21
     parametros: {rep: "MARTA"}
+    trocas:
+      - de: "AND p.cdglaboratorio = 'EAS'"
+        para: "AND p.cdglaboratorio = 'EAS' AND p.data >= '2026-01-01'"
     sql_deve_conter: ["unionall", "rx_cadastro_mais_recente", "utc_codigo"]
     nota: >-
       As duas visões foram pedidas: nada de clarify e nada de somar. O painel está dentro do
@@ -715,7 +718,10 @@ casos:
     trocas:
       - de: "classe='Isolado'"
         para: "classe='Extrato'"
-    sql_deve_conter: ["'extrato'", "202409"]
+    sql_deve_conter: ["'extrato'"]
+    nota: >-
+      Sem exigir o literal 202409: calcular os dois MATs pelo MAX da base também está certo
+      (2026-09-23, a IA fez assim e reprovou só por isso).
 
   - id: B37-ranking-extrato
     grupo: referencia
@@ -757,7 +763,11 @@ casos:
       - de: "-- AND m.classe = 'Isolado'"
         para: "AND m.classe = 'Isolado' --"
     sql_deve_conter: ["799", "286", "174.3"]
-    nota: Ticket da Ease é o preço fixo da empresa; o dos concorrentes vem do painel (valor_/und).
+    comparar_resultado: false
+    nota: >-
+      Ticket da Ease é o preço fixo da empresa; o dos concorrentes vem do painel (valor_/und).
+      Sem comparação automática: a IA filtra a classe e não repete a coluna, e o comparador
+      acusava diferença numa resposta certa (39 apresentações, de R$ 60,63 a R$ 799,00).
 
   - id: B41-cobertura-extrato
     grupo: referencia

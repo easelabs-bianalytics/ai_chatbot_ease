@@ -41,8 +41,18 @@ _TERMOS = {
     },
     "sell_out": {
         2: ("sell out", "sellout", "vendeu", "vendemos", "venda", "vendas", "dispens", "faturament",
-            "market share", "unidades", "ticket", "mercado publico", "saude suplementar", "extras", "cdd"),
-        1: ("mercado", "laboratori", "sku", "produto", "meta", "bateu", "realizado", "rede", "pdv"),
+            "market share", "unidades", "ticket", "mercado publico", "saude suplementar", "extras", "cdd",
+            # "Share" sozinho é market share. Só com o peso 1 da prescrição,
+            # "em quais estados temos mais share nos Extratos?" foi para o tema
+            # errado e a IA respondeu share de PX (2026-09-23, caso B38). Quem
+            # fala "share de PX" continua indo para a prescrição: "px " pesa 2.
+            # As classes (Isolado, Extrato) NÃO entram aqui: aparecem em todo
+            # tema, e "ruptura de Extrato" passaria a levar o Sell Out inteiro.
+            "share"),
+        1: ("mercado", "laboratori", "sku", "produto", "meta", "bateu", "realizado", "rede", "pdv",
+            # "crescemos em relação ao MAT passado?" não tinha termo nenhum;
+            # com a pontuação colada, sem pegar "matriz" ou "material"
+            " mat ", " mat?", " mat.", " mat,"),
     },
     "estoque": {
         2: ("estoque", "ruptura", "carga", "recebiment", "dde", "centro de distribuic", " cd ", "cd ",

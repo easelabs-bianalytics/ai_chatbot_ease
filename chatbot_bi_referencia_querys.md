@@ -1291,6 +1291,9 @@ parâmetros que o usuário não disse:**
 | **Período** | MAT (12 meses fechados), trimestre, mês, YTD |
 | **Laboratório** | `EASE LABS` ou qualquer concorrente da `cddd.fab` |
 
+**Padrão quando a pergunta não disser:** canal **Varejo** e período **último MAT fechado**. Use o
+padrão, diga na resposta qual foi e ofereça o outro canal — não devolva uma pergunta.
+
 Regras que valem para todas:
 
 - **Share = parte ÷ total da mesma classe no mesmo canal.** Nunca misture canais no denominador.
