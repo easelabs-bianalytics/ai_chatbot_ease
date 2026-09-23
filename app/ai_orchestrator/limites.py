@@ -45,6 +45,13 @@ SEM_LIMITE = frozenset({
     "fernando.franco@easelabs.com.br",
 })
 
+# Contas internas, que não são gente. A suíte de validação
+# (reporting/synthetic.py) faz ~150 perguntas numa rodada; com a cota padrão de
+# 7 por dia ela parava no oitavo caso — foi assim em 2026-09-23. Só existem na
+# máquina de quem roda a suíte: em produção o login por código grava o e-mail
+# como username, então ninguém entra com este nome.
+CONTAS_INTERNAS = frozenset({"validacao_sintetica"})
+
 # Uso frequente: consultam o Jarvis como parte do trabalho do dia.
 COM_MAIS_CONSULTAS = frozenset({
     "renato.avilla@easelabs.com.br",
@@ -83,7 +90,7 @@ def _identidades(user) -> set:
 def limite_de(user) -> tuple[int, int] | None:
     """(por dia, por semana), ou None para quem não tem limite."""
     identidades = _identidades(user)
-    if identidades & SEM_LIMITE:
+    if identidades & (SEM_LIMITE | CONTAS_INTERNAS):
         return None
     if identidades & COM_MAIS_CONSULTAS:
         return LIMITE_COM_MAIS_CONSULTAS, SEMANAL_COM_MAIS_CONSULTAS

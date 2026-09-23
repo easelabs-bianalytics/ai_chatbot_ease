@@ -321,7 +321,7 @@ casos:
 
   - id: A21-painel-e-territorio-marta
     grupo: referencia
-    pergunta: Quero a PX Ease da Marta Eloisa mês a mês, tanto do painel quanto do território, as duas.
+    pergunta: Quero a PX Ease da Marta Eloisa mês a mês em 2026, tanto do painel quanto do território, as duas.
     esperado: answer_with_data
     referencia: A21
     parametros: {rep: "MARTA"}
@@ -689,7 +689,7 @@ casos:
 
   - id: B34-faixas-mercado-publico
     grupo: referencia
-    pergunta: Em qual faixa de concentração a Ease é mais forte no Mercado Público?
+    pergunta: Em qual faixa de concentração a Ease é mais forte no Mercado Público, no último MAT?
     esperado: answer_with_data
     referencia: B34
     trocas:

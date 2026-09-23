@@ -87,6 +87,17 @@ def test_time_do_produto_nao_tem_limite(django_user_model):
         assert limites.limite_de(_pessoa(django_user_model, email)) is None
 
 
+def test_suite_de_validacao_nao_tem_limite(django_user_model):
+    """A suíte roda ~150 casos com o mesmo usuário. Com a cota padrão ela
+    parou no oitavo caso (2026-09-23), e os outros saíram como reprovados por
+    `limite_diario_da_pessoa` — defeito do teste, não da IA."""
+    from reporting.synthetic import USUARIO_DA_VALIDACAO
+
+    assert USUARIO_DA_VALIDACAO in limites.CONTAS_INTERNAS
+    usuario = django_user_model.objects.create_user(USUARIO_DA_VALIDACAO, password="x")
+    assert limites.limite_de(usuario) is None
+
+
 def test_uso_frequente_tem_o_limite_folgado(django_user_model):
     for email in limites.COM_MAIS_CONSULTAS:
         pessoa = _pessoa(django_user_model, email)
