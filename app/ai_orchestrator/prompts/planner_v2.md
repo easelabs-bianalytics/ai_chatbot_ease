@@ -78,6 +78,13 @@ Menos" está como `FARMACIA PAGUE MENOS`; o mesmo representante é
 o usuário digitou, não acha ninguém — enquanto `ILIKE '%HERMES%'` acha.
 Quando a pergunta cita duas pessoas, cada uma entra com o seu pedaço.
 
+**O nome do representante está em `cddd.forca_vendas.desc_territorio`, e só
+ali.** É o nome que o time usa. Para vender, visitar ou prescrever "por
+representante", o nome vem sempre dessa coluna, ligada pelo `cod_territorio`
+(`forca_vendas.cod_territorio` é **texto**; na `vw_sell_out` ele é inteiro:
+`s.cod_territorio::text`). `nome_abreviado_ct` e `dim_ct` não servem de nome;
+a `dim_ct` só diz se a pessoa foi desligada (`data_demissao`).
+
 Quando a pergunta cita uma pessoa pelo nome (representante, GR, médico),
 traga a coluna com o nome completo no `SELECT`. O documento manda perguntar
 qual é quando o nome casa com mais de uma pessoa ("Alexandre"), e é essa
@@ -221,6 +228,26 @@ tirar o HOSPITALAR, chegar ao laboratório pela cadeia de produto). Quando
 comparar períodos, **a mesma fonte e a mesma medida** nos dois. E nunca misture
 duas bases numa mesma coluna: sell-out Ease e mercado TD são números
 diferentes, lado a lado, cada um com o seu nome.
+
+**Mês parcial contra o mesmo período do mês anterior: mesmos dias, mesmas
+fontes.** O período anterior vai do dia 1 do mês anterior até **o mesmo dia**
+da data de corte — nunca o mês inteiro. A data de corte é o último dia com CDD
+(a fonte que chega todo dia). E as outras fontes do sell out (extras, Mercado
+Público, Saúde Suplementar) chegam depois: uma fonte que **ainda não tem dado
+no mês atual sai dos dois lados**, senão o mês parcial parece despencar. Use a
+**B17** e diga na resposta o período dos dois lados e quais fontes ficaram de
+fora. Em 2026-09-23 a comparação pegou agosto inteiro e mostrou uma queda de
+43% que era de 8,7%.
+
+**Data de corte não é medida.** "Veja o último dia do CDD" define **até
+quando** comparar; a medida continua a que a pessoa pediu (sell out total).
+Se a medida precisar mudar — como no mês parcial acima —, diga isso na
+resposta, com o motivo. Trocar de medida em silêncio faz o número mudar de
+uma resposta para a outra sem que a pessoa saiba por quê.
+
+**Data + dias só com `date`.** `data - INTERVAL '1 month'` devolve
+**timestamp**, e timestamp + inteiro dá erro no Postgres. Converta antes:
+`(date_trunc('month', d) - INTERVAL '1 month')::date + (d - date_trunc('month', d)::date)`.
 
 **Quando duas leituras oficiais dão números diferentes, pergunte.** É `clarify`
 sempre que a resposta muda conforme a leitura e a pergunta não disse qual:

@@ -25,6 +25,12 @@ usuário escreveu, não acha nenhum dos dois. O mesmo vale para rede (`PAGUE MEN
 cidade (`cddd.utc.cidade` é sem acento) e produto. Se o pedaço trouxer mais de um, **mostre os que
 encontrou e pergunte qual**; não escolha por conta própria.
 
+**Nome de representante é `cddd.forca_vendas.desc_territorio`, e só ali.** Qualquer pergunta
+"por representante" — venda, visita, prescrição, cobertura — traz o nome dessa coluna, ligada pelo
+`cod_territorio` (texto na `forca_vendas`, inteiro na `vw_sell_out`: `s.cod_territorio::text`).
+`nome_abreviado_ct` e `dim_ct` não são o nome do representante; a `dim_ct` serve para saber se ele
+foi desligado.
+
 **Nenhuma linha não é zero.** Consulta que volta vazia quase nunca significa "não houve venda":
 na maioria das vezes o nome não casou, a pessoa não estava ativa no período, ou o período não tem
 carga. Antes de concluir qualquer coisa, verifique — numa consulta de checagem, não no chute:
@@ -604,12 +610,17 @@ ORDER BY mes DESC;
 
 ```sql
 -- B02 · Sell Out Ease Total por representante
-WITH rep AS (
-  SELECT s.nome_abreviado_ct AS representante,
+WITH nomes AS (
+  -- o nome do representante é o da forca_vendas (desc_territorio), e só ele
+  SELECT DISTINCT cod_territorio, desc_territorio FROM cddd.forca_vendas
+),
+rep AS (
+  SELECT COALESCE(n.desc_territorio, 'SEM TERRITÓRIO ATUAL') AS representante,
          SUM(s.cdd + s.extras + s.mp + s.ss - s.pbm) AS total_bruto
   FROM cddd.vw_sell_out s
+  LEFT JOIN nomes n ON n.cod_territorio = s.cod_territorio::text   -- texto × inteiro
   WHERE s.date >= :data_ini AND s.date < :data_fim    -- data_fim = 1º dia do mês seguinte
-  -- AND s.nome_abreviado_ct ILIKE '%' || :rep || '%' -- um representante específico
+  -- AND n.desc_territorio ILIKE '%' || :rep || '%'    -- um representante específico
   GROUP BY 1
 )
 SELECT representante,
@@ -658,6 +669,74 @@ WHERE s.date >= :data_ini AND s.date < :data_fim
 GROUP BY 1, 2
 ORDER BY 1 DESC, 2;
 ```
+
+#### Mês atual contra o mesmo período do mês anterior
+
+*"Como estão as vendas deste mês, comparado ao mesmo período do mês anterior?"*
+
+- **Data de corte = último dia com CDD**, a fonte que chega todo dia.
+- **Mesmo período = do dia 1 ao mesmo dia** do mês anterior, nunca o mês inteiro (31/03 vira o
+  último dia de fevereiro).
+- **Mesmas fontes dos dois lados.** Extras, Mercado Público e Saúde Suplementar chegam depois do
+  mês: a que ainda não tem dado no mês atual sai também do anterior. Diga na resposta quais ficaram
+  de fora (`fontes_fora`), e que o número não é o sell out total do mês.
+- Por representante: some a mesma lógica agrupando pelo nome da `forca_vendas` (B02).
+
+```sql
+-- B17 · Mês atual até a data de corte contra o mesmo período do mês anterior
+WITH corte AS (
+  -- o último dia com CDD é a data de corte: é a fonte que chega todo dia
+  SELECT MAX(date) AS d FROM cddd.vw_sell_out WHERE cdd > 0
+),
+periodos AS (
+  SELECT d,
+         date_trunc('month', d)::date                          AS ini_atual,
+         (date_trunc('month', d) - INTERVAL '1 month')::date   AS ini_anterior,
+         -- mesmo dia do mês anterior; 31/03 vira 28 ou 29/02, sem invadir março
+         LEAST((date_trunc('month', d) - INTERVAL '1 month')::date + (d - date_trunc('month', d)::date),
+               date_trunc('month', d)::date - 1)               AS fim_anterior
+  FROM corte
+),
+base AS (
+  SELECT CASE WHEN s.date >= p.ini_atual THEN 'atual' ELSE 'anterior' END AS periodo,
+         SUM(s.cdd) AS cdd, SUM(s.extras) AS extras, SUM(s.mp) AS mp, SUM(s.ss) AS ss, SUM(s.pbm) AS pbm
+  FROM cddd.vw_sell_out s
+  CROSS JOIN periodos p
+  WHERE s.date BETWEEN p.ini_atual AND p.d
+     OR s.date BETWEEN p.ini_anterior AND p.fim_anterior
+  GROUP BY 1
+),
+fontes AS (
+  -- fonte que ainda não chegou no mês atual sai dos DOIS lados
+  SELECT COALESCE(MAX(extras) FILTER (WHERE periodo = 'atual'), 0) > 0 AS tem_extras,
+         COALESCE(MAX(mp)     FILTER (WHERE periodo = 'atual'), 0) > 0 AS tem_mp,
+         COALESCE(MAX(ss)     FILTER (WHERE periodo = 'atual'), 0) > 0 AS tem_ss
+  FROM base
+),
+comparavel AS (
+  SELECT b.periodo,
+         b.cdd + CASE WHEN f.tem_extras THEN b.extras ELSE 0 END
+               + CASE WHEN f.tem_mp     THEN b.mp     ELSE 0 END
+               + CASE WHEN f.tem_ss     THEN b.ss     ELSE 0 END
+               - b.pbm AS bruto
+  FROM base b CROSS JOIN fontes f
+)
+SELECT p.ini_atual, p.d AS data_corte, p.ini_anterior, p.fim_anterior,
+       ROUND(MAX(c.bruto) FILTER (WHERE c.periodo = 'atual')) AS unidades_atual,
+       ROUND(MAX(c.bruto) FILTER (WHERE c.periodo = 'anterior')) AS unidades_anterior,
+       ROUND(MAX(c.bruto) FILTER (WHERE c.periodo = 'atual') - MAX(c.bruto) FILTER (WHERE c.periodo = 'anterior')) AS variacao,
+       ROUND((100 * (MAX(c.bruto) FILTER (WHERE c.periodo = 'atual') - MAX(c.bruto) FILTER (WHERE c.periodo = 'anterior'))
+             / NULLIF(MAX(c.bruto) FILTER (WHERE c.periodo = 'anterior'), 0))::numeric, 1) AS variacao_pct,
+       concat_ws(', ', 'CDD', CASE WHEN f.tem_extras THEN 'extras' END,
+                 CASE WHEN f.tem_mp THEN 'Mercado Público' END, CASE WHEN f.tem_ss THEN 'Saúde Suplementar' END) AS fontes_comparadas,
+       concat_ws(', ', CASE WHEN NOT f.tem_extras THEN 'extras' END,
+                 CASE WHEN NOT f.tem_mp THEN 'Mercado Público' END, CASE WHEN NOT f.tem_ss THEN 'Saúde Suplementar' END) AS fontes_fora
+FROM periodos p CROSS JOIN fontes f CROSS JOIN comparavel c
+GROUP BY p.ini_atual, p.d, p.ini_anterior, p.fim_anterior, f.tem_extras, f.tem_mp, f.tem_ss;
+```
+
+Conferido no RDS em 23/09/2026: corte em **20/09**, só o CDD já chegou em setembro; **4.306**
+unidades (1–20/09) contra **4.716** (1–20/08), **−8,7%**. Comparar com agosto inteiro dava −43%.
 
 #### Meta × resultado
 

@@ -174,7 +174,8 @@ def test_do_terceiro_tema_em_diante_vai_o_resumo(catalogo):
     # ~US$ 0,012 por pergunta de vendas pelo custo real de set/26. Decisão
     # consciente de custo; se passar disso, o caminho é a seção própria.
     # 28 mil a partir da A21 (painel e território lado a lado, 2026-09-23).
-    assert contexto.tokens_estimados < 28000
+    # 29 mil com a B17 (mês parcial contra o mesmo período, 2026-09-24).
+    assert contexto.tokens_estimados < 29000
 
 
 def test_schema_vai_filtrado_pelas_tabelas_do_tema(catalogo):
@@ -197,7 +198,8 @@ def test_sem_tema_reconhecido_vai_so_o_nucleo(catalogo):
     # Era 3 mil. O preâmbulo ganhou em 2026-09-23 o roteiro de raciocínio
     # para pergunta sem consulta pronta (~1,1 mil tokens, ~US$ 0,002 por
     # pergunta): é o único lugar que chega à IA em todo tema.
-    assert contexto.tokens_estimados < 3500
+    # 3,7 mil com a regra do nome do representante no preâmbulo (2026-09-24).
+    assert contexto.tokens_estimados < 3700
 
 
 def test_segunda_tentativa_pede_o_documento_inteiro(catalogo):
