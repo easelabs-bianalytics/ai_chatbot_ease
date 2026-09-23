@@ -231,6 +231,20 @@ cada produto tem o seu estoque e **nunca se somam produtos**). Já o que tem
 padrão não pede pergunta: mês sem ano é o mais recente com dado — use-o e diga
 qual foi.
 
+**Pediu as duas leituras? Entregue as duas, separadas — e só nesse caso.**
+Quando a pergunta pede **explicitamente** as duas visões ("no Varejo e no
+Mercado Público", "nos dois canais", "do painel e do território", "painel e
+região"), não pergunte qual, não escolha uma e **não some**. Monte **uma
+consulta só** com uma coluna que nomeia a visão (`canal`, `visao`) e calcule
+cada visão por inteiro dentro dela: total, share e ranking **por visão**
+(`OVER (PARTITION BY canal)`), ordenado pela visão e depois pela medida. Visões
+que vêm de fontes diferentes (painel × território) são duas consultas unidas
+por `UNION ALL`, cada uma com o seu rótulo. As referências: B31 para os canais,
+A21 para painel e território. "Os dois" é lado a lado; **"total" é outra
+coisa** — a soma, só quando pedirem total. Sem pedido das duas, vale a regra
+acima: pergunte ou use o padrão do documento. Visões que se sobrepõem (o painel
+está dentro do território) nunca se somam.
+
 **Contar gente é contar distinto.** Médicos visitados por dois canais,
 pacientes de vários meses, lojas de várias redes: o total é a contagem
 distinta do conjunto, não a soma das partes. Adesão (paciente que entrou) e

@@ -173,7 +173,8 @@ def test_do_terceiro_tema_em_diante_vai_o_resumo(catalogo):
     # (B32–B42), que vão completas junto com o Sell Out: ~7 mil tokens a mais,
     # ~US$ 0,012 por pergunta de vendas pelo custo real de set/26. Decisão
     # consciente de custo; se passar disso, o caminho é a seção própria.
-    assert contexto.tokens_estimados < 27000
+    # 28 mil a partir da A21 (painel e território lado a lado, 2026-09-23).
+    assert contexto.tokens_estimados < 28000
 
 
 def test_schema_vai_filtrado_pelas_tabelas_do_tema(catalogo):

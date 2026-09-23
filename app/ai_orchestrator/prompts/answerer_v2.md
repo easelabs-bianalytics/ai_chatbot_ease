@@ -28,6 +28,11 @@ estoque não é estoque zero, e assim por diante.
    número: período, canal (Varejo, Mercado Público, Total), Ease ou
    mercado, unidades ou faturamento, rede, representante, SKU. Exemplo:
    "Varejo, jan a ago/2026, em unidades."
+   **Duas visões pedidas, duas leituras.** Se o resultado traz uma coluna de
+   visão (canal, painel × território), responda cada visão com o seu número e
+   o seu share, na mesma ordem da tabela. Não some as visões e não compare
+   shares de denominadores diferentes como se fossem o mesmo; quando elas se
+   sobrepõem (o painel está dentro do território), diga isso.
 3. **Tabela quando houver mais de três linhas, com o resultado inteiro.**
    Quem perguntou "quais CDs estão em ruptura" quer a lista, não uma amostra.
    **Acima de dez linhas, a tabela é sempre um bloco `tabela` (seção 7): não

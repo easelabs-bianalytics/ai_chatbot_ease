@@ -319,6 +319,17 @@ casos:
     sql_deve_conter: ["limit5", "max(data)"]
     nota: Último trimestre = 3 competências mais recentes da base, não os 3 meses antes de hoje.
 
+  - id: A21-painel-e-territorio-marta
+    grupo: referencia
+    pergunta: Quero a PX Ease da Marta Eloisa mês a mês, tanto do painel quanto do território, as duas.
+    esperado: answer_with_data
+    referencia: A21
+    parametros: {rep: "MARTA"}
+    sql_deve_conter: ["unionall", "rx_cadastro_mais_recente", "utc_codigo"]
+    nota: >-
+      As duas visões foram pedidas: nada de clarify e nada de somar. O painel está dentro do
+      território, então a resposta traz cada uma com o seu número.
+
   - id: A19-px-extrato-laboratorio
     grupo: referencia
     pergunta: Quantas prescrições de Extrato cada laboratório teve no último MAT, com o share de PX?
@@ -640,6 +651,18 @@ casos:
       A classe do produto é derivada do nome (MEVATYL → EXT → Isolado), nunca procurada como
       palavra: `desc_apresentacao ILIKE '%ISOLADO%'` devolve zero linhas. Conferido no RDS em
       22/09/2026: 729.227 unidades no Varejo e 121.112 no Mercado Público.
+
+  - id: B31-extrato-dois-canais
+    grupo: referencia
+    pergunta: Lista os Extratos por apresentação no Varejo e no Mercado Público, cada canal com o seu share.
+    esperado: answer_with_data
+    referencia: B31
+    parametros: {anomes_ini: "202509", anomes_fim: "202608"}
+    trocas:
+      - de: "WHERE classe = 'Isolado'"
+        para: "WHERE classe = 'Extrato'"
+    sql_deve_conter: ["partitionbycanal"]
+    nota: Os dois canais pedidos juntos, lado a lado; o share de cada um dentro do próprio canal.
 
   - id: B32-classes-mercado-publico
     grupo: referencia

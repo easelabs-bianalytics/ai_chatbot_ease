@@ -374,6 +374,32 @@ GROUP BY 1
 ORDER BY 1 DESC;
 ```
 
+**Pediram as duas** ("do painel e do território", "painel e região"): uma consulta só, com
+as duas visões rotuladas e **nunca somadas** — o painel está dentro do território. Hermes,
+ago/26: 157 PX no painel e 307 no território.
+
+```sql
+-- A21 · PX do PAINEL e do TERRITÓRIO do representante, lado a lado
+SELECT 'Painel' AS visao, p.data, SUM(p.px1) AS px
+FROM audit.prescricao p
+JOIN audit.medico m ON m.cdgmedico = p.cdgmedico
+WHERE m.crm IN (
+        SELECT r.crm_link FROM audit.rx_cadastro_mais_recente r
+        WHERE r.setor_cliente IN (SELECT DISTINCT cod_territorio FROM cddd.forca_vendas
+                                  WHERE desc_territorio ILIKE '%' || :rep || '%'))
+  AND p.cdglaboratorio = 'EAS'
+GROUP BY 1, 2
+UNION ALL
+SELECT 'Território (bricks)' AS visao, p.data, SUM(p.px1) AS px
+FROM audit.prescricao p
+JOIN audit.medico m ON m.cdgmedico = p.cdgmedico
+WHERE m.utc_codigo IN (SELECT cod_utc FROM cddd.forca_vendas
+                       WHERE desc_territorio ILIKE '%' || :rep || '%')
+  AND p.cdglaboratorio = 'EAS'
+GROUP BY 1, 2
+ORDER BY 1, 2 DESC;
+```
+
 ### Gerente regional (GR)
 
 GR é o líder dos representantes. Hierarquia: `cddd.fv_distrito` (`desc_distrito` = nome do GR) →
@@ -1211,7 +1237,8 @@ LIMIT 10;
 *"Quantas unidades de Produtos Isolados foram vendidas no MAT, com o market share?"*
 
 Junta tudo que esta seção tem de regra: a classificação pelo nome, o `COALESCE` com
-`td.apres`, os dois canais e o share dentro de cada canal. Para Extrato ou Mevatyl, troque
+`td.apres`, os dois canais e o share dentro de cada canal. **É a consulta quando pedirem
+Varejo e Mercado Público juntos**: cada canal com o seu total e o seu share, nunca somados. Para Extrato ou Mevatyl, troque
 só o `WHERE classe`.
 
 ```sql
