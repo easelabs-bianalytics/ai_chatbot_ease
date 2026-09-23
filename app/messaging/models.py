@@ -94,3 +94,37 @@ class Message(models.Model):
 
     def __str__(self):
         return f"Mensagem #{self.pk} ({self.get_direction_display()})"
+
+
+class Avaliacao(models.Model):
+    """👍 ou 👎 de quem perguntou, numa resposta do Jarvis.
+
+    Até 2026-09-23 um erro só aparecia quando alguém lia as conversas no
+    banco à mão. Com isto cada 👎 — com "o que estava errado" — vira rascunho
+    de caso de validação (`casos_do_uso`), e a suíte passa a medir se o
+    Jarvis está melhorando, em vez de alguém achar.
+
+    Uma por resposta: a conversa é de uma pessoa só, e trocar de ideia
+    sobrescreve a anterior.
+    """
+
+    class Nota(models.TextChoices):
+        UTIL = "up", "Útil"
+        ERRADA = "down", "Errada"
+
+    message = models.OneToOneField(Message, on_delete=models.CASCADE, related_name="avaliacao")
+    nota = models.CharField(max_length=10, choices=Nota.choices)
+    comentario = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    # Quando o 👎 foi exportado como rascunho de caso: o comando não repete
+    # o que o time de BI já revisou.
+    caso_exportado_em = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-id"]
+        verbose_name = "avaliação de resposta"
+        verbose_name_plural = "avaliações de resposta"
+
+    def __str__(self):
+        return f"{self.get_nota_display()} na mensagem #{self.message_id}"

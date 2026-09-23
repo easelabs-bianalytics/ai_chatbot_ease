@@ -42,6 +42,12 @@ class Command(BaseCommand):
         parser.add_argument("--caso", action="append", default=[], help="Roda só este caso (repetível).")
         parser.add_argument("--grupo", action="append", default=[], help="Roda só este grupo (repetível).")
         parser.add_argument(
+            "--com-rascunhos",
+            action="store_true",
+            dest="com_rascunhos",
+            help="Roda também os rascunhos vindos dos 👎 (casos_do_uso.yaml), ainda sem revisão.",
+        )
+        parser.add_argument(
             "--so-gabarito",
             action="store_true",
             dest="so_gabarito",
@@ -66,6 +72,8 @@ class Command(BaseCommand):
             for c in suite.casos
             if (not options["caso"] or c.id in options["caso"])
             and (not options["grupo"] or c.grupo in options["grupo"])
+            # Rascunho só roda se pedido, ou se foi escolhido pelo id.
+            and (not c.rascunho or options["com_rascunhos"] or c.id in options["caso"])
         ]
         if not casos:
             raise CommandError("nenhum caso selecionado")

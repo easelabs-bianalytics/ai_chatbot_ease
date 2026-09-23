@@ -79,6 +79,9 @@ class PlanRequest:
     # concluir.
     achados: str = ""
     rodada: int = 1
+    # Autocrítica do seguimento (`autocritica.py`): o plano anterior disse
+    # que mudava o dado e devolveu os mesmos números da resposta anterior.
+    autocritica_note: str = ""
 
 
 @dataclass(frozen=True)
@@ -114,6 +117,16 @@ class Plan:
     # carga, recorte que não existe, gráfico que não há). Vai para a redação,
     # que abre a resposta dizendo isso em vez de fingir que atendeu.
     pedido_nao_atendido: str = ""
+    # Num seguimento, o que ele pede: "muda_o_dado" (incluir, tirar, trocar
+    # fonte, período, recorte ou medida), "so_apresentacao" (gráfico,
+    # formato, ordem) ou "repete". Vazio em pergunta nova. É o que diz à
+    # autocrítica quando um resultado igual ao anterior é erro.
+    seguimento: str = ""
+    # Pedido com entregas diferentes (ADR-0026, ponto B): "a evolução E o
+    # ranking" são duas consultas, cada uma com o seu título —
+    # ({"titulo", "sql", "reference_query_id"}, ...). Com duas ou mais, `sql`
+    # fica vazio; "duas visões" da mesma medida continua sendo uma consulta.
+    consultas: tuple = ()
     # Texto ao usuário em "não sei" e "fora de escopo": o documento de
     # referência pede orientações específicas (forecast vai para outro app,
     # meta ainda não está disponível) que um texto fixo não cobre.
@@ -175,6 +188,9 @@ class AnswerRequest:
     # Com isto preenchido, `sql`, `columns` e `rows` ficam vazios e a
     # redação escreve a análise que cruza as consultas.
     consultas: tuple = ()
+    # As consultas acima são as entregas de um pedido com várias (ADR-0026),
+    # não as hipóteses de uma investigação: a redação responde a cada uma.
+    entregas: bool = False
     # O que o planejador entendeu do pedido e o que a consulta deixou de
     # fora (ver `Plan`). Sem isto a redação só via a pergunta solta e o
     # resultado, e não tinha como perceber que o seguimento pediu uma

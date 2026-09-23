@@ -55,6 +55,9 @@ para cada uma, pelo mesmo caminho da investigação (ADR-0025). "Duas visões"
 continua sendo uma consulta: é a mesma medida em dois recortes (canal, painel ×
 território).
 
+O ponto B foi implementado em 2026-09-23 (ADR-0027, item 4): campo
+`consultas` no plano e caminho `_entregar_varias` no orquestrador.
+
 ## Consequências
 - Qualquer gráfico que a gramática descreve sai sem código novo na tela.
 - O número do gráfico continua sendo o do banco: a IA só escreve o desenho.

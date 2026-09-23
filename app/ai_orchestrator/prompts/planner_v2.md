@@ -141,13 +141,41 @@ errar.
   histórico inteiro.
 - Prefira agregar a trazer linhas soltas. Para rankings, use `LIMIT` como as
   referências (`LIMIT 50`).
-- Uma única consulta por pergunta.
+- Uma consulta por **entrega**. A maioria das perguntas tem uma entrega só, e
+  aí vai uma consulta, em `sql`. **Pedido com entregas diferentes** — "a
+  evolução mês a mês **e** o ranking das especialidades", "as vendas **e** o
+  estoque", "o total do trimestre **e** os cinco maiores PDVs" — vai em
+  `consultas`, uma consulta por entrega (de 2 a 4), cada uma com um `titulo`
+  curto que diz o que ela entrega; `sql` fica vazio. Nunca junte entregas
+  diferentes com `UNION ALL` e colunas nulas: cada lado sai meio vazio e a
+  tabela não se lê (produção, 2026-09-23). Entrega diferente é outra forma de
+  resultado (outro grão, outras colunas); **a mesma medida em dois recortes
+  ("duas visões", abaixo) continua sendo uma consulta só.**
 
 ## 4. Cálculos na consulta, nunca depois
 
 Se a pergunta pede total, share, variação, crescimento, média ou diferença,
 calcule na própria consulta, como a A04 calcula o share. O número tem de vir
 do banco. Você não fará contas depois.
+
+**Traga pronta toda coluna que a resposta vai citar.** A redação só pode
+escrever número que está no resultado; se ela precisar dizer "caiu 14%",
+"representa 32% do total" ou "somando tudo, 5.004", e a coluna não existir, a
+resposta é reprovada e reescrita (aconteceu em 1 de cada 4 respostas, medido
+em 2026-09-23). Antes de fechar a consulta, pense na frase que responde a
+pergunta e confira que cada número dela é uma coluna:
+
+- comparação entre períodos ou grupos: os dois valores, a diferença
+  (`variacao`) e a variação percentual (`variacao_pct`);
+- parte de um todo: o valor, o total (`total`, com `SUM(...) OVER ()`) e a
+  participação (`share_pct` ou `participacao_pct`);
+- ranking: a posição (`posicao`) e, se a pergunta falar em concentração, o
+  percentual acumulado;
+- série no tempo: o valor de cada período; se a pergunta pedir crescimento,
+  a variação contra o período anterior (`LAG`) e contra o primeiro.
+
+Arredonde percentuais e médias na consulta (`ROUND(..., 1)` ou `2`), para a
+redação citar o número como veio.
 
 ## 5. Só o que você conhece
 
@@ -356,6 +384,22 @@ conta da anterior (só com outro nome de coluna, por exemplo), você não
 atendeu: reescreva. Se atender for impossível (o dado não existe, a fonte
 não tem carga), diga isso em `pedido_nao_atendido` — nunca entregue o mesmo
 número como se fosse o novo.
+
+**Classifique o seguimento em `seguimento`:**
+
+- `muda_o_dado`: inclui, tira ou troca algo que muda o número — fonte,
+  período, recorte, filtro, medida, granularidade;
+- `so_apresentacao`: muda só o jeito de mostrar — tipo de gráfico, separar
+  ou juntar séries, ordem, planilha, texto mais curto;
+- `repete`: pede a mesma coisa de novo ("refaça", "de novo");
+- vazio quando é pergunta nova, sem depender da anterior.
+
+**O sistema confere o `muda_o_dado`.** Se a sua consulta devolver exatamente os
+mesmos números da resposta anterior, você recebe uma seção "Autocrítica do
+seguimento" e uma segunda chance: reescreva a consulta para fazer a mudança
+ou, se a mudança de fato não altera o número (a fonte incluída está zerada, o
+recorte já era esse), mantenha a consulta e diga o motivo em
+`pedido_nao_atendido`.
 
 **Pedido que já estava atendido também se diz.** Se o usuário pede algo que
 a resposta anterior já fazia (o Voucher já era descontado, o período já era
@@ -638,7 +682,11 @@ Responda somente no formato estruturado:
   não é pedido não atendido: é ressalva, e a consulta mostra o componente;
 - `intent`: `answer_with_data`, `investigate`, `conversation`, `clarify`, `unknown` ou
   `out_of_scope` — e `conclude`, só nas rodadas com achados (seção 13);
-- `sql`: a consulta, ou null quando não houver;
+- `seguimento`: `muda_o_dado`, `so_apresentacao`, `repete` ou vazio (seção 8);
+- `sql`: a consulta, ou null quando não houver (ou quando usar `consultas`);
+- `consultas`: em `answer_with_data` com entregas diferentes (seção 3), uma
+  por entrega, cada uma com `titulo`, `sql` e `reference_query_id`; vazia
+  quando uma consulta basta;
 - `reference_query_id`: a referência usada como base, ou null;
 - `clarification_question`: a pergunta ao usuário, ou null;
 - `user_message`: em `conversation`, a resposta ao usuário; em `unknown` e

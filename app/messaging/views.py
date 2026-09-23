@@ -21,7 +21,7 @@ from datasource.export import montar_planilha
 from datasource.models import DataExport, QueryRun
 from datasource.sql_guard import validate_sql
 from messaging.channels.web import WebChannel
-from messaging.models import Message
+from messaging.models import Avaliacao, Message
 from messaging.services import ingest_inbound_message
 from attachments import deposito
 from attachments.imagem import preparar as preparar_imagem
@@ -109,6 +109,10 @@ def _fonte(resposta, mostrar_custo: bool):
             else None
         )
         amostra = (consulta.result_sample or {}) if consulta else {}
+        indice = (reply.raw_response or {}).get("grafico_de_consulta")
+        if indice is not None and anterior_reply is not None:
+            # O gráfico ajustado estava num bloco: os números são os do bloco.
+            amostra = ((anterior_reply.raw_response or {}).get("dados_blocos") or {}).get(str(indice)) or {}
         if amostra.get("rows"):
             fonte["grafico"] = (reply.raw_response or {}).get("grafico")
             fonte["dados"] = {"columns": amostra.get("columns", []), "rows": amostra["rows"]}
@@ -125,6 +129,15 @@ def _fonte(resposta, mostrar_custo: bool):
         fonte["dados_blocos"] = raw.get("dados_blocos") or {}
         fonte.pop("grafico", None)
         fonte.pop("dados", None)
+    if raw.get("entregas"):
+        # Várias entregas (ADR-0026): o painel mostra a consulta de cada uma,
+        # no mesmo formato da investigação. A planilha sairia de uma só.
+        fonte["investigacao"] = [
+            {"rodada": 1, "hipotese": e.get("titulo", ""), "sql": e.get("sql", ""),
+             "linhas": e.get("linhas"), "erro": e.get("erro", "")}
+            for e in raw["entregas"]
+        ]
+        fonte["excel"] = False
     if raw.get("investigacao"):
         # Uma investigação roda várias consultas: o painel de fonte mostra
         # todas, cada uma com a hipótese que testou. A planilha de download
@@ -136,6 +149,14 @@ def _fonte(resposta, mostrar_custo: bool):
         fonte["tokens"] = (reply.tokens_input or 0) + (reply.tokens_output or 0)
         fonte["tempo_ms"] = reply.latency_ms
     return fonte
+
+
+def _tem_avaliacao(message) -> bool:
+    try:
+        message.avaliacao
+    except Avaliacao.DoesNotExist:
+        return False
+    return True
 
 
 def _message_json(message, mostrar_custo: bool = False):
@@ -163,13 +184,20 @@ def _message_json(message, mostrar_custo: bool = False):
         message.Status.RECEIVED, message.Status.PROCESSING,
     ):
         # O que o Jarvis está fazendo agora ("Testando: a queda foi
-        # concentrada?"), para a tela não ficar em "Pensando…" por minutos.
-        andamento = progresso.ler(message.pk)
-        if andamento:
-            dados["progresso"] = andamento
+        # concentrada?") e o que ele entendeu do pedido, para a tela não
+        # ficar em "Pensando…" por minutos.
+        andamento = progresso.ler_tudo(message.pk)
+        if andamento.get("texto"):
+            dados["progresso"] = andamento["texto"]
+            dados["etapa"] = andamento.get("etapa", "")
+        if andamento.get("entendimento"):
+            dados["entendimento"] = andamento["entendimento"]
     if message.direction == message.Direction.OUTBOUND:
         dados["in_reply_to"] = message.in_reply_to_id
         dados["fonte"] = _fonte(message, mostrar_custo)
+        avaliacao = getattr(message, "avaliacao", None) if _tem_avaliacao(message) else None
+        if avaliacao is not None:
+            dados["avaliacao"] = {"nota": avaliacao.nota, "comentario": avaliacao.comentario}
         pergunta = message.in_reply_to
         if pergunta is not None and pergunta.anexo_resposta_token:
             # A planilha preenchida mora na pergunta, que é quem trouxe o
@@ -349,7 +377,7 @@ class MessageListCreateView(APIView):
         # A fonte de cada resposta vem da auditoria da pergunta; sem o
         # prefetch seriam três consultas por mensagem a cada polling.
         messages = conversation.messages.select_related(
-            "in_reply_to__ai_reply"
+            "in_reply_to__ai_reply", "avaliacao"
         ).prefetch_related("in_reply_to__ai_reply__query_runs")
 
         # O navegador busca só o que chegou depois do que ele já tem.
@@ -438,6 +466,49 @@ class MessageCancelView(APIView):
             status__in=(Message.Status.RECEIVED, Message.Status.PROCESSING),
         ).update(status=Message.Status.CANCELLED)
         return Response({"interrompida": bool(interrompida)})
+
+
+MAX_COMENTARIO = 2000
+
+
+class MessageAvaliacaoView(APIView):
+    """👍 ou 👎 numa resposta, com "o que estava errado" (opcional).
+
+    PUT grava ou troca a avaliação; DELETE desfaz (clicar de novo no mesmo
+    botão). Só quem é dono da conversa avalia, e só resposta do Jarvis que
+    veio de uma pergunta — mensagem de outra pessoa dá 404."""
+
+    def _resposta(self, request, conversation_id, message_id):
+        conversation = get_object_or_404(
+            Conversation.objects.visiveis(), pk=conversation_id, user=request.user
+        )
+        return get_object_or_404(
+            conversation.messages, pk=message_id, direction=Message.Direction.OUTBOUND,
+            in_reply_to__isnull=False,
+        )
+
+    def put(self, request, conversation_id, message_id):
+        resposta = self._resposta(request, conversation_id, message_id)
+        nota = str(request.data.get("nota") or "")
+        if nota not in Avaliacao.Nota.values:
+            return Response({"error": "nota deve ser up ou down"}, status=status.HTTP_400_BAD_REQUEST)
+        comentario = " ".join(str(request.data.get("comentario") or "").split())[:MAX_COMENTARIO]
+        avaliacao, _ = Avaliacao.objects.update_or_create(
+            message=resposta,
+            defaults={
+                "nota": nota,
+                # 👍 não leva comentário de 👎 antigo junto.
+                "comentario": comentario if nota == Avaliacao.Nota.ERRADA else "",
+                # Trocar de ideia depois da exportação faz o caso voltar à fila.
+                "caso_exportado_em": None,
+            },
+        )
+        return Response({"nota": avaliacao.nota, "comentario": avaliacao.comentario})
+
+    def delete(self, request, conversation_id, message_id):
+        resposta = self._resposta(request, conversation_id, message_id)
+        Avaliacao.objects.filter(message=resposta).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 # Limite da planilha: bem acima das 500 linhas da conversa, porque o arquivo

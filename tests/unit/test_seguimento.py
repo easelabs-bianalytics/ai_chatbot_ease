@@ -141,3 +141,73 @@ def test_orquestrador_leva_os_campos_a_redacao_e_ao_registro(django_user_model, 
     assert pedido.pedido_nao_atendido == NAO_ATENDIDO
     assert reply.raw_response["entendimento"] == ENTENDIMENTO
     assert reply.raw_response["pedido_nao_atendido"] == NAO_ATENDIDO
+
+
+# ------------------------------------------------ seguimento, entregas e autocrítica
+
+
+def test_plano_devolve_seguimento_e_entregas_sem_as_que_vieram_sem_sql(catalogo):
+    from ai_orchestrator.providers.openai_provider import ConsultaEstruturada
+
+    conteudo = PlanoEstruturado(
+        intent="answer_with_data", seguimento=" MUDA_O_DADO ",
+        consultas=[ConsultaEstruturada(titulo="Evolução", sql="SELECT 1", reference_query_id="A01"),
+                   ConsultaEstruturada(titulo="Ranking", sql="  ")],
+    )
+    provider = _provider(catalogo, [_Resposta(conteudo)])
+
+    saida = provider.plan(PlanRequest(question="Evolução e ranking das especialidades"))
+
+    assert saida.seguimento == "muda_o_dado"
+    assert saida.consultas == ({"titulo": "Evolução", "sql": "SELECT 1", "reference_query_id": "A01"},)
+
+
+def test_seguimento_desconhecido_vira_vazio(catalogo):
+    provider = _provider(catalogo, [_Resposta(PlanoEstruturado(intent="answer_with_data", sql="SELECT 1",
+                                                               seguimento="talvez"))])
+
+    assert provider.plan(PlanRequest(question="vendas de setembro")).seguimento == ""
+
+
+def test_segunda_chance_leva_a_autocritica_ao_planejador(catalogo):
+    provider = _provider(catalogo, [_Resposta(PlanoEstruturado(intent="answer_with_data", sql="SELECT 1"))])
+
+    provider.plan(PlanRequest(question="Considere Extras também", autocritica_note="mesmos números da anterior"))
+
+    chamada = provider._client.chamadas[0]
+    texto = "".join(b["text"] for m in chamada["input"] for b in m["content"]) if not isinstance(
+        chamada["input"], str) else chamada["input"]
+    assert "# Autocrítica do seguimento" in texto and "mesmos números da anterior" in texto
+    # Com autocrítica não há atalho para o modelo barato: é pergunta de dado.
+    assert chamada["model"] == "gpt-5.6-terra"
+
+
+def test_redacao_de_entregas_pede_resposta_a_cada_uma(catalogo):
+    provider = _provider(catalogo, [_Resposta(RespostaEstruturada(reply="Neurologia lidera."))])
+
+    provider.answer(AnswerRequest(
+        question="evolução e ranking", sql="", columns=(), rows=(), truncated=False, entregas=True,
+        entendimento=ENTENDIMENTO,
+        consultas=({"titulo": "Ranking", "hipotese": "Ranking", "sql": "SELECT 1", "columns": ("a",),
+                    "rows": ((1,),), "total_rows": 1},),
+    ))
+
+    entrada = provider._client.chamadas[0]["input"]
+    assert "# Várias entregas" in entrada and "## Consulta 0: Ranking" in entrada
+    assert "# Investigação" not in entrada
+    assert ENTENDIMENTO in entrada
+
+
+def test_historico_leva_o_resumo_em_linhas(catalogo):
+    from ai_orchestrator.providers.base import HistoryMessage
+
+    # Pergunta curta passa antes pelo modelo barato e sobe: duas chamadas.
+    provider = _provider(catalogo, [_Resposta(PlanoEstruturado(intent="answer_with_data", sql="SELECT 1"))] * 2)
+
+    provider.plan(PlanRequest(question="e em julho?", history=(
+        HistoryMessage(direction="out", text="Foram 47.", fonte="- consulta (base B01): 1 linhas\n  sql: SELECT 1"),
+    )))
+
+    chamada = provider._client.chamadas[0]
+    texto = "".join(b["text"] for m in chamada["input"] for b in m["content"])
+    assert "  [o que sustentou esta resposta]\n  - consulta (base B01): 1 linhas\n    sql: SELECT 1" in texto

@@ -1,0 +1,9 @@
+# Casos que nasceram do uso: cada 👎 na tela vira um rascunho aqui
+# (`manage.py casos_do_uso`). Rascunho (`rascunho: true`) não roda na suíte.
+#
+# Para promover um rascunho: confira `esperado` e `grupo`, acrescente as regras
+# que provam o acerto (`sql_deve_conter`, `sql_nao_deve_conter`,
+# `resposta_deve_conter`) e apague a linha `rascunho: true`. O formato é o de
+# casos_validacao.yaml.
+
+casos: []

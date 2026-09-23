@@ -26,6 +26,10 @@ from catalog.loader import BASE_DIR
 from datasource.sql_guard import DIALETO
 
 DEFAULT_CASES_PATH = BASE_DIR / "app" / "knowledge" / "casos_validacao.yaml"
+# Casos que nasceram do uso: cada 👎 com comentário vira um rascunho aqui
+# (`casos_do_uso`). Rascunho não roda na suíte até alguém revisar o esperado e
+# tirar `rascunho: true`; daí em diante é caso como qualquer outro.
+DEFAULT_USO_PATH = BASE_DIR / "app" / "knowledge" / "casos_do_uso.yaml"
 
 ESPERADOS = frozenset(
     {"answer_with_data", "clarify", "unknown", "out_of_scope", "indisponivel"}
@@ -95,6 +99,7 @@ class ValidationCase:
     # menos coluna do que o exemplo, não por errar número.
     colunas_do_gabarito: tuple = ()
     nota: str = ""
+    rascunho: bool = False
 
     @property
     def tem_gabarito(self) -> bool:
@@ -213,10 +218,23 @@ def _caso(bruto: dict) -> ValidationCase:
         comparar_resultado=bool(bruto.get("comparar_resultado", True)),
         colunas_do_gabarito=tuple(str(c) for c in bruto.get("colunas_do_gabarito") or ()),
         nota=" ".join(str(bruto.get("nota") or "").split()),
+        rascunho=bool(bruto.get("rascunho", False)),
     )
 
 
-def load_cases(path: Path = DEFAULT_CASES_PATH) -> CaseSuite:
+def load_casos_do_uso(path: Path = DEFAULT_USO_PATH) -> tuple:
+    """Os casos que vieram das avaliações. Arquivo ausente é lista vazia."""
+    path = Path(path)
+    if not path.exists():
+        return ()
+    try:
+        dados = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise CatalogError(f"casos do uso inválidos: {exc}") from exc
+    return tuple(_caso(c) for c in dados.get("casos") or [])
+
+
+def load_cases(path: Path = DEFAULT_CASES_PATH, uso: Path | None = DEFAULT_USO_PATH) -> CaseSuite:
     try:
         dados = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:
@@ -232,6 +250,8 @@ def load_cases(path: Path = DEFAULT_CASES_PATH) -> CaseSuite:
         for r in dados.get("regras") or []
     )
     casos = tuple(_caso(c) for c in dados.get("casos") or [])
+    if uso is not None:
+        casos += load_casos_do_uso(uso)
 
     ids = [c.id for c in casos]
     repetidos = sorted({i for i in ids if ids.count(i) > 1})

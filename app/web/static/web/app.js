@@ -63,6 +63,8 @@
   };
 
   const ICONES = {
+    util: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12"/><path d="M15 5.88L14 10h5.83a2 2 0 011.92 2.56l-2.33 8A2 2 0 0117.5 22H4a2 2 0 01-2-2v-8a2 2 0 012-2h2.76a2 2 0 001.79-1.11L12 2a3.13 3.13 0 013 3.88z"/></svg>',
+    errada: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12L10 14H4.17a2 2 0 01-1.92-2.56l2.33-8A2 2 0 016.5 2H20a2 2 0 012 2v8a2 2 0 01-2 2h-2.76a2 2 0 00-1.79 1.11L12 22a3.13 3.13 0 01-3-3.88z"/></svg>',
     grafico: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>',
     pergunta: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 015.8 1c0 2-3 2.5-3 4.5M12 17.5h.01"/></svg>',
     info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>',
@@ -1141,6 +1143,7 @@
           <div class="msg-erro-acao"><button class="btn btn-ghost" type="button" data-refazer="${m.in_reply_to}">Perguntar de novo</button></div>` : ''}
         ${fonte.blocos?.length ? '' : blocoGrafico(fonte, m.id)}
         ${blocoFonte(fonte, m.id, !!m.planilha_preenchida)}
+        ${semCredito || !m.in_reply_to || fonte.decisao === 'cancelled' ? '' : blocoAvaliacao(m)}
       </article>
       ${blocoContinuacoes(fonte)}
       </div>`;
@@ -1222,8 +1225,61 @@
   const token = (nome) => getComputedStyle(document.documentElement).getPropertyValue(nome).trim();
   const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
+  // Nome da série de um grupo. Categoria em número (1, 3) sozinha não diz de
+  // quê: vira "Categoria 1", "Categoria 3".
+  const nomeDoGrupo = (coluna, valor) => {
+    if (valor === null || valor === undefined) return 'Sem categoria';
+    if (typeof valor !== 'number') return String(valor);
+    const rotulo = rotuloSerie(coluna);
+    return `${rotulo.charAt(0).toUpperCase()}${rotulo.slice(1)} ${valor.toLocaleString('pt-BR')}`;
+  };
+
+  // Pequenos múltiplos: um gráfico por valor do grupo (ou por série), na
+  // mesma escala, para comparar a forma sem uma série esconder a outra.
+  const separarGrafico = (grafico, dados) => {
+    const colunas = dados.columns || [];
+    const rows = dados.rows || [];
+    const series = (grafico.series || []).filter((s) => colunas.includes(s));
+    const base = { ...grafico, separar: false, empilhado: false, grupo: '' };
+    const maximo = (nomes) => Math.max(0, ...rows.flatMap((l) => nomes.map((n) => Number(l[colunas.indexOf(n)]) || 0)));
+    const ig = grafico.grupo ? colunas.indexOf(grafico.grupo) : -1;
+    if (ig >= 0 && series.length) {
+      const i = colunas.indexOf(series[0]);
+      const totais = new Map();
+      rows.forEach((l) => totais.set(l[ig], (totais.get(l[ig]) || 0) + (Number(l[i]) || 0)));
+      const valores = [...totais.entries()].sort((a, b) => b[1] - a[1]).map(([v]) => v).slice(0, MAX_GRUPOS);
+      const escala = maximo([series[0]]);
+      return valores.map((v) => ({
+        grafico: { ...base, series: [series[0]], titulo: nomeDoGrupo(grafico.grupo, v), escalaMax: escala },
+        dados: { columns: colunas, rows: rows.filter((l) => l[ig] === v) },
+      }));
+    }
+    if (series.length > 1) {
+      const escala = maximo(series);
+      return series.map((s) => ({ grafico: { ...base, series: [s], titulo: rotuloSerie(s), escalaMax: escala }, dados }));
+    }
+    return [];
+  };
+
   const blocoGrafico = (fonte, id) => {
     if (!fonte.grafico || !fonte.dados) return '';
+    const multiplos = fonte.grafico.separar && fonte.grafico.tipo !== 'vega' ? separarGrafico(fonte.grafico, fonte.dados) : [];
+    if (multiplos.length > 1) {
+      const paineis = multiplos.map((m, n) => {
+        const chave = `${id}-s${n}`;
+        GRAFICOS.set(chave, m);
+        return `
+          <div class="grafico-multiplo">
+            <div class="grafico-subtitulo">${esc(m.grafico.titulo)}</div>
+            <div class="grafico-area"><canvas data-grafico="${chave}" role="img"></canvas></div>
+          </div>`;
+      }).join('');
+      return `
+        <div class="grafico">
+          ${fonte.grafico.titulo ? `<div class="grafico-titulo">${esc(fonte.grafico.titulo)}</div>` : ''}
+          <div class="grafico-multiplos">${paineis}</div>
+        </div>`;
+    }
     const area = fonte.grafico.tipo === 'vega'
       ? `<div class="grafico-vega" data-vega="${id}" role="img"></div>`
       : `<div class="grafico-area"><canvas data-grafico="${id}" role="img"></canvas></div>`;
@@ -1462,7 +1518,7 @@
       valoresX = [];
       linhas.forEach((l) => {
         const chave = String(l[ix]);
-        const nome = String(l[ig] ?? 'Sem categoria');
+        const nome = nomeDoGrupo(grupo, l[ig]);
         if (!porX.has(chave)) { porX.set(chave, new Map()); valoresX.push(l[ix]); }
         porX.get(chave).set(nome, (porX.get(chave).get(nome) || 0) + numero(valorDe(l, medida)));
         totais.set(nome, (totais.get(nome) || 0) + numero(valorDe(l, medida)));
@@ -1588,6 +1644,9 @@
       display: linha || !umaSerie,
       beginAtZero: true,
       grace: '8%',
+      // Nos gráficos separados, a mesma escala em todos: senão 300 e 600
+      // desenham barras da mesma altura.
+      ...(grafico.escalaMax ? { max: grafico.escalaMax * 1.12 } : {}),
       grid: { color: token('--border-light'), drawTicks: false },
       border: { display: false },
       ticks: {
@@ -1704,6 +1763,51 @@
   // Dois botões de baixar, um do lado do outro, com arquivos diferentes, é
   // uma escolha que ninguém pediu — some o do resultado cru, que não foi o
   // que a pessoa mandou preencher.
+  // 👍/👎 (cada 👎 vira rascunho de caso de validação no time de BI).
+  const blocoAvaliacao = (m) => {
+    const nota = m.avaliacao?.nota || '';
+    const botao = (valor, icone, titulo) => `
+      <button class="avaliacao-btn${nota === valor ? ' ativo' : ''}" type="button" data-nota="${valor}"
+        aria-pressed="${nota === valor}" title="${titulo}" aria-label="${titulo}">${ICONES[icone]}</button>`;
+    return `
+      <div class="avaliacao" data-avaliacao="${m.id}">
+        <div class="avaliacao-linha">
+          <span class="avaliacao-rotulo">Esta resposta ajudou?</span>
+          ${botao('up', 'util', 'Útil')}
+          ${botao('down', 'errada', 'Errada')}
+          <span class="avaliacao-obrigado" ${nota ? '' : 'hidden'}>${nota === 'down' ? 'Obrigado: isso vira um teste para o Jarvis melhorar.' : 'Obrigado!'}</span>
+        </div>
+        <form class="avaliacao-form" hidden>
+          <textarea maxlength="2000" rows="2" placeholder="O que estava errado? Ex.: o período não era esse, faltou o Mercado Público">${esc(m.avaliacao?.comentario || '')}</textarea>
+          <div class="avaliacao-acoes">
+            <button class="btn btn-ghost" type="button" data-avaliacao-fechar>Agora não</button>
+            <button class="btn btn-primary" type="submit">Enviar</button>
+          </div>
+        </form>
+      </div>`;
+  };
+
+  const avaliar = async (caixa, nota, comentario = '') => {
+    const id = caixa.dataset.avaliacao;
+    const url = `/api/conversations/${state.conversaId}/messages/${id}/avaliacao/`;
+    const obrigado = caixa.querySelector('.avaliacao-obrigado');
+    try {
+      if (nota) await api(url, { method: 'PUT', body: { nota, comentario } });
+      else await api(url, { method: 'DELETE' });
+    } catch (e) {
+      toast('Não consegui registrar a avaliação. Tente de novo.', true);
+      return false;
+    }
+    caixa.querySelectorAll('.avaliacao-btn').forEach((b) => {
+      const ativo = b.dataset.nota === nota;
+      b.classList.toggle('ativo', ativo);
+      b.setAttribute('aria-pressed', String(ativo));
+    });
+    obrigado.hidden = !nota;
+    obrigado.textContent = nota === 'down' ? 'Obrigado: isso vira um teste para o Jarvis melhorar.' : 'Obrigado!';
+    return true;
+  };
+
   const blocoFonte = (fonte, id, temPlanilha = false) => {
     if (fonte.investigacao?.length) return blocoFonteDaInvestigacao(fonte);
     const consulta = fonte.consulta;
@@ -1783,8 +1887,33 @@
       </div>`;
   };
 
+  $('#mensagens').addEventListener('submit', async (ev) => {
+    const form = ev.target.closest('.avaliacao-form');
+    if (!form) return;
+    ev.preventDefault();
+    const comentario = form.querySelector('textarea').value.trim();
+    if (await avaliar(form.closest('.avaliacao'), 'down', comentario)) form.hidden = true;
+  });
+
   // abrir/fechar a fonte, copiar o SQL, refazer pergunta, usar sugestão
   $('#mensagens').addEventListener('click', async (ev) => {
+    const botaoNota = ev.target.closest('.avaliacao-btn');
+    if (botaoNota) {
+      const caixa = botaoNota.closest('.avaliacao');
+      const form = caixa.querySelector('.avaliacao-form');
+      // Clicar de novo no mesmo botão desfaz.
+      const nota = botaoNota.classList.contains('ativo') ? '' : botaoNota.dataset.nota;
+      // O 👎 fica gravado na hora; o comentário, se vier, completa depois.
+      if (await avaliar(caixa, nota)) {
+        form.hidden = nota !== 'down';
+        if (nota === 'down') form.querySelector('textarea').focus();
+      }
+      return;
+    }
+    if (ev.target.closest('[data-avaliacao-fechar]')) {
+      ev.target.closest('.avaliacao-form').hidden = true;
+      return;
+    }
     const toggle = ev.target.closest('.fonte-toggle');
     if (toggle) {
       const fonte = toggle.closest('.fonte');
@@ -1898,6 +2027,7 @@
           <span class="pensando-texto" id="pensandoTexto"><strong>Pensando…</strong></span>
           <span class="pensando-tempo" id="pensandoTempo">0 s</span>
         </div>
+        <div class="pensando-entendimento" id="pensandoEntendimento" hidden></div>
       </div>`;
     $('#mensagens').appendChild(el);
     atualizarContinuacoes();
@@ -1910,8 +2040,34 @@
     const tempo = $('#pensandoTempo');
     if (tempo) tempo.textContent = `${seg} s`;
     const texto = $('#pensandoTexto');
-    if (texto && seg === 25 && state.aguardando.consultando) {
+    if (texto && seg === 25 && state.aguardando.consultando && !state.aguardando.etapa) {
       texto.innerHTML = '<strong>Ainda consultando</strong> — perguntas que cruzam áreas levam um pouco mais.';
+    }
+  };
+
+  // O que o servidor diz da pergunta pendente: a etapa e o que foi entendido.
+  // "Entendi: vendas de 1 a 20/09 contra 1 a 20/08, só CDD" aparece enquanto
+  // a resposta não chega — é quando corrigir o pedido ainda é barato.
+  const ETAPAS = {
+    entendi: 'Montando a consulta',
+    consultando: 'Consultando o banco',
+    escrevendo: 'Escrevendo a resposta',
+    investigando: 'Investigando',
+    conferindo: 'Conferindo o resultado',
+  };
+  const mostrarEtapa = (pendente) => {
+    const texto = $('#pensandoTexto');
+    const rotulo = ETAPAS[pendente.etapa] || 'Investigando';
+    const detalhe = pendente.progresso && pendente.progresso !== rotulo && pendente.etapa !== 'entendi'
+      ? ` — ${esc(pendente.progresso)}` : '';
+    if (texto && pendente.progresso) texto.innerHTML = `<strong>${esc(rotulo)}</strong>${detalhe}`;
+    const entendi = $('#pensandoEntendimento');
+    if (entendi && pendente.entendimento) {
+      entendi.hidden = false;
+      entendi.innerHTML = `<span class="pensando-entendimento-rotulo">Entendi:</span> ${esc(pendente.entendimento)}`;
+    }
+    if (pendente.etapa && pendente.etapa !== 'entendi') {
+      $('#jarvisEspera .jarvis')?.classList.replace('jarvis--pensando', 'jarvis--consultando');
     }
   };
 
@@ -1954,15 +2110,17 @@
       if (state.conversaId !== conversaId || state.aguardando !== aguardando) return;
       state.falhasSeguidas = 0;
       const pendente = messages.find((m) => m.id === aguardando.id);
-      // Investigação: o servidor diz em que hipótese está (ADR-0025).
-      if (pendente?.progresso && pendente.progresso !== aguardando.progresso) {
+      // O servidor diz em que etapa está e o que entendeu do pedido.
+      const mudou = pendente && (pendente.progresso || pendente.entendimento)
+        && (pendente.progresso !== aguardando.progresso || pendente.entendimento !== aguardando.entendimento);
+      if (mudou) {
         aguardando.progresso = pendente.progresso;
-        aguardando.consultando = true;
-        const texto = $('#pensandoTexto');
-        if (texto) texto.innerHTML = `<strong>Investigando</strong> — ${esc(pendente.progresso)}`;
-        $('#jarvisEspera .jarvis')?.classList.replace('jarvis--pensando', 'jarvis--consultando');
+        aguardando.entendimento = pendente.entendimento;
+        aguardando.etapa = pendente.etapa || 'investigando';
+        if (aguardando.etapa !== 'entendi') aguardando.consultando = true;
+        mostrarEtapa({ ...pendente, etapa: aguardando.etapa });
       }
-      if (pendente?.status === 'processing' && !aguardando.consultando) {
+      if (pendente?.status === 'processing' && !aguardando.consultando && (!aguardando.etapa || aguardando.etapa === 'entendi')) {
         aguardando.consultando = true;
         const texto = $('#pensandoTexto');
         if (texto) texto.innerHTML = '<strong>Consultando os dados</strong> — conferindo a consulta no banco.';

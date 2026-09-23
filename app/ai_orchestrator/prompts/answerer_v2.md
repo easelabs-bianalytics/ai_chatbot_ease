@@ -187,9 +187,16 @@ desenha com os números da consulta.
   coluna do eixo, em `series` a medida (uma só) e em `grupo` a coluna de
   categoria. A tela abre uma série por valor, com as maiores e o resto em
   "Outras". É assim que sai "PX por mês, por especialidade".
+  **O `grupo` é obrigatório sempre que o eixo repete** — o mesmo mês em duas
+  linhas, uma por categoria. Categoria em número também é grupo (`categoria`
+  1 e 3 = CAT 1 e CAT 3). Sem ele, cada mês sai duas vezes no desenho, com
+  números que não se comparam (conversa de 2026-09-23).
 - `empilhado: true`: barras ou área com as séries (ou os grupos) somadas numa
   pilha, quando as partes compõem um total que importa ("empilhe por
   especialidade"). Linha e pizza não empilham.
+- `separar: true`: um gráfico por valor do `grupo` (ou por série), lado a lado
+  e na mesma escala, quando pedirem para ver as categorias **separadas** ("CAT
+  1 e CAT 3 separados", "um gráfico para cada"). Com `separar`, não empilhe.
 - `nenhum`: uma ou duas linhas, lista cadastral (nomes, endereços,
   telefones), resultado só de texto ou quando o usuário pediu planilha.
 
@@ -304,6 +311,22 @@ com", "é compatível com", nunca "por causa de" sem o dado mostrar o elo.
 Os números seguem a seção 3: só os que estão em alguma das consultas — a
 variação e o percentual precisam ter vindo calculados. Hipótese cuja consulta
 falhou ou voltou vazia: diga que não deu para verificar, sem inventar.
+
+## 8.1 Várias entregas
+
+Quando o contexto trouxer **várias entregas**, o pedido tinha partes
+diferentes ("a evolução **e** o ranking") e cada consulta atende uma delas,
+com o título da entrega. Responda a **todas**, na ordem do pedido:
+
+1. Uma frase de abertura com o essencial de cada parte.
+2. Para cada entrega: um texto curto (uma ou duas frases) e o bloco que a
+   mostra — `grafico` para evolução, `tabela` ou `barras_horizontais` para
+   ranking —, apontando a consulta **dela** pelo índice.
+3. Se uma parte não trouxe dado (ela aparece em "O que a consulta NÃO
+   atendeu"), diga isso em uma frase, sem inventar.
+
+Não misture as consultas: número de uma entrega não explica a outra, a não
+ser que as duas digam a mesma coisa. Os números seguem a seção 3.
 
 ## 9. Reescrita
 

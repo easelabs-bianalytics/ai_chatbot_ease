@@ -25,6 +25,10 @@ from ai_orchestrator.ajuste_grafico import aplicar, descrever, ler_ajuste
         ("muda para pizza", {"tipo": "pizza"}),
         ("troca para área", {"tipo": "area"}),
         ("empilha as barras", {"empilhado": True}),
+        # conversa 14 (2026-09-23)
+        ("O gráfico não ficou bom! eu quero ver CAT 1 e CAT 3 de forma separada", {"separar": True}),
+        ("faz um gráfico para cada categoria", {"separar": True}),
+        ("junta tudo no mesmo gráfico", {"separar": False}),
     ],
 )
 def test_le_o_pedido_de_ajuste(mensagem, esperado):
@@ -101,3 +105,14 @@ def test_empilhar_troca_a_linha_por_barras():
     assert aplicar({"tipo": "linha", "x": "mes", "series": ["a", "b"]}, {"empilhado": True}) == {
         "tipo": "barras", "x": "mes", "series": ["a", "b"], "empilhado": True,
     }
+
+
+def test_separar_tira_o_empilhado():
+    novo = aplicar({"tipo": "barras", "x": "mes", "series": ["px"], "grupo": "cat", "empilhado": True},
+                   {"separar": True})
+
+    assert novo["separar"] is True and "empilhado" not in novo
+
+
+def test_texto_do_separar_diz_por_qual_coluna():
+    assert "um gráfico por categoria" in descrever({"separar": True}, total=16, grupo="categoria")

@@ -134,6 +134,12 @@ class PassoEstruturado(BaseModel):
     reference_query_id: str = Field(default="", description="referência usada como base")
 
 
+class ConsultaEstruturada(BaseModel):
+    titulo: str = Field(description="a entrega que esta consulta atende, em poucas palavras")
+    sql: str = Field(description="a consulta da entrega")
+    reference_query_id: str = Field(default="", description="referência usada como base")
+
+
 class PlanoEstruturado(BaseModel):
     # Primeiro campo de propósito: o modelo escreve na ordem do schema, e
     # dizer o que entendeu ANTES de escrever o SQL é o que faz o seguimento
@@ -155,6 +161,15 @@ class PlanoEstruturado(BaseModel):
     pedido_nao_atendido: str = Field(
         default="",
         description="o que o usuário pediu e a consulta não faz, e por quê; vazio se atende tudo",
+    )
+    seguimento: str = Field(
+        default="",
+        description="num seguimento: muda_o_dado, so_apresentacao ou repete; vazio em pergunta nova",
+    )
+    consultas: list[ConsultaEstruturada] = Field(
+        default_factory=list,
+        description="em answer_with_data com entregas diferentes: uma consulta por entrega (2 a 4); "
+        "vazia quando uma consulta basta",
     )
     excel: bool = Field(default=False, description="true se o usuário pediu os dados em Excel, planilha ou arquivo")
     preenchimento: PreenchimentoEstruturado = Field(
@@ -185,6 +200,10 @@ class GraficoEstruturado(BaseModel):
         description="coluna de categoria que vira uma série por valor (formato longo); vazia se não houver",
     )
     empilhado: bool = Field(default=False, description="empilhar as séries (barras e área)")
+    separar: bool = Field(
+        default=False,
+        description="um gráfico por valor do grupo (ou por série), lado a lado e na mesma escala",
+    )
     vega_lite: str = Field(
         default="",
         description=(
@@ -239,6 +258,22 @@ class RespostaEstruturada(BaseModel):
     )
 
 
+def _entendimento_em_texto(request) -> str:
+    texto = ""
+    if request.entendimento:
+        texto += f"\n\n# O que o usuário quer (leitura de quem escreveu a consulta)\n\n{request.entendimento}"
+    if request.pedido_nao_atendido:
+        # Vai com instrução, não só o texto: sem ela a redação descrevia a
+        # consulta como se tivesse feito o pedido (conversa 15).
+        texto += (
+            "\n\n# O que a consulta NÃO atendeu\n\n"
+            + request.pedido_nao_atendido
+            + "\n\nDiga isso logo no começo da resposta, com o motivo, antes dos números. "
+            "Nunca escreva que considerou algo que está nesta lista."
+        )
+    return texto
+
+
 def _historico(mensagens) -> str:
     if not mensagens:
         return ""
@@ -246,7 +281,8 @@ def _historico(mensagens) -> str:
     for m in mensagens:
         linhas.append(f"{'Usuário' if m.direction == 'in' else 'Você'}: {m.text}".strip())
         if getattr(m, "fonte", ""):
-            linhas.append(f"  [o que sustentou esta resposta: {m.fonte}]")
+            linhas.append("  [o que sustentou esta resposta]")
+            linhas.extend(f"  {linha}" for linha in m.fonte.splitlines())
     return "\n\n# Conversa até aqui\n\n" + "\n".join(linhas)
 
 
@@ -341,12 +377,35 @@ def _blocos(conteudo) -> tuple:
     return tuple(blocos)
 
 
+MAX_ENTREGAS = 4
+SEGUIMENTOS = frozenset({"muda_o_dado", "so_apresentacao", "repete"})
+
+
+def _consultas(conteudo) -> tuple:
+    """As entregas do pedido, só as que vieram com consulta (ADR-0026)."""
+    entregas = []
+    for consulta in getattr(conteudo, "consultas", None) or []:
+        sql = (consulta.sql or "").strip()
+        if sql:
+            entregas.append({
+                "titulo": (consulta.titulo or "").strip(),
+                "sql": sql,
+                "reference_query_id": (consulta.reference_query_id or "").strip(),
+            })
+    return tuple(entregas[:MAX_ENTREGAS])
+
+
+def _seguimento(conteudo) -> str:
+    valor = (getattr(conteudo, "seguimento", "") or "").strip().lower()
+    return valor if valor in SEGUIMENTOS else ""
+
+
 def _achado_em_texto(indice: int, consulta: dict) -> str:
     """Uma consulta da investigação, compacta: hipótese, colunas e linhas."""
     linhas = [dict(zip(consulta["columns"], linha)) for linha in consulta["rows"][:LINHAS_POR_ACHADO]]
     total = consulta.get("total_rows", len(consulta["rows"]))
     partes = [
-        f"## Consulta {indice}: {consulta.get('hipotese') or 'sem hipótese declarada'}",
+        f"## Consulta {indice}: {consulta.get('titulo') or consulta.get('hipotese') or 'sem hipótese declarada'}",
         f"Colunas: {', '.join(consulta['columns'])}",
         f"Linhas ({len(linhas)} de {total}): {json.dumps(linhas, ensure_ascii=False, default=str)}",
     ]
@@ -519,7 +578,8 @@ class OpenAIProvider(AIProvider):
             not request.sem_atalho
             and not contexto.secoes
             and not contexto.completo
-            and not (request.planilha or request.error_note or request.empty_note or request.achados)
+            and not (request.planilha or request.error_note or request.empty_note or request.achados
+                     or request.autocritica_note)
             and len(request.question.strip()) <= MAX_LETRAS_CONVERSA_BARATA
         )
         tema = contexto.texto[len(contexto.fixo):] if contexto.fixo else ""
@@ -536,6 +596,8 @@ class OpenAIProvider(AIProvider):
                 "\n\n# Correção\n\nA consulta anterior não pôde ser usada: "
                 f"{request.error_note}\n\nCorrija exatamente esse ponto."
             )
+        if request.autocritica_note:
+            entrada += "\n\n# Autocrítica do seguimento\n\n" + request.autocritica_note
         if request.achados:
             entrada += (
                 f"\n\n# Investigação até aqui — rodada {request.rodada} de {MAX_RODADAS}\n\n"
@@ -614,6 +676,8 @@ class OpenAIProvider(AIProvider):
             reason=(conteudo.reason or "").strip(),
             entendimento=(getattr(conteudo, "entendimento", "") or "").strip(),
             pedido_nao_atendido=(getattr(conteudo, "pedido_nao_atendido", "") or "").strip(),
+            seguimento=_seguimento(conteudo),
+            consultas=_consultas(conteudo) if intent == Plan.Intent.ANSWER_WITH_DATA else (),
             excel=bool(getattr(conteudo, "excel", False)),
             preenchimento=_preenchimento(conteudo, pedido=bool(request.planilha)),
             investigacao=_investigacao(conteudo) if intent == Plan.Intent.INVESTIGATE else (),
@@ -633,17 +697,7 @@ class OpenAIProvider(AIProvider):
         # não fechou — e uma queda aparente no último mês parece real.
         entrada += f"\n\n# Hoje\n\n{date.today():%d/%m/%Y}"
         entrada += f"\n\n# Pergunta do usuário\n\n{request.question}"
-        if request.entendimento:
-            entrada += f"\n\n# O que o usuário quer (leitura de quem escreveu a consulta)\n\n{request.entendimento}"
-        if request.pedido_nao_atendido:
-            # Vai com instrução, não só o texto: sem ela a redação descrevia a
-            # consulta como se tivesse feito o pedido (conversa 15).
-            entrada += (
-                "\n\n# O que a consulta NÃO atendeu\n\n"
-                + request.pedido_nao_atendido
-                + "\n\nDiga isso logo no começo da resposta, com o motivo, antes dos números. "
-                "Nunca escreva que considerou algo que está nesta lista."
-            )
+        entrada += _entendimento_em_texto(request)
         entrada += f"\n\n# Consulta executada\n\n```sql\n{request.sql}\n```"
         if request.reference_query_id:
             entrada += f"\n\n(baseada na consulta de referência {request.reference_query_id})"
@@ -742,11 +796,19 @@ class OpenAIProvider(AIProvider):
         entrada = contexto.texto + _historico(request.history)
         entrada += f"\n\n# Hoje\n\n{date.today():%d/%m/%Y}"
         entrada += f"\n\n# Pergunta do usuário\n\n{request.question}"
-        entrada += (
-            "\n\n# Investigação\n\nA pergunta pede uma causa. O sistema testou as hipóteses "
-            "abaixo, cada uma com uma consulta. Escreva a análise (seção 8), em blocos (seção 7); "
-            "os índices das consultas são os números abaixo.\n\n"
-        )
+        entrada += _entendimento_em_texto(request)
+        if request.entregas:
+            entrada += (
+                "\n\n# Várias entregas\n\nO pedido tem entregas diferentes, e cada consulta abaixo "
+                "é uma delas, com o título da entrega. Responda a cada uma (seção 8.1), em blocos "
+                "(seção 7); os índices das consultas são os números abaixo.\n\n"
+            )
+        else:
+            entrada += (
+                "\n\n# Investigação\n\nA pergunta pede uma causa. O sistema testou as hipóteses "
+                "abaixo, cada uma com uma consulta. Escreva a análise (seção 8), em blocos (seção 7); "
+                "os índices das consultas são os números abaixo.\n\n"
+            )
         entrada += "\n\n".join(_achado_em_texto(i, c) for i, c in enumerate(request.consultas))
         if request.revision_note:
             entrada += (

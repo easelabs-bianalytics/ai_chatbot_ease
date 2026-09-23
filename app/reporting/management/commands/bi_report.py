@@ -61,7 +61,12 @@ class Command(BaseCommand):
         self._linha("Corrigidas na 2ª tentativa", r.consultas_corrigidas)
         self._linha("Erro do banco", r.consultas_com_erro)
         self._linha("Tempo estourado", r.consultas_estouradas)
-        self._linha("Respostas reescritas por ancoragem", r.reescritas)
+        self._linha(
+            "Respostas reescritas por ancoragem",
+            f"{r.reescritas} de {r.redigidas} ({r.taxa_de_reescrita:.0%})",
+            alerta=r.taxa_de_reescrita > 0.2,
+        )
+        self._linha("Seguimentos com segunda chance", r.autocriticas)
 
         self._titulo("Tempo até a resposta (com consulta)")
         self._linha("Mediana", f"{r.percentil(0.5) / 1000:.1f} s")
@@ -74,6 +79,20 @@ class Command(BaseCommand):
         self._linha("Projeção para 30 dias", f"US$ {r.custo_projetado_mes}")
         self._linha("Tokens", f"{r.tokens_entrada:,} entrada · {r.tokens_saida:,} saída".replace(",", "."))
         self._linha("Entrada servida pelo cache", f"{r.taxa_de_cache:.0%}", alerta=r.taxa_de_cache < 0.35)
+
+        self._titulo("Avaliação de quem perguntou")
+        if r.uteis or r.erradas:
+            self._linha("👍 útil", r.uteis)
+            self._linha("👎 errada", r.erradas, alerta=r.erradas > 0)
+            self._linha("Acerto entre as avaliadas", f"{r.taxa_de_acerto_avaliada:.0%}")
+            for item in r.comentarios:
+                self.stdout.write(f"  {item.data}  {item.pergunta}")
+                if item.motivo:
+                    self.stdout.write(self.style.WARNING(f"          {item.motivo}"))
+            if r.erradas:
+                self.stdout.write("  Para virar teste: manage.py casos_do_uso")
+        else:
+            self.stdout.write("  Nenhuma avaliação no período.")
 
         if r.regras:
             self._titulo("Respostas decididas por regra, sem IA")

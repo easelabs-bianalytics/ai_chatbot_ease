@@ -75,3 +75,16 @@ def test_pergunta_respondida_nao_mostra_progresso(cliente, conversa):
     dados = cliente.get(f"/api/conversations/{conversa.pk}/messages/").json()["messages"][0]
 
     assert "progresso" not in dados
+
+
+def test_pergunta_pendente_mostra_a_etapa_e_o_que_foi_entendido(cliente, conversa):
+    """"Pensando…" por até 170 s vira "Entendi: …" e a etapa em que está."""
+    pergunta = _pergunta(conversa)
+    progresso.definir(pergunta.pk, "Montando a consulta", etapa="entendi", entendimento="Vendas de set/2026")
+    progresso.definir(pergunta.pk, "Consultando o banco", etapa="consultando")
+
+    dados = cliente.get(f"/api/conversations/{conversa.pk}/messages/").json()["messages"][0]
+
+    assert dados["etapa"] == "consultando"
+    # O entendimento dito uma vez continua valendo nas etapas seguintes.
+    assert dados["entendimento"] == "Vendas de set/2026"

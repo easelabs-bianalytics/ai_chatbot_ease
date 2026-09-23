@@ -29,6 +29,16 @@ _TIPOS = (
     ("linha", r"\blinhas?\b"),
 )
 _EMPILHAR = re.compile(r"\bempilh")
+# "quero ver CAT 1 e CAT 3 de forma separada" (conversa 14, 2026-09-23): um
+# gráfico por valor do grupo, lado a lado. "Um gráfico para cada" diz o mesmo.
+_SEPARAR = re.compile(
+    r"\bseparad[oa]s?\b|\bsepar[ae]\b|\bgraficos?\s+(?:para|pra)\s+cada\b"
+    r"|\bgraficos\s+(?:diferentes|distintos|individuais)\b"
+)
+# "Junto com o sell out" é pedido de dado novo, não de desenho: "junto" e
+# "junta com" ficam de fora. E juntar só vale sobre um gráfico já separado
+# (conferido no orquestrador).
+_JUNTAR = re.compile(r"\bmesmo\s+grafico\b|\bgrafico\s+(?:so|unico)\b|\bjunt(?:a|e|ar)\b(?!\s+(?:com|a|ao|o)\b)")
 # "empilhe POR especialidade", "abra POR rede": abrir por uma categoria que
 # não está no resultado é dado novo, e quem resolve é a IA com uma consulta.
 # Em 2026-09-23 esse pedido não podia ser tratado como troca de desenho.
@@ -61,6 +71,10 @@ def ler_ajuste(mensagem: str) -> dict | None:
     ajuste = {}
     if _EMPILHAR.search(texto):
         ajuste["empilhado"] = True
+    if _SEPARAR.search(texto):
+        ajuste["separar"] = True
+    elif _JUNTAR.search(texto):
+        ajuste["separar"] = False
 
     if tem_comando:
         for nome, padrao in _TIPOS:
@@ -73,7 +87,8 @@ def ler_ajuste(mensagem: str) -> dict | None:
         valor = int(limite.group(1) or limite.group(2))
         if valor > 0:
             ajuste["limite"] = valor
-    elif tem_comando and _TODOS.search(texto):
+    elif tem_comando and _TODOS.search(texto) and "separar" not in ajuste:
+        # "junta tudo no mesmo gráfico" fala das séries, não do corte.
         ajuste["limite"] = 0          # 0 = sem corte
 
     return ajuste or None
@@ -88,6 +103,13 @@ def aplicar(grafico: dict, ajuste: dict) -> dict:
         novo["empilhado"] = True
         if novo.get("tipo") not in ("barras", "barras_horizontais", "area"):
             novo["tipo"] = "barras"
+    if ajuste.get("separar"):
+        novo["separar"] = True
+        novo.pop("empilhado", None)
+        if novo.get("tipo") == "pizza":
+            novo["tipo"] = "barras"
+    elif ajuste.get("separar") is False:
+        novo.pop("separar", None)
     if "limite" in ajuste:
         if ajuste["limite"]:
             novo["limite"] = ajuste["limite"]
@@ -105,14 +127,19 @@ NOMES = {
 }
 
 
-def descrever(ajuste: dict, total: int | None = None) -> str:
+def descrever(ajuste: dict, total: int | None = None, grupo: str = "") -> str:
     """O texto que o usuário lê. Curto, e dizendo o que NÃO mudou quando o
     corte pode dar a impressão de que a tabela também encolheu."""
     partes = []
     if "tipo" in ajuste:
         partes.append(f"troquei o gráfico para {NOMES[ajuste['tipo']]}")
-    if ajuste.get("empilhado"):
+    if ajuste.get("empilhado") and not ajuste.get("separar"):
         partes.append("empilhei as séries")
+    if ajuste.get("separar"):
+        nome = (grupo or "").replace("_", " ").strip()
+        partes.append(f"separei em um gráfico por {nome}, na mesma escala" if nome else "separei em gráficos lado a lado")
+    elif ajuste.get("separar") is False:
+        partes.append("juntei as séries num gráfico só")
     if ajuste.get("limite"):
         n = ajuste["limite"]
         partes.append(f"deixei os {n} primeiros no desenho")

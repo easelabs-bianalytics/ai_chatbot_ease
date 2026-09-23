@@ -231,6 +231,14 @@ na `main` do `sales_force_crm`
 | 10 — Migrations e usuários | ✅ 19 tabelas no `jarvis`, 4 administradores criados |
 | 11 — Testar e fechar | ✅ login por código, pergunta com número conferido, planilha e gráfico; merge feito |
 
+**Pré-requisitos dos próximos deploys** (entram aqui assim que surgem):
+
+- [ ] Rodar `migrate` na task avulsa antes do bump: `ai_orchestrator.0006`
+      (etapa `self_check`) e `messaging.0006` (tabela `Avaliacao`), ADR-0027
+- [ ] Antes de cada deploy, rodar `run_synthetic_cases` (a suíte completa com
+      o modelo real) e comparar com o relatório anterior: é o que mede se o
+      Jarvis melhorou
+
 **A regra para daqui em diante, da Natália (2026-09-21): separar as nossas
 mudanças do resto e subir só as nossas.** Todo `apply` desta branch é com
 `-target` — a lista está no passo 3. Um `apply` sem alvo faria três coisas
@@ -1527,6 +1535,67 @@ Três achados, lidos no registro das conversas:
 - [x] `uv run pytest`: 722 passaram. `run_synthetic_cases` nos casos B17 e B43
       com o modelo real: as duas respostas certas (US$ 0,13)
 - [ ] Ir ao ar
+
+### Gráfico com o mês repetido (2026-09-23, conversa 14)
+
+- [x] **O incidente:** "evolução de PX de Neurologia CAT 1 e 3" em barras.
+      O resultado veio em formato longo (mês × categoria × PX), a redação não
+      preencheu `grupo` e cada mês apareceu duas vezes (520 e 221 em jan). O
+      pedido seguinte, "quero ver CAT 1 e CAT 3 de forma separada", foi ao
+      modelo, que refez a mesma consulta e devolveu o mesmo desenho
+- [x] **Causas:** (1) `_grafico` recusava grupo numérico, e a categoria vem
+      como 1 e 3; (2) nada conferia se o eixo repete; (3) a regra de ajuste
+      só enxergava o gráfico solto, e este estava num bloco
+- [x] O grupo é conferido e, quando falta, deduzido do resultado: é a coluna
+      que, com o eixo, identifica cada linha (código inteiro vale, decimal
+      não). Eixo repetido que nenhuma coluna explica não vira gráfico
+- [x] `separar`: um gráfico por valor do grupo (ou por série), lado a lado e
+      na mesma escala. No schema da redação, no prompt e na regra de ajuste
+      ("separado", "um gráfico para cada"; "no mesmo gráfico" junta de novo)
+- [x] A regra de ajuste lê gráfico de bloco e ajuste de ajuste; a tela busca
+      os números no bloco de origem (`grafico_de_consulta`)
+- [x] A tela rotula grupo numérico como "Categoria 1", "Categoria 3"
+- [x] `uv run pytest`: 732 passaram
+- [x] Conferido localmente: a API entrega o `separar` e o rótulo "Categoria 1"
+- [ ] Ir ao ar
+
+### Contexto, autocrítica, avaliação e várias entregas (2026-09-23, ADR-0027)
+
+A ordem combinada com o Rubens, toda resolvida de forma genérica, e não só
+para os exemplos das conversas 14 e 15:
+
+1. [x] **Histórico estruturado** (`resumo.py`): cada resposta anterior vai ao
+       planejador com o entendido, a referência, as tabelas, os filtros, as
+       datas, as colunas, as primeiras linhas e o gráfico. A última com dado
+       leva o SQL inteiro (até 6 mil caracteres), no lugar do corte em 1.200
+       que escondia o mês anterior da B17
+2. [x] **Autocrítica do seguimento** (`autocritica.py`): o plano diz o tipo
+       de seguimento (`muda_o_dado`, `so_apresentacao`, `repete`). Se muda o
+       dado e o resultado repete os números da resposta anterior, o
+       planejador ganha uma segunda chance (etapa `self_check`). Se ainda
+       assim não mudar, a redação é avisada e diz o porquê
+3. [x] **👍/👎 ligado aos casos:** o modelo `Avaliacao`, a API
+       `.../messages/<id>/avaliacao/`, os botões na tela e o Admin. O comando
+       `casos_do_uso` grava cada 👎 como rascunho em
+       `app/knowledge/casos_do_uso.yaml`, que a suíte lê. O
+       `run_synthetic_cases --com-rascunhos` roda os rascunhos, e o
+       `bi_report` mostra as avaliações
+4. [x] **O entendimento enquanto pensa:** a tela mostra "Entendi: …" e a
+       etapa (montando a consulta, consultando o banco, escrevendo a
+       resposta, conferindo), pelo polling que já existia. Sem streaming
+5. [x] **Várias consultas por resposta** (ADR-0026, ponto B): o plano ganha
+       `consultas`, uma por entrega. Cada entrega tem a sua correção, a
+       entrega sem dado é dita e toda entrega com dado aparece
+6. [x] **Menos reescrita:** o planejador é instruído a trazer prontas as
+       colunas que a resposta vai citar. O `bi_report` passa a mostrar a taxa
+       de reescrita (base: 26%) para medir de novo antes de mexer no esforço
+       do modelo
+- [x] `uv run pytest`: 765 passaram. Os gráficos separados e a API foram
+      conferidos localmente, sem IA; a tela não foi vista no navegador
+- [ ] Depois do deploy: `run_synthetic_cases` nos casos B17 e B43 e numa
+      pergunta com duas entregas ("evolução e ranking"), com o modelo real
+- [ ] Depois de uma semana de uso: `bi_report` para comparar a taxa de
+      reescrita com os 26% e rodar `casos_do_uso`
 
 ---
 

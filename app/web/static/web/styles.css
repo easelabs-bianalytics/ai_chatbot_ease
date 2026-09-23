@@ -1341,6 +1341,15 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
   margin-bottom: 10px;
 }
 .grafico-area { position: relative; height: 260px; }
+/* Gráficos separados (um por categoria), lado a lado quando cabem. */
+.grafico-multiplos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  gap: 14px 20px;
+}
+.grafico-multiplo { min-width: 0; }
+.grafico-multiplo .grafico-area { height: 220px; }
+.grafico-subtitulo { font-size: 12px; font-weight: 600; color: var(--gray-600); margin-bottom: 4px; }
 /* Vega-Lite (ADR-0026): a largura acompanha o cartão; a altura, o desenho. */
 .grafico-vega { width: 100%; min-height: 120px; }
 .grafico-vega .vega-embed { width: 100%; }
@@ -1487,6 +1496,12 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
 .pensando-texto strong { font-weight: 700; color: inherit; -webkit-text-fill-color: inherit; }
 @keyframes brilho { from { background-position: 130% 0; } to { background-position: -130% 0; } }
 .pensando-tempo { font-size: 12px; color: var(--gray-400); font-variant-numeric: tabular-nums; }
+/* O que o Jarvis entendeu do pedido, enquanto a resposta não chega. */
+.pensando-entendimento {
+  margin-top: 6px; max-width: 62ch;
+  font-size: 12.5px; line-height: 1.5; color: var(--gray-600);
+}
+.pensando-entendimento-rotulo { font-weight: 600; color: var(--gray-700); }
 
 .msg-erro-acao {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
@@ -2650,3 +2665,32 @@ body.redimensionando .chat-shell { transition: none; }
 }
 .fonte-hipotese-meta { font-size: 12px; font-weight: 500; color: var(--gray-500); white-space: nowrap; }
 .fonte-hipotese-erro { font-size: 12px; color: var(--error); margin-bottom: 6px; }
+
+/* ── Avaliação da resposta (👍/👎) ──
+   Discreta como a fonte: aparece apagada e ganha cor no hover ou quando
+   marcada. Cada 👎 vira rascunho de caso de validação. */
+.avaliacao { padding: 2px 18px 10px; }
+.avaliacao-linha { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.avaliacao-rotulo { font-size: 12px; color: var(--gray-500); margin-right: 4px; }
+.avaliacao-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; padding: 0;
+  color: var(--gray-400); background: none; border: none; cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.avaliacao-btn svg { width: 15px; height: 15px; }
+.avaliacao-btn:hover { color: var(--gray-700); background: var(--border-light); }
+.avaliacao-btn.ativo[data-nota="up"] { color: var(--primary-600); }
+.avaliacao-btn.ativo[data-nota="down"] { color: var(--error); }
+.avaliacao-btn:focus-visible { outline: 2px solid var(--primary-600); outline-offset: 1px; }
+.avaliacao-obrigado { font-size: 12px; color: var(--gray-500); margin-left: 6px; }
+.avaliacao-form { margin-top: 8px; display: grid; gap: 8px; max-width: 560px; }
+.avaliacao-form textarea {
+  width: 100%; box-sizing: border-box; resize: vertical;
+  font: inherit; font-size: 13px; padding: 8px 10px;
+  color: var(--gray-900); background: var(--bg-card);
+  border: 1px solid var(--border-light); border-radius: var(--radius-sm);
+}
+.avaliacao-acoes { display: flex; justify-content: flex-end; gap: 8px; }
+@media (max-width: 640px) { .avaliacao { padding: 2px 12px 10px; } }

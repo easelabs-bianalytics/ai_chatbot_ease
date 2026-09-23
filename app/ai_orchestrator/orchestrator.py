@@ -15,12 +15,13 @@ honesto, em vez de insistir.
 
 import json
 import logging
+import numbers
 import os
 import re
 from dataclasses import dataclass, field, replace
 from types import SimpleNamespace
 
-from ai_orchestrator import ajuste_grafico, budget, canned, limites, progresso
+from ai_orchestrator import ajuste_grafico, autocritica, budget, canned, limites, progresso, resumo
 from ai_orchestrator.context import MAX_PASSOS_POR_RODADA, MAX_RODADAS, PEDIDO_DE_SECAO
 from ai_orchestrator.grounding import check_grounding, check_grounding_varias
 from ai_orchestrator.models import AICall, AIReply, CatalogGap
@@ -91,11 +92,9 @@ def _max_history_messages() -> int:
     return valor if valor > 0 else DEFAULT_MAX_HISTORY_MESSAGES
 
 
-# Quantas respostas recentes levam a consulta e o gráfico no histórico, e até
-# quantos caracteres de SQL cada uma: o bastante para saber período, filtros e
-# medida, sem dobrar o tamanho do contexto.
+# Quantas respostas recentes levam o resumo do que as sustentou. A mais
+# recente com dado leva também o SQL inteiro (ver `resumo.py`).
 FONTES_NO_HISTORICO = 3
-SQL_NO_HISTORICO = 1200
 
 
 def _historico(message: Message) -> tuple:
@@ -112,34 +111,29 @@ def _historico(message: Message) -> tuple:
     )
     mensagens = list(reversed(list(anteriores)))
     # Só as últimas respostas levam a fonte: é delas que o seguimento fala,
-    # e a consulta inteira de cada resposta antiga encheria o contexto.
-    com_fonte = {m.pk for m in [m for m in mensagens if m.direction == Message.Direction.OUTBOUND][-FONTES_NO_HISTORICO:]}
+    # e o resumo de cada resposta antiga encheria o contexto.
+    respostas = [m for m in mensagens if m.direction == Message.Direction.OUTBOUND][-FONTES_NO_HISTORICO:]
+    fontes = {m.pk: _fonte_da_resposta(m) for m in respostas}
+    # O SQL inteiro vai na última resposta que rodou consulta.
+    ultima = next((m for m in reversed(respostas) if "- consulta" in fontes[m.pk]), None)
+    if ultima is not None:
+        fontes[ultima.pk] = _fonte_da_resposta(ultima, com_sql=True)
     return tuple(
-        HistoryMessage(direction=m.direction, text=m.content, fonte=_fonte_da_resposta(m) if m.pk in com_fonte else "")
+        HistoryMessage(direction=m.direction, text=m.content, fonte=fontes.get(m.pk, ""))
         for m in mensagens
     )
 
 
-def _fonte_da_resposta(resposta) -> str:
-    """A consulta e o gráfico de uma resposta enviada, numa linha curta."""
+def _fonte_da_resposta(resposta, com_sql: bool = False) -> str:
+    """O que sustentou uma resposta enviada, em campos (`resumo.py`)."""
     pergunta = getattr(resposta, "in_reply_to", None)
     reply = AIReply.objects.filter(message=pergunta).first() if pergunta is not None else None
     if reply is None:
         return ""
-    partes = []
-    consulta = reply.query_runs.filter(status=QueryRun.Status.SUCCESS).order_by("-id").first()
-    if consulta is not None:
-        referencia = f" (base {consulta.reference_query_id})" if consulta.reference_query_id else ""
-        sql = " ".join((consulta.sql or "").split())
-        partes.append(f"consulta{referencia}, {consulta.row_count or 0} linhas: {sql[:SQL_NO_HISTORICO]}")
-    grafico = (reply.raw_response or {}).get("grafico")
-    if grafico:
-        partes.append(
-            f"gráfico {grafico.get('tipo')} com x={grafico.get('x')}"
-            + (f", grupo={grafico['grupo']}" if grafico.get("grupo") else "")
-            + f", séries={grafico.get('series')}"
-        )
-    return " · ".join(partes)
+    if reply.rule == "ajuste_de_grafico":
+        # O ajuste não rodou consulta: o que vale é o desenho novo.
+        return resumo.resumir(reply)
+    return resumo.resumir(reply, com_sql=com_sql)
 
 
 @dataclass
@@ -265,7 +259,9 @@ def _executar_com_correcao(plano, message, provider, executor, catalog, auditori
     referência manda não trocar por outra tabela parecida) ou "indisponivel"
     (o banco não respondeu — o SQL pode estar certo).
     """
-    tentativa = 1
+    # Numerada depois do que já rodou nesta resposta: na autocrítica a
+    # consulta refeita é a 3ª ou 4ª, e a tela lê a última pela ordem.
+    primeira = tentativa = len(auditoria.consultas) + 1
     while True:
         guard = validate_sql(plano.sql, catalog, max_rows=catalog.max_rows)
 
@@ -283,6 +279,8 @@ def _executar_com_correcao(plano, message, provider, executor, catalog, auditori
             # A tela mostra "consultando os dados" só a partir daqui: antes
             # disso a IA ainda pode decidir responder sem consulta.
             Message.objects.filter(pk=message.pk).update(status=Message.Status.PROCESSING)
+            progresso.definir(message.pk, "Consultando o banco", etapa="consultando",
+                              entendimento=plano.entendimento)
             try:
                 resultado = executor.run(guard.sql, max_rows=catalog.max_rows)
             except QueryExecutionError as exc:
@@ -321,7 +319,7 @@ def _executar_com_correcao(plano, message, provider, executor, catalog, auditori
                 )
                 return plano, resultado, "", ""
 
-        if tentativa == 2:
+        if tentativa == primeira + 1:
             return plano, None, erro, ""
 
         tentativa += 1
@@ -481,12 +479,16 @@ def _grafico(sugestao, resultado, message, plano) -> dict | None:
         return None
 
     tipo = sugestao["tipo"]
-    # Série por categoria (formato longo, "mês × especialidade × PX"): a
-    # coluna de grupo é texto, e cada valor dela vira uma série na tela. Foi o
-    # que faltou em 2026-09-23 para "empilhe por especialidade" sair legível.
-    grupo = sugestao.get("grupo") or ""
-    if tipo == "pizza" or grupo not in colunas or grupo == x or numerica(grupo):
-        grupo = ""
+    # Série por categoria (formato longo, "mês × especialidade × PX"): cada
+    # valor da coluna de grupo vira uma série na tela. Foi o que faltou em
+    # 2026-09-23 para "empilhe por especialidade" sair legível.
+    grupo = ""
+    if tipo != "pizza":
+        grupo = _grupo_do_formato_longo(colunas, resultado.rows, x, series, sugestao.get("grupo") or "")
+        if grupo is None:
+            # O eixo repete e nenhuma coluna explica a repetição: cada mês
+            # sairia duas vezes, com números que não se comparam.
+            return None
     if grupo or tipo == "pizza":
         series = series[:1]      # uma medida, repartida pelas categorias
 
@@ -498,7 +500,67 @@ def _grafico(sugestao, resultado, message, plano) -> dict | None:
         grafico["grupo"] = grupo
     if sugestao.get("empilhado") and tipo in EMPILHAVEIS and (grupo or len(series) > 1):
         grafico["empilhado"] = True
+    if sugestao.get("separar") and (grupo or len(series) > 1) and tipo != "pizza":
+        # Um gráfico por valor do grupo (ou por série), lado a lado e na
+        # mesma escala.
+        grafico["separar"] = True
+        grafico.pop("empilhado", None)
     return grafico
+
+
+# Mais categorias que isto não é série de gráfico: é tabela.
+MAX_VALORES_DO_GRUPO = 12
+
+
+def _grupo_do_formato_longo(colunas, linhas, x, series, sugerido: str = ""):
+    """A coluna que explica o eixo repetido, no formato longo.
+
+    Em 2026-09-23 (conversa 14) o resultado era mês × categoria × PX, com a
+    categoria em número (1 e 3). A redação não disse o grupo, e o gráfico
+    saiu com cada mês duas vezes: 520 e 221 em jan, 617 e 257 em fev. Aqui o
+    grupo é conferido e, quando falta, deduzido do próprio resultado: é a
+    coluna que, junto com o eixo, identifica cada linha.
+
+    Devolve o nome da coluna, "" quando o eixo não repete (não há grupo) ou
+    None quando repete e nenhuma coluna explica — aí não há gráfico certo."""
+    ix = colunas.index(x)
+    com_eixo = [linha for linha in linhas if linha[ix] is not None]
+    if len({str(linha[ix]) for linha in com_eixo}) == len(com_eixo):
+        # Sem repetição, grupo só se a redação pediu e ele fizer sentido.
+        return sugerido if _explica_o_eixo(colunas, com_eixo, ix, sugerido, series) else ""
+
+    if _explica_o_eixo(colunas, com_eixo, ix, sugerido, series):
+        return sugerido
+    for nome in colunas:
+        if nome != sugerido and _explica_o_eixo(colunas, com_eixo, ix, nome, series, deduzido=True):
+            return nome
+    return None
+
+
+# Coluna numérica só é deduzida como categoria quando o nome diz que é código:
+# "categoria" com 1 e 3 é CAT 1 e CAT 3; "qtd_pdvs" com 4 e 7 é medida.
+_NOME_DE_CODIGO = re.compile(r"(?:^|_)(?:cat|categoria|cod|codigo|classe|tipo|grupo|faixa|segmento|nivel)(?:_|$)")
+
+
+def _explica_o_eixo(colunas, linhas, ix, nome, series, deduzido: bool = False) -> bool:
+    if not nome or nome not in colunas or nome in series or colunas.index(nome) == ix:
+        return False
+    ig = colunas.index(nome)
+    valores = [linha[ig] for linha in linhas]
+    distintos = {str(v) for v in valores}
+    if not 2 <= len(distintos) <= MAX_VALORES_DO_GRUPO:
+        return False
+    numeros = [v for v in valores if isinstance(v, numbers.Number) and not isinstance(v, bool)]
+    if numeros:
+        # Número só é categoria quando é código inteiro (CAT 1, CAT 3);
+        # decimal é medida, e medida não vira série. Deduzido sem a redação
+        # pedir, ainda precisa ter nome de código.
+        if any(v != int(v) for v in numeros):
+            return False
+        if deduzido and not _NOME_DE_CODIGO.search(nome.lower()):
+            return False
+    pares = {(str(linha[ix]), str(linha[ig])) for linha in linhas}
+    return len(pares) == len(linhas)
 
 
 def _guardar_dados_do_grafico(auditoria, resultado) -> None:
@@ -521,6 +583,7 @@ def _redigir(plano, resultado, message, provider, catalog, auditoria, historico,
     # o limite de saída — e, quando não estoura, é resposta paga para
     # transcrever o que já está no banco.
     lista_longa = not verificacao and resultado.row_count > MAX_LINHAS_NO_TEXTO
+    progresso.definir(message.pk, "Escrevendo a resposta", etapa="escrevendo", entendimento=plano.entendimento)
     linhas = resultado.rows[: AMOSTRA_DA_LISTA_LONGA if lista_longa else catalog.rows_to_model]
     pedido = AnswerRequest(
         question=message.content,
@@ -944,7 +1007,7 @@ def _investigar(plano, message, provider, executor, catalog, auditoria, historic
             gap_reason="investigação sem consulta com dado: " + "; ".join(p["erro"] or "vazia" for p in passos),
         )
 
-    progresso.definir(message.pk, "Escrevendo a análise")
+    progresso.definir(message.pk, "Escrevendo a análise", etapa="escrevendo")
     texto, raw = _redigir_analise(com_dado, message, provider, auditoria, historico)
     progresso.limpar(message.pk)
     return _Decisao(
@@ -955,11 +1018,15 @@ def _investigar(plano, message, provider, executor, catalog, auditoria, historic
     )
 
 
-def _testar_hipotese(passo, rodada, message, executor, catalog, auditoria) -> dict:
-    """Valida e executa a consulta de uma hipótese. Registra sempre."""
+def _testar_hipotese(passo, rodada, message, executor, catalog, auditoria,
+                     rotulo="Testando", etapa="investigando", entendimento="") -> dict:
+    """Valida e executa a consulta de uma hipótese (ou de uma entrega).
+    Registra sempre."""
     hipotese = passo.get("hipotese") or ""
-    progresso.definir(message.pk, f"Testando: {hipotese}" if hipotese else "Consultando os dados")
-    feito = {"rodada": rodada, "hipotese": hipotese, "sql": passo["sql"], "resultado": None, "erro": ""}
+    progresso.definir(message.pk, f"{rotulo}: {hipotese}" if hipotese else "Consultando os dados",
+                      etapa=etapa, entendimento=entendimento)
+    feito = {"rodada": rodada, "hipotese": hipotese, "sql": passo["sql"], "resultado": None, "erro": "",
+             "falha": ""}
     registro = {
         "attempt": len(auditoria.consultas) + 1,
         "sql": passo["sql"],
@@ -988,6 +1055,10 @@ def _testar_hipotese(passo, rodada, message, executor, catalog, auditoria) -> di
             error=str(exc),
         )
         feito["erro"] = str(exc)
+        if isinstance(exc, QueryUnavailable):
+            feito["falha"] = "indisponivel"
+        elif isinstance(exc, QueryObjectMissing):
+            feito["falha"] = "inexistente"
         return feito
 
     auditoria.consulta(
@@ -1025,11 +1096,16 @@ def _achados(passos) -> str:
     return "\n\n".join(partes)
 
 
-def _redigir_analise(com_dado, message, provider, auditoria, historico) -> tuple:
-    """A análise que cruza as consultas, conferida contra TODAS elas."""
+def _redigir_analise(com_dado, message, provider, auditoria, historico, plano=None) -> tuple:
+    """A análise que cruza as consultas, conferida contra TODAS elas.
+
+    Com `plano`, as consultas são as entregas de um pedido com várias
+    (ADR-0026): a redação responde a cada uma, e cada uma aparece."""
+    entregas = plano is not None
     consultas = tuple(
         {
             "hipotese": p["hipotese"],
+            "titulo": p["hipotese"] if entregas else "",
             "sql": p["sql"],
             "columns": p["resultado"].columns,
             "rows": p["resultado"].rows[:LINHAS_DOS_ACHADOS],
@@ -1039,7 +1115,9 @@ def _redigir_analise(com_dado, message, provider, auditoria, historico) -> tuple
     )
     pedido = AnswerRequest(
         question=message.content, sql="", columns=(), rows=(), truncated=False,
-        history=historico, consultas=consultas,
+        history=historico, consultas=consultas, entregas=entregas,
+        entendimento=plano.entendimento if entregas else "",
+        pedido_nao_atendido=plano.pedido_nao_atendido if entregas else "",
     )
     suporte = [(p["resultado"].columns, p["resultado"].rows, p["sql"], p["resultado"].row_count) for p in com_dado]
     fontes = [(p["resultado"], p["sql"]) for p in com_dado]
@@ -1056,6 +1134,8 @@ def _redigir_analise(com_dado, message, provider, auditoria, historico) -> tuple
         conferencia = check_grounding_varias(resposta.reply, suporte, message.content)
         if conferencia.ok:
             blocos, dados = _validar_blocos(resposta.blocos, fontes, message)
+            if entregas:
+                blocos, dados = _garantir_as_entregas(blocos, dados, com_dado, resposta.reply)
             extras = {"caveats": list(resposta.caveats)}
             sugestoes = _sugestoes(resposta.followups, message)
             if sugestoes:
@@ -1080,14 +1160,227 @@ def _redigir_analise(com_dado, message, provider, auditoria, historico) -> tuple
             titulo = ""
         blocos.append({"tipo": "tabela", "consulta": i, "colunas": list(p["resultado"].columns), "titulo": titulo})
         dados[str(i)] = _dados_da_consulta(p["resultado"])
-    texto = "Não consegui escrever a análise com segurança; estas são as consultas que fiz para investigar:"
+    texto = (
+        "Não consegui escrever o texto com segurança; estes são os resultados de cada parte do pedido:"
+        if entregas else
+        "Não consegui escrever a análise com segurança; estas são as consultas que fiz para investigar:"
+    )
     return texto, {
-        "rule": "analise_sem_narrativa",
+        "rule": "entregas_sem_narrativa" if entregas else "analise_sem_narrativa",
         "blocos": [{"tipo": "texto", "texto": texto}, *blocos],
         "dados_blocos": dados,
         "rascunho_reprovado": rascunhos,
         "motivos_ancoragem": motivos,
     }
+
+
+def _garantir_as_entregas(blocos, dados, com_dado, texto) -> tuple:
+    """Toda entrega com dado aparece: a que a redação não apontou ganha uma
+    tabela no fim. Pedir "a evolução e o ranking" e receber só um dos dois é
+    o erro que as várias consultas vieram corrigir."""
+    if not blocos:
+        blocos = [{"tipo": "texto", "texto": texto}] if texto else []
+    if not blocos:
+        return [], {}
+    blocos, dados = list(blocos), dict(dados)
+    citadas = {b.get("consulta") for b in blocos if b["tipo"] != "texto"}
+    for i, p in enumerate(com_dado):
+        if i in citadas:
+            continue
+        bloco = {"tipo": "tabela", "consulta": i, "colunas": list(p["resultado"].columns)}
+        titulo = p["hipotese"]
+        if titulo and check_grounding(titulo, (), (), "", "").ok:
+            bloco["titulo"] = titulo
+        blocos.append(bloco)
+        dados.setdefault(str(i), _dados_da_consulta(p["resultado"]))
+    return blocos, dados
+
+
+# ------------------------------------------------------- várias entregas
+
+MAX_ENTREGAS = 4
+
+
+def _entregar_varias(plano, message, provider, executor, catalog, auditoria, historico) -> _Decisao:
+    """Pedido com entregas diferentes (ADR-0026, ponto B): uma consulta por
+    entrega, cada uma validada e executada, e uma redação só.
+
+    "A evolução prescritiva e o ranking das especialidades" (Paulo,
+    2026-09-23) virou uma consulta com `UNION ALL`, meio vazia de cada lado.
+    Aqui cada entrega tem a sua consulta e a sua tabela ou gráfico. Consulta
+    que falha ganha uma correção própria, como a consulta comum (ADR-0014);
+    entrega que não sai é dita na resposta, e as outras seguem."""
+    passos = []
+    for indice, consulta in enumerate(plano.consultas[:MAX_ENTREGAS]):
+        if foi_interrompida(message):
+            return _interrompida()
+        passo = {"hipotese": consulta.get("titulo") or "", "sql": consulta["sql"],
+                 "reference_query_id": consulta.get("reference_query_id") or ""}
+        feito = _testar_hipotese(passo, 1, message, executor, catalog, auditoria,
+                                 rotulo="Consultando", etapa="consultando", entendimento=plano.entendimento)
+        if feito["falha"] == "indisponivel":
+            return _Decisao(
+                decision=AIReply.Decision.FAILED, reply=canned.BANCO_INDISPONIVEL,
+                rule="banco_indisponivel", raw={"erro": feito["erro"]},
+                message_status=Message.Status.FAILED,
+            )
+        if feito["resultado"] is None and not feito["falha"]:
+            corrigida = _corrigir_entrega(plano, indice, passo, feito["erro"], message, provider, auditoria, historico)
+            if corrigida:
+                feito = _testar_hipotese({**passo, "sql": corrigida}, 1, message, executor, catalog, auditoria,
+                                         rotulo="Consultando", etapa="consultando",
+                                         entendimento=plano.entendimento)
+        passos.append(feito)
+
+    registro = [
+        {"titulo": p["hipotese"], "sql": p["sql"],
+         "linhas": p["resultado"].row_count if p["resultado"] is not None else None, "erro": p["erro"]}
+        for p in passos
+    ]
+    com_dado = [p for p in passos if p["resultado"] is not None and p["resultado"].row_count > 0]
+    if not com_dado:
+        progresso.limpar(message.pk)
+        erros = [p["erro"] for p in passos if p["erro"]]
+        if erros:
+            return _Decisao(
+                decision=AIReply.Decision.FAILED,
+                reply=canned.CONSULTA_NAO_APROVADA.format(motivo=erros[0]),
+                rule="entregas_falharam", raw={"entregas": registro},
+                message_status=Message.Status.FAILED,
+                gap_reason="nenhuma entrega rodou: " + "; ".join(erros),
+            )
+        return _Decisao(
+            decision=AIReply.Decision.EMPTY_RESULT, reply=canned.RESULTADO_VAZIO,
+            rule="entregas_sem_linhas", raw={"entregas": registro},
+        )
+
+    faltaram = [
+        f"«{p['hipotese'] or 'uma das partes'}» " + ("não rodou" if p["resultado"] is None else "voltou sem linhas")
+        for p in passos if p not in com_dado
+    ]
+    if faltaram:
+        nota = "estas partes do pedido não trouxeram dado: " + "; ".join(faltaram)
+        plano = replace(plano, pedido_nao_atendido="; ".join(filter(None, [plano.pedido_nao_atendido, nota])))
+
+    progresso.definir(message.pk, "Escrevendo a resposta", etapa="escrevendo", entendimento=plano.entendimento)
+    texto, raw = _redigir_analise(com_dado, message, provider, auditoria, historico, plano=plano)
+    progresso.limpar(message.pk)
+    for campo in ("entendimento", "pedido_nao_atendido"):
+        if getattr(plano, campo):
+            raw[campo] = getattr(plano, campo)
+    return _Decisao(
+        decision=AIReply.Decision.ANSWERED,
+        reply=texto,
+        rule=raw.pop("rule", ""),
+        raw={**raw, "entregas": registro, "reference_query_id": plano.consultas[0].get("reference_query_id", "")},
+    )
+
+
+def _corrigir_entrega(plano, indice, passo, erro, message, provider, auditoria, historico) -> str:
+    """Uma correção para a consulta de uma entrega. Devolve o SQL novo ou ""."""
+    titulo = passo["hipotese"] or f"parte {indice + 1}"
+    corrigido = provider.plan(PlanRequest(
+        question=message.content, history=historico, planilha=_planilha(message),
+        error_note=(
+            f"O pedido tem várias entregas. A consulta da entrega «{titulo}» não pôde ser usada: "
+            f"{erro}\n\nReescreva só a consulta dessa entrega, em `sql`."
+        ),
+        full_context=_veio_do_documento_inteiro(plano),
+    ))
+    auditoria.chamada(AICall.Stage.FIX, corrigido.usage)
+    if corrigido.sql:
+        return corrigido.sql
+    for i, consulta in enumerate(corrigido.consultas):
+        if consulta.get("titulo") == passo["hipotese"] or i == indice:
+            return consulta["sql"]
+    return ""
+
+
+# ------------------------------------------------------- autocrítica
+
+
+def _consulta_anterior(message) -> autocritica.Anterior | None:
+    """A consulta que sustentou a última resposta com dado desta conversa."""
+    run = (
+        QueryRun.objects.filter(
+            ai_reply__message__conversation=message.conversation,
+            ai_reply__message__id__lt=message.id,
+            status=QueryRun.Status.SUCCESS,
+        )
+        .order_by("-ai_reply__message__id", "-attempt", "-id")
+        .first()
+    )
+    if run is None:
+        return None
+    amostra = run.result_sample or {}
+    return autocritica.Anterior(
+        colunas=tuple(amostra.get("columns") or ()),
+        linhas=tuple(tuple(linha) for linha in amostra.get("rows") or ()),
+        row_count=run.row_count or 0,
+        sql=run.sql,
+    )
+
+
+def _sem_mudanca(plano):
+    """A consulta final repete a anterior: a redação precisa saber, para
+    explicar em vez de apresentar o mesmo número como novo."""
+    if plano.pedido_nao_atendido:
+        return plano
+    return replace(plano, pedido_nao_atendido=autocritica.NAO_MUDOU)
+
+
+def _voltar_para_a_consulta(auditoria, sql) -> None:
+    """A consulta que vale vai para o fim da lista: a tela, o gráfico e o
+    histórico leem a última que deu certo."""
+    for i, consulta in enumerate(auditoria.consultas):
+        if consulta.get("status") == QueryRun.Status.SUCCESS and consulta.get("sql") == sql:
+            original = auditoria.consultas.pop(i)
+            ultima = max((c.get("attempt") or 0) for c in auditoria.consultas) if auditoria.consultas else 0
+            auditoria.consultas.append({**original, "attempt": ultima + 1})
+            return
+
+
+def _autocriticar(plano, resultado, message, provider, executor, catalog, auditoria, historico):
+    """Seguimento que muda o dado e devolveu os mesmos números da resposta
+    anterior: o planejador ganha uma segunda chance (`autocritica.py`).
+
+    Devolve (plano, resultado) que valem. Se a segunda chance não produzir
+    nada melhor, fica o primeiro — com o aviso à redação de que o número não
+    mudou."""
+    anterior = _consulta_anterior(message)
+    if not autocritica.mesmo_resultado(resultado, anterior):
+        return plano, resultado
+
+    logger.info("Seguimento com mudança de dado devolveu o resultado anterior; segunda chance")
+    progresso.definir(message.pk, "O resultado saiu igual ao anterior; revendo a consulta",
+                      etapa="conferindo", entendimento=plano.entendimento)
+    segundo = provider.plan(PlanRequest(
+        question=message.content, history=historico, planilha=_planilha(message),
+        autocritica_note=autocritica.nota(plano.entendimento, anterior),
+        full_context=_veio_do_documento_inteiro(plano),
+    ))
+    auditoria.chamada(AICall.Stage.SELF_CHECK, segundo.usage)
+    registro = {"motivo": "mesmos números da resposta anterior", "refeita": False, "mudou": False}
+
+    if segundo.intent != Plan.Intent.ANSWER_WITH_DATA or not segundo.sql or segundo.sql == plano.sql:
+        auditoria.extras["autocritica"] = registro
+        # O planejador manteve a consulta: o que ele disse sobre isso vale.
+        if segundo.pedido_nao_atendido:
+            plano = replace(plano, pedido_nao_atendido=segundo.pedido_nao_atendido)
+        return _sem_mudanca(plano), resultado
+
+    novo_plano, novo, erro, _ = _executar_com_correcao(
+        segundo, message, provider, executor, catalog, auditoria, historico
+    )
+    registro["refeita"] = True
+    if novo is None or novo.row_count == 0:
+        auditoria.extras["autocritica"] = {**registro, "erro": erro or "a consulta refeita voltou sem linhas"}
+        _voltar_para_a_consulta(auditoria, plano.sql)
+        return _sem_mudanca(plano), resultado
+
+    registro["mudou"] = not autocritica.mesmo_resultado(novo, anterior)
+    auditoria.extras["autocritica"] = registro
+    return (novo_plano if registro["mudou"] else _sem_mudanca(novo_plano)), novo
 
 
 def _so_as_linhas_da_planilha(resultado, plano, message):
@@ -1273,8 +1566,15 @@ def _mensagem_sem_dado(plano, message, padrao: str) -> str:
 def _grafico_a_ajustar(message):
     """A última resposta desta conversa que tem gráfico na tela.
 
-    Volta `(resposta, grafico, linhas)`. Sem gráfico à vista não há o que
-    ajustar, e a mensagem segue o caminho normal."""
+    Volta `(origem, grafico, dados, consulta)`: `origem` é a resposta que
+    rodou a consulta, `dados` o resultado que desenha o gráfico e `consulta`
+    o índice do bloco de onde ele veio (None no gráfico solto). Sem gráfico à
+    vista não há o que ajustar, e a mensagem segue o caminho normal.
+
+    Resposta em blocos também conta: em 2026-09-23 o gráfico da conversa 14
+    estava num bloco, a regra não o via, e "quero ver CAT 1 e CAT 3 de forma
+    separada" foi para o modelo, que refez a consulta e devolveu o mesmo
+    desenho."""
     anteriores = (
         Message.objects.filter(
             conversation_id=message.conversation_id,
@@ -1285,17 +1585,40 @@ def _grafico_a_ajustar(message):
         .order_by("-id")[:5]
     )
     for anterior in anteriores:
-        reply = getattr(getattr(anterior, "in_reply_to", None), "ai_reply", None)
-        if reply is None:
-            continue
-        grafico = (reply.raw_response or {}).get("grafico")
-        if not grafico:
-            continue
-        consulta = reply.query_runs.filter(status=QueryRun.Status.SUCCESS).order_by("-attempt").first()
-        linhas = (consulta.result_sample or {}).get("rows") if consulta else None
-        if linhas:
-            return anterior, grafico, len(linhas)
-    return None, None, 0
+        achado = _grafico_da_resposta(anterior)
+        if achado is not None:
+            return achado
+    return None, None, {}, None
+
+
+def _grafico_da_resposta(resposta, profundidade: int = 0):
+    """`(origem, grafico, dados, consulta)` de uma resposta enviada, ou None."""
+    reply = getattr(getattr(resposta, "in_reply_to", None), "ai_reply", None)
+    if reply is None:
+        return None
+    raw = reply.raw_response or {}
+    do_bloco = [b for b in raw.get("blocos") or () if b.get("tipo") == "grafico"]
+    if do_bloco:
+        bloco = do_bloco[-1]
+        dados = (raw.get("dados_blocos") or {}).get(str(bloco.get("consulta"))) or {}
+        return (resposta, bloco.get("grafico") or {}, dados, bloco.get("consulta")) if dados.get("rows") else None
+    grafico = raw.get("grafico")
+    if not grafico:
+        return None
+    if raw.get("grafico_de"):
+        # Ajuste de um ajuste ("muda para barras", depois "separa"): os dados
+        # continuam na resposta que rodou a consulta; o desenho é o mais novo.
+        origem = (
+            Message.objects.filter(pk=raw["grafico_de"]).select_related("in_reply_to__ai_reply").first()
+            if profundidade < 5 else None
+        )
+        achado = _grafico_da_resposta(origem, profundidade + 1) if origem is not None else None
+        if achado is None:
+            return None
+        return achado[0], grafico, achado[2], raw.get("grafico_de_consulta", achado[3])
+    consulta = reply.query_runs.filter(status=QueryRun.Status.SUCCESS).order_by("-attempt").first()
+    dados = (consulta.result_sample or {}) if consulta else {}
+    return (resposta, grafico, dados, None) if dados.get("rows") else None
 
 
 def _ajustar_grafico(message) -> _Decisao | None:
@@ -1307,18 +1630,37 @@ def _ajustar_grafico(message) -> _Decisao | None:
     ajuste = ajuste_grafico.ler_ajuste(message.content)
     if not ajuste:
         return None
-    origem, grafico, total = _grafico_a_ajustar(message)
+    origem, grafico, dados, indice = _grafico_a_ajustar(message)
     if origem is None or grafico.get("tipo") == "vega":
         # Trocar o desenho de uma especificação Vega-Lite é reescrevê-la:
         # isso é com a IA, que conhece os campos.
         return None
 
+    if ajuste.get("separar") is False and not grafico.get("separar") and len(ajuste) == 1:
+        # "Juntar" um gráfico que já está junto não é ajuste de desenho: é
+        # outra coisa ("junta o estoque"), e quem resolve é a IA.
+        return None
+
     novo = ajuste_grafico.aplicar(grafico, ajuste)
+    colunas, linhas = list(dados.get("columns") or ()), dados.get("rows") or ()
+    if novo.get("x") in colunas and novo.get("tipo") != "pizza" and len(novo.get("series") or []) <= 1:
+        # O gráfico de antes pode ter saído sem grupo (é o caso da conversa
+        # 14): o ajuste confere de novo, com o mesmo resultado. Só com uma
+        # série: com várias, o grupo trocaria as séries e sumiria com elas.
+        grupo = _grupo_do_formato_longo(colunas, linhas, novo["x"], novo.get("series") or [], novo.get("grupo") or "")
+        if grupo:
+            novo["grupo"] = grupo
+    if ajuste.get("separar") and not novo.get("grupo") and len(novo.get("series") or []) < 2:
+        # Separar o quê? Sem categoria no resultado, quem resolve é a IA.
+        return None
+    raw = {"grafico": novo, "grafico_de": origem.pk}
+    if indice is not None:
+        raw["grafico_de_consulta"] = indice
     return _Decisao(
         decision=AIReply.Decision.CONVERSATION,
-        reply=ajuste_grafico.descrever(ajuste, total),
+        reply=ajuste_grafico.descrever(ajuste, len(linhas), novo.get("grupo") or ""),
         rule="ajuste_de_grafico",
-        raw={"grafico": novo, "grafico_de": origem.pk},
+        raw=raw,
     )
 
 
@@ -1447,6 +1789,11 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
     if foi_interrompida(message):
         return _interrompida()
 
+    if plano.entendimento and plano.intent in (Plan.Intent.ANSWER_WITH_DATA, Plan.Intent.INVESTIGATE):
+        # A tela troca o "Pensando…" pelo que foi entendido: é a hora mais
+        # barata de a pessoa perceber que o pedido foi mal lido (e parar).
+        progresso.definir(message.pk, "Montando a consulta", etapa="entendi", entendimento=plano.entendimento)
+
     if plano.intent == Plan.Intent.CONVERSATION:
         return _conversa(plano, message, historico)
 
@@ -1469,6 +1816,16 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
             reply=_mensagem_sem_dado(plano, message, canned.FORA_DE_ESCOPO),
             raw={"reason": plano.reason},
         )
+
+    if plano.intent == Plan.Intent.ANSWER_WITH_DATA and plano.consultas:
+        if len(plano.consultas) >= 2 and message.anexo_tipo != Message.Anexo.PLANILHA:
+            return _entregar_varias(plano, message, provider, executor, catalog, auditoria, historico)
+        if not plano.sql:
+            # Uma entrega só (ou planilha, que se preenche de uma consulta):
+            # é o caminho comum.
+            primeira = plano.consultas[0]
+            plano = replace(plano, sql=primeira["sql"],
+                            reference_query_id=primeira.get("reference_query_id") or plano.reference_query_id)
 
     if plano.intent == Plan.Intent.UNKNOWN or not plano.sql:
         return _Decisao(
@@ -1545,6 +1902,11 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
             rule=raw.pop("rule", "") or "resultado_vazio_verificado",
             raw={**raw, "reference_query_id": plano.reference_query_id},
         )
+
+    if plano.seguimento == autocritica.MUDA_O_DADO:
+        plano, resultado = _autocriticar(plano, resultado, message, provider, executor, catalog, auditoria, historico)
+        if foi_interrompida(message):
+            return _interrompida()
 
     vai_preencher = message.anexo_tipo == Message.Anexo.PLANILHA and bool(plano.preenchimento)
     if vai_preencher:

@@ -797,8 +797,8 @@ def test_vega_lite_invalido_cai_no_formato_simples(conversa, catalogo):
 @pytest.mark.parametrize(
     "chart,esperado",
     [
-        # grupo numérico não é categoria
-        ({"tipo": "barras", "x": "competencia", "series": ["px"], "grupo": "px"}, {}),
+        # a medida não é grupo: o eixo repete, e quem explica é a especialidade
+        ({"tipo": "barras", "x": "competencia", "series": ["px"], "grupo": "px"}, {"grupo": "especialidade"}),
         # linha não empilha
         ({"tipo": "linha", "x": "competencia", "series": ["px"], "grupo": "especialidade", "empilhado": True},
          {"grupo": "especialidade"}),
@@ -1017,3 +1017,106 @@ def test_sem_grafico_na_conversa_o_pedido_segue_para_a_ia(conversa, catalogo):
 
     assert reply.decision == AIReply.Decision.CLARIFY
     assert reply.rule == ""
+
+
+# --- conversa 14 (2026-09-23): mês × categoria × PX --------------------------
+
+PX_POR_CATEGORIA = make_result(
+    ("competencia", "categoria", "px"),
+    [("2026-01-01", 1, 520.0), ("2026-01-01", 3, 221.0), ("2026-02-01", 1, 617.0), ("2026-02-01", 3, 257.0)],
+)
+
+
+def test_eixo_repetido_ganha_o_grupo_mesmo_em_numero(conversa, catalogo):
+    """Conversa 14: a redação pôs x=competencia e series=px, sem grupo, e a
+    categoria vinha em número (1 e 3). Cada mês saiu duas vezes, 520 e 221.
+    O grupo é deduzido do resultado: é a coluna que, com o mês, identifica a
+    linha."""
+    reply = _com_grafico(
+        conversa, catalogo,
+        {"tipo": "barras", "x": "competencia", "series": ["px"], "titulo": ""},
+        resultado=PX_POR_CATEGORIA, texto="CAT 1 teve 617 PX em fev/2026.",
+    )
+
+    assert reply.raw_response["grafico"]["grupo"] == "categoria"
+
+
+def test_eixo_repetido_sem_explicacao_nao_vira_grafico(conversa, catalogo):
+    """Mês repetido sem coluna que diga por quê: o desenho seria de números
+    que não se comparam. Melhor nenhum gráfico."""
+    repetido = make_result(("competencia", "px"), [("2026-01-01", 520.0), ("2026-01-01", 221.0)])
+
+    reply = _com_grafico(
+        conversa, catalogo, {"tipo": "barras", "x": "competencia", "series": ["px"], "titulo": ""},
+        resultado=repetido, texto="Foram 520 PX em jan/2026.",
+    )
+
+    assert "grafico" not in reply.raw_response
+
+
+def test_separar_pedido_pela_redacao(conversa, catalogo):
+    reply = _com_grafico(
+        conversa, catalogo,
+        {"tipo": "barras", "x": "competencia", "series": ["px"], "grupo": "categoria",
+         "separar": True, "empilhado": True, "titulo": ""},
+        resultado=PX_POR_CATEGORIA, texto="CAT 1 teve 617 PX em fev/2026.",
+    )
+
+    grafico = reply.raw_response["grafico"]
+    assert grafico["separar"] is True and "empilhado" not in grafico
+
+
+def _conversa_14(conversa, catalogo):
+    """A resposta da conversa 14: texto, tabela e gráfico em blocos, gráfico
+    sem grupo."""
+    provider = ScriptedAIProvider(
+        [plano()],
+        [resposta("CAT 1 teve 617 PX em fev/2026.", blocos=(
+            {"tipo": "texto", "texto": "CAT 1 teve 617 PX em fev/2026."},
+            {"tipo": "tabela", "consulta": 0, "colunas": ["competencia", "categoria", "px"]},
+            {"tipo": "grafico", "consulta": 0,
+             "grafico": {"tipo": "barras", "x": "competencia", "series": ["px"], "titulo": ""}},
+        ))],
+    )
+    reply = _responder(_pergunta(conversa, "PX de Neurologia CAT 1 e 3 por mês"), catalogo,
+                       provider=provider, executor=FakeQueryExecutor([PX_POR_CATEGORIA]))
+    assert reply.raw_response["blocos"][2]["tipo"] == "grafico"
+    return reply
+
+
+def test_separar_o_grafico_de_um_bloco_sem_ia_e_sem_banco(conversa, catalogo):
+    """"O gráfico não ficou bom! eu quero ver CAT 1 e CAT 3 de forma
+    separada": o gráfico estava num bloco, a regra não o via, e o pedido foi
+    ao modelo, que refez a consulta e devolveu o mesmo desenho. Agora é ajuste
+    de desenho, com o grupo que faltava."""
+    _conversa_14(conversa, catalogo)
+    provider = ScriptedAIProvider([], [])
+    executor = FakeQueryExecutor()
+
+    reply = _responder(
+        _pergunta(conversa, "O gráfico não ficou bom! eu quero ver CAT 1 e CAT 3 de forma separada", client_id="c-9"),
+        catalogo, provider=provider, executor=executor,
+    )
+
+    assert reply.rule == "ajuste_de_grafico"
+    grafico = reply.raw_response["grafico"]
+    assert grafico["grupo"] == "categoria" and grafico["separar"] is True
+    assert reply.raw_response["grafico_de_consulta"] == 0
+    assert "um gráfico por categoria" in reply.reply_text
+    assert provider.plan_requests == [] and executor.executed == []
+
+
+def test_ajuste_de_ajuste_continua_com_os_dados_da_consulta(conversa, catalogo):
+    """"Separa" e depois "junta num gráfico só": o segundo ajuste lê o
+    desenho do primeiro e os números da resposta que rodou a consulta."""
+    original = _conversa_14(conversa, catalogo)
+    _responder(_pergunta(conversa, "quero ver separado", client_id="c-9"), catalogo,
+               provider=ScriptedAIProvider([], []), executor=FakeQueryExecutor())
+
+    reply = _responder(_pergunta(conversa, "junta tudo no mesmo gráfico", client_id="c-10"), catalogo,
+                       provider=ScriptedAIProvider([], []), executor=FakeQueryExecutor())
+
+    assert reply.rule == "ajuste_de_grafico"
+    assert "separar" not in reply.raw_response["grafico"]
+    assert reply.raw_response["grafico"]["grupo"] == "categoria"
+    assert reply.raw_response["grafico_de"] == original.message.replies.get().pk

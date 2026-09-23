@@ -19,7 +19,7 @@ from django.utils import timezone
 
 from ai_orchestrator.models import AICall, AIReply, CatalogGap
 from datasource.models import DataExport, QueryRun
-from messaging.models import Message
+from messaging.models import Avaliacao, Message
 
 # Rótulos em português para a tela; a chave é o valor gravado no banco.
 DECISOES = {
@@ -73,6 +73,12 @@ class Relatorio:
     consultas_com_erro: int = 0
     consultas_estouradas: int = 0
     reescritas: int = 0
+    # Respostas que passaram pela redação: a base da taxa de reescrita.
+    redigidas: int = 0
+    autocriticas: int = 0
+    uteis: int = 0
+    erradas: int = 0
+    comentarios: tuple = ()
     regras: dict = field(default_factory=dict)
     lacunas_abertas: int = 0
     lacunas: tuple = ()
@@ -86,6 +92,18 @@ class Relatorio:
         É o indicador que diz se vale mexer na ordem do contexto: prefixo
         estável no começo do prompt vira desconto direto."""
         return self.tokens_em_cache / self.tokens_entrada if self.tokens_entrada else 0.0
+
+    @property
+    def taxa_de_reescrita(self) -> float:
+        """Fatia das redações reprovadas na ancoragem (26% em 2026-09-23). É
+        o número a acompanhar depois de mudar o prompt do planejador para a
+        consulta já trazer variação, share e total."""
+        return self.reescritas / self.redigidas if self.redigidas else 0.0
+
+    @property
+    def taxa_de_acerto_avaliada(self) -> float:
+        avaliadas = self.uteis + self.erradas
+        return self.uteis / avaliadas if avaliadas else 0.0
 
     @property
     def com_dado(self) -> int:
@@ -176,6 +194,25 @@ def montar_relatorio(inicio=None, fim=None, dias: int = 30) -> Relatorio:
         .values("ai_reply_id").distinct().count()
     )
 
+    redigidas = (
+        AICall.objects.filter(ai_reply__in=respostas, stage=AICall.Stage.ANSWER)
+        .values("ai_reply_id").distinct().count()
+    )
+    autocriticas = (
+        AICall.objects.filter(ai_reply__in=respostas, stage=AICall.Stage.SELF_CHECK)
+        .values("ai_reply_id").distinct().count()
+    )
+    avaliacoes = Avaliacao.objects.filter(**intervalo)
+    notas = {linha["nota"]: linha["n"] for linha in avaliacoes.values("nota").annotate(n=Count("id"))}
+    comentarios = tuple(
+        Lacuna(
+            data=timezone.localtime(a.created_at).strftime("%d/%m"),
+            pergunta=" ".join((a.message.in_reply_to.content if a.message.in_reply_to else "").split())[:90],
+            motivo=" ".join(a.comentario.split())[:90],
+        )
+        for a in avaliacoes.filter(nota=Avaliacao.Nota.ERRADA).select_related("message__in_reply_to")[:10]
+    )
+
     mensagens = Message.objects.filter(
         direction=Message.Direction.INBOUND, created_at__gte=inicio, created_at__lt=fim
     )
@@ -202,6 +239,11 @@ def montar_relatorio(inicio=None, fim=None, dias: int = 30) -> Relatorio:
         consultas_com_erro=contagem_consultas["erros"],
         consultas_estouradas=contagem_consultas["estouradas"],
         reescritas=reescritas,
+        redigidas=redigidas,
+        autocriticas=autocriticas,
+        uteis=notas.get(Avaliacao.Nota.UTIL, 0),
+        erradas=notas.get(Avaliacao.Nota.ERRADA, 0),
+        comentarios=comentarios,
         regras=regras,
         lacunas_abertas=abertas.count(),
         lacunas=tuple(

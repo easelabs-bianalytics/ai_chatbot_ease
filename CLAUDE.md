@@ -56,6 +56,7 @@ bi/
 │   ├── catalog/           # loader e validação do catálogo, comando catalog_check
 │   ├── knowledge/catalog.yaml   # schemas/tabelas permitidos, colunas bloqueadas, dicionário
 │   ├── knowledge/casos_validacao.yaml  # casos da Fase 7, derivados das referências
+│   ├── knowledge/casos_do_uso.yaml     # rascunhos de caso vindos dos 👎 (ADR-0027)
 │   ├── datasource/        # executors/{base,fake,postgres_readonly}, sql_guard, QueryRun
 │   ├── ai_orchestrator/   # orchestrator, rules, grounding, canned, tasks,
 │   │                      # providers/{base,fake,openai_provider,retrying}, prompts/*.md,
@@ -120,5 +121,7 @@ DEBUG=1 uv run python app/manage.py runserver     # http://127.0.0.1:8000
 uv run python app/manage.py run_synthetic_cases --so-gabarito   # só os gabaritos, sem IA
 uv run python app/manage.py run_synthetic_cases   # gera docs/validation-report.md
 uv run python app/manage.py bi_report
+uv run python app/manage.py casos_do_uso          # cada 👎 vira rascunho de caso
+uv run python app/manage.py run_synthetic_cases --com-rascunhos
 uv run python app/manage.py catalog_check
 ```
