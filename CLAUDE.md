@@ -12,7 +12,9 @@ A estrutura e o jeito de trabalhar replicam
 WhatsApp, em produção). **Estude, nunca altere nada lá.** Replica-se a
 estrutura e os padrões, não o domínio: nada de WhatsApp, Evolution API,
 respostas prontas do candidato, regras eleitorais, opt-out, tráfego pago,
-humanização anti-robô ou atraso de resposta.
+humanização anti-robô ou atraso de resposta. O canal WhatsApp entrou por
+decisão própria (ADR-0028): o adaptador da Evolution da referência serve de
+consulta, e as lições dela (grupos, número restringido) estão no ADR.
 
 ## Regras de trabalho (inegociáveis)
 
@@ -62,6 +64,8 @@ bi/
 │   │                      # providers/{base,fake,openai_provider,retrying}, prompts/*.md,
 │   │                      # models (AIReply, AICall), management/commands/chat_local
 │   ├── reporting/         # bi_report, run_synthetic_cases
+│   ├── whatsapp/          # canal WhatsApp (ADR-0028): entrada, saída, gráfico em PNG,
+│   │                      # cliente da Evolution (real e fake), cadastro, webhook
 │   └── web/               # página do chat (template, styles.css, app.js, logo) e login por sessão
 ├── tests/ conftest.py · unit/ · integration/ · fakes/
 └── docs/ adr/ · open-decisions.md · plan.md · catalog-checklist.md · validation-report.md
@@ -124,4 +128,6 @@ uv run python app/manage.py bi_report
 uv run python app/manage.py casos_do_uso          # cada 👎 vira rascunho de caso
 uv run python app/manage.py run_synthetic_cases --com-rascunhos
 uv run python app/manage.py catalog_check
+docker compose --profile whatsapp up -d evolution   # Evolution local (ADR-0028), porta 8082
+uv run python app/manage.py whatsapp_configurar     # instância, webhook e estado
 ```

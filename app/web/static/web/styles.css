@@ -284,6 +284,8 @@ body.bg-gradiente {
 .sidebar-recolher svg { width: 17px; height: 17px; }
 .topbar-produto { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
 .produto-nome { font-size: 14px; font-weight: 600; color: var(--gray-900); letter-spacing: -0.1px; white-space: nowrap; }
+/* A versão ao lado do nome, como "Claude Opus 5": mesma linha, peso menor. */
+.produto-versao { font-weight: 500; color: var(--gray-600); }
 .produto-area { font-size: 12px; font-weight: 500; color: var(--gray-600); letter-spacing: 0.1px; white-space: nowrap; }
 /* As duas linhas ocupam o mesmo lugar: no hover a descrição dá vez ao que
    o clique faz, sem a lateral mudar de altura. */
@@ -1349,7 +1351,14 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
 }
 .grafico-multiplo { min-width: 0; }
 .grafico-multiplo .grafico-area { height: 220px; }
-.grafico-subtitulo { font-size: 12px; font-weight: 600; color: var(--gray-600); margin-bottom: 4px; }
+.grafico-subtitulo {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  font-size: 12px; font-weight: 600; color: var(--gray-700); margin-bottom: 4px;
+}
+.grafico-subtitulo-total { font-weight: 500; color: var(--gray-500); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Muitos painéis: três por linha quando cabe, e mais baixos. */
+.grafico-multiplos-muitos { grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); }
+.grafico-multiplos-muitos .grafico-area { height: 170px; }
 /* Vega-Lite (ADR-0026): a largura acompanha o cartão; a altura, o desenho. */
 .grafico-vega { width: 100%; min-height: 120px; }
 .grafico-vega .vega-embed { width: 100%; }
@@ -2694,3 +2703,10 @@ body.redimensionando .chat-shell { transition: none; }
 }
 .avaliacao-acoes { display: flex; justify-content: flex-end; gap: 8px; }
 @media (max-width: 640px) { .avaliacao { padding: 2px 12px 10px; } }
+
+/* Conversa que veio do WhatsApp (ADR-0028). */
+.conversa-canal {
+  display: inline-block; margin-right: 6px; padding: 0 5px;
+  font-size: 10px; font-weight: 700; line-height: 16px; vertical-align: 1px;
+  color: var(--success); background: var(--success-bg); border-radius: 4px;
+}

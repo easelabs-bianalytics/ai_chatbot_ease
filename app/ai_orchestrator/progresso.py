@@ -16,6 +16,11 @@ registro. O registro de verdade é a auditoria da resposta.
 """
 
 from django.core.cache import cache
+from django.dispatch import Signal
+
+# Disparado a cada mudança de estado, com `message_id` e `estado`. Quem ouve
+# é o canal WhatsApp (`whatsapp/aviso.py`), que não tem tela para o polling.
+definido = Signal()
 
 SEGUNDOS = 10 * 60
 MAX_CARACTERES = 160
@@ -43,6 +48,10 @@ def definir(message_id: int, texto: str, etapa: str = "investigando", entendimen
         }
         cache.set(_chave(message_id), estado, timeout=SEGUNDOS)
     except Exception:  # noqa: BLE001 — cache fora do ar não pode parar a resposta
+        return
+    try:
+        definido.send(sender=None, message_id=message_id, estado=estado)
+    except Exception:  # noqa: BLE001 — quem ouve nunca derruba a resposta
         pass
 
 

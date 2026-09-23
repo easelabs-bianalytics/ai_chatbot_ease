@@ -11,3 +11,4 @@ staticfiles/
 htmlcov/
 *.log
 .DS_Store
+whatsapp_qr.png

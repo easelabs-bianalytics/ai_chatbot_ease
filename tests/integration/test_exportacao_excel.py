@@ -88,17 +88,17 @@ def test_a_consulta_passa_pelo_validador_de_novo_com_o_limite_da_planilha(client
     """O limite da conversa é pequeno porque o resultado vai para a IA; o da
     planilha não passa pela IA e pode ser maior. Quem garante que continua
     sendo um SELECT é o validador, rodando de novo."""
-    from messaging import views
+    from messaging import planilha_da_resposta as modulo
 
     chamadas = []
-    original = views.validate_sql
-    monkeypatch.setattr(views, "validate_sql", lambda sql, cat, **kw: chamadas.append(kw) or original(sql, cat, **kw))
+    original = modulo.validate_sql
+    monkeypatch.setattr(modulo, "validate_sql", lambda sql, cat, **kw: chamadas.append(kw) or original(sql, cat, **kw))
     _executor(monkeypatch, FakeQueryExecutor([RESULTADO]))
 
     cliente.get(_url(resposta))
 
-    assert chamadas == [{"max_rows": views.EXPORT_MAX_ROWS}]
-    assert views.EXPORT_MAX_ROWS > 500
+    assert chamadas == [{"max_rows": modulo.EXPORT_MAX_ROWS}]
+    assert modulo.EXPORT_MAX_ROWS > 500
 
 
 def test_cada_download_fica_registrado(cliente, resposta, ana, monkeypatch):

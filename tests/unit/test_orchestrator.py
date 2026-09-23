@@ -1120,3 +1120,64 @@ def test_ajuste_de_ajuste_continua_com_os_dados_da_consulta(conversa, catalogo):
     assert "separar" not in reply.raw_response["grafico"]
     assert reply.raw_response["grafico"]["grupo"] == "categoria"
     assert reply.raw_response["grafico_de"] == original.message.replies.get().pk
+
+
+# --- conversa 18 (2026-09-23): o primeiro 👎 --------------------------------
+
+ESPECIALIDADES = [f"ESPECIALIDADE {n:02d}" for n in range(30)]
+PX_POR_ESPECIALIDADE_LONGO = make_result(
+    ("mes", "especialidade", "px"),
+    [(f"2026-0{m}-01", e, float(100 + i * 10 + m)) for i, e in enumerate(ESPECIALIDADES) for m in range(1, 9)],
+)
+
+
+def _grafico_da_conversa_18(conversa, catalogo, grafico):
+    return _responder(
+        _pergunta(conversa, "Separar as especialidades em gráficos"), catalogo,
+        provider=ScriptedAIProvider([plano()], [resposta("PX mensal por especialidade em 2026.", blocos=(
+            {"tipo": "texto", "texto": "PX mensal por especialidade em 2026."},
+            {"tipo": "tabela", "consulta": 0, "colunas": ["mes", "especialidade", "px"]},
+            {"tipo": "grafico", "consulta": 0, "grafico": grafico},
+        ))]),
+        executor=FakeQueryExecutor([PX_POR_ESPECIALIDADE_LONGO]),
+    )
+
+
+def test_grupo_pedido_com_muitas_categorias_vira_grafico(conversa, catalogo):
+    """Conversa 18: a redação pediu "um gráfico por especialidade" (30 delas)
+    e a validação descartou em silêncio, porque o teto de 12 categorias valia
+    também para o grupo PEDIDO. O teto é só para deduzir; a tela mostra as
+    maiores."""
+    reply = _grafico_da_conversa_18(conversa, catalogo, {
+        "tipo": "linha", "x": "mes", "series": ["px"], "grupo": "especialidade", "separar": True, "titulo": ""})
+
+    grafico = next(b for b in reply.raw_response["blocos"] if b["tipo"] == "grafico")["grafico"]
+    assert grafico["grupo"] == "especialidade" and grafico["separar"] is True
+    assert "aviso_de_grafico" not in reply.raw_response
+
+
+def test_grafico_recebe_o_resultado_inteiro(conversa, catalogo):
+    """Com 240 linhas ordenadas por especialidade, as 100 primeiras
+    desenhavam só as especialidades do começo do alfabeto."""
+    reply = _grafico_da_conversa_18(conversa, catalogo, {
+        "tipo": "barras", "x": "mes", "series": ["px"], "grupo": "especialidade", "empilhado": True, "titulo": ""})
+
+    dados = reply.raw_response["dados_blocos"]["0"]
+    assert len(dados["rows"]) == 240 and dados["total"] == 240
+
+
+def test_grafico_pedido_que_cai_e_dito_na_resposta(conversa, catalogo):
+    """O texto da redação dizia "está separada em um gráfico por
+    especialidade" sem gráfico nenhum. Agora a resposta avisa, com o motivo."""
+    reply = _grafico_da_conversa_18(conversa, catalogo, {
+        "tipo": "barras", "x": "coluna_que_nao_existe", "series": ["px"], "titulo": ""})
+
+    assert not any(b["tipo"] == "grafico" for b in reply.raw_response["blocos"])
+    assert reply.raw_response["blocos"][-1]["texto"].startswith("_Não consegui desenhar o gráfico pedido")
+    assert "Não consegui desenhar o gráfico pedido" in reply.reply_text
+
+
+def test_sem_pedido_de_grafico_nao_ha_aviso(conversa, catalogo):
+    reply = _grafico_da_conversa_18(conversa, catalogo, {"tipo": "nenhum", "x": "", "series": []})
+
+    assert "aviso_de_grafico" not in reply.raw_response

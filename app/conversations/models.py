@@ -44,10 +44,21 @@ class Conversation(models.Model):
         OPEN = "open", "Aberta"
         ARCHIVED = "archived", "Arquivada"
 
+    class Canal(models.TextChoices):
+        WEB = "web", "Chat web"
+        WHATSAPP = "whatsapp", "WhatsApp"
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="conversations"
     )
     title = models.CharField(max_length=200, blank=True)
+    # Onde a conversa nasceu (ADR-0028). A do WhatsApp aparece também no chat
+    # web, com o mesmo histórico; `whatsapp_jid` é o chat (pessoa ou grupo)
+    # para onde a resposta volta.
+    # `db_default`: o container antigo, que não conhece a coluna, continua
+    # gravando entre o `migrate` e a troca da imagem.
+    canal = models.CharField(max_length=20, choices=Canal.choices, default=Canal.WEB, db_default=Canal.WEB)
+    whatsapp_jid = models.CharField(max_length=80, blank=True, db_index=True, db_default="")
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.OPEN)
     project = models.ForeignKey(
         Project,

@@ -443,12 +443,30 @@ EMPILHAVEIS = frozenset({"barras", "barras_horizontais", "area"})
 MAX_SERIES = 3
 
 
-def _grafico(sugestao, resultado, message, plano) -> dict | None:
+def _pediu_grafico(sugestao) -> bool:
+    """A redação propôs um gráfico (e não "nenhum")."""
+    sugestao = sugestao or {}
+    return bool(sugestao.get("vega_lite")) or (sugestao.get("tipo") or "nenhum") not in ("", "nenhum")
+
+
+def _grafico(sugestao, resultado, message, plano, motivos=None) -> dict | None:
     """Confere a sugestão de gráfico contra o resultado de verdade (ADR-0020).
 
     A IA só escolhe o tipo e as colunas; o desenho usa os números da
     consulta. Coluna inexistente, série que não é número ou resultado de uma
-    linha só não viram gráfico — melhor nenhum gráfico do que um errado."""
+    linha só não viram gráfico — melhor nenhum gráfico do que um errado.
+
+    Mas nunca em silêncio: em `motivos` vai o porquê de cada gráfico pedido
+    que caiu, e a resposta diz isso à pessoa. Na conversa 18 (2026-09-23) o
+    gráfico "um por especialidade" foi descartado sem aviso, o texto da
+    redação afirmou que ele estava lá, e veio o primeiro 👎."""
+    motivos = motivos if motivos is not None else []
+
+    def recusar(motivo):
+        if _pediu_grafico(sugestao):
+            motivos.append(motivo)
+        return None
+
     if not sugestao or resultado.row_count < 1:
         return None
     if sugestao.get("vega_lite"):
@@ -460,12 +478,16 @@ def _grafico(sugestao, resultado, message, plano) -> dict | None:
             if titulo and not check_grounding(titulo, resultado.columns, resultado.rows, message.content, plano.sql).ok:
                 titulo = ""
             return {"tipo": "vega", "vega": spec, "titulo": titulo}
-    if sugestao.get("tipo") not in TIPOS_DE_GRAFICO or resultado.row_count < 2:
-        return None
+        if sugestao.get("tipo") not in TIPOS_DE_GRAFICO:
+            return recusar("a especificação do gráfico não bateu com as colunas do resultado")
+    if sugestao.get("tipo") not in TIPOS_DE_GRAFICO:
+        return recusar("o tipo de gráfico pedido não é um dos que a tela desenha")
+    if resultado.row_count < 2:
+        return recusar("o resultado tem uma linha só, e um número sozinho não vira gráfico")
     colunas = list(resultado.columns)
     x = sugestao.get("x")
     if x not in colunas:
-        return None
+        return recusar("o eixo do gráfico não é uma coluna do resultado")
 
     def numerica(nome):
         i = colunas.index(nome)
@@ -476,7 +498,7 @@ def _grafico(sugestao, resultado, message, plano) -> dict | None:
 
     series = [s for s in dict.fromkeys(sugestao.get("series") or []) if s in colunas and s != x and numerica(s)]
     if not series:
-        return None
+        return recusar("o gráfico não tinha uma medida numérica do resultado")
 
     tipo = sugestao["tipo"]
     # Série por categoria (formato longo, "mês × especialidade × PX"): cada
@@ -488,7 +510,7 @@ def _grafico(sugestao, resultado, message, plano) -> dict | None:
         if grupo is None:
             # O eixo repete e nenhuma coluna explica a repetição: cada mês
             # sairia duas vezes, com números que não se comparam.
-            return None
+            return recusar("o eixo se repete e nenhuma coluna do resultado separa as séries")
     if grupo or tipo == "pizza":
         series = series[:1]      # uma medida, repartida pelas categorias
 
@@ -508,7 +530,11 @@ def _grafico(sugestao, resultado, message, plano) -> dict | None:
     return grafico
 
 
-# Mais categorias que isto não é série de gráfico: é tabela.
+# Teto de categorias para DEDUZIR um grupo que a redação não pediu: acima
+# disto a coluna provavelmente é um identificador, não uma categoria. O grupo
+# que a redação PEDIU vale com qualquer quantidade — a tela mostra as maiores
+# e soma o resto em "Outras". Com o teto valendo para os dois, as ~30
+# especialidades da conversa 18 derrubaram o gráfico pedido (2026-09-23).
 MAX_VALORES_DO_GRUPO = 12
 
 
@@ -548,7 +574,7 @@ def _explica_o_eixo(colunas, linhas, ix, nome, series, deduzido: bool = False) -
     ig = colunas.index(nome)
     valores = [linha[ig] for linha in linhas]
     distintos = {str(v) for v in valores}
-    if not 2 <= len(distintos) <= MAX_VALORES_DO_GRUPO:
+    if len(distintos) < 2 or (deduzido and len(distintos) > MAX_VALORES_DO_GRUPO):
         return False
     numeros = [v for v in valores if isinstance(v, numbers.Number) and not isinstance(v, bool)]
     if numeros:
@@ -561,6 +587,30 @@ def _explica_o_eixo(colunas, linhas, ix, nome, series, deduzido: bool = False) -
             return False
     pares = {(str(linha[ix]), str(linha[ig])) for linha in linhas}
     return len(pares) == len(linhas)
+
+
+def _avisar_grafico_que_caiu(extras: dict, motivos: list) -> None:
+    """A redação pediu gráfico e nenhum sobrou: a resposta diz isso.
+
+    O texto da redação foi escrito antes da conferência e costuma afirmar que
+    o gráfico está lá ("está separada em um gráfico por especialidade"). A
+    frase fica registrada em `aviso_de_grafico` e é acrescentada à resposta —
+    a pessoa lê o que aconteceu, e o motivo vai para a auditoria."""
+    tem_grafico = bool(extras.get("grafico")) or any(b.get("tipo") == "grafico" for b in extras.get("blocos") or ())
+    if not motivos or tem_grafico:
+        return
+    aviso = f"_Não consegui desenhar o gráfico pedido: {motivos[0]}. Os números estão na tabela._"
+    extras["aviso_de_grafico"] = aviso
+    extras["motivos_do_grafico"] = motivos
+    if extras.get("blocos"):
+        extras["blocos"] = [*extras["blocos"], {"tipo": "texto", "texto": aviso}]
+
+
+def _com_aviso(texto: str, extras: dict) -> str:
+    """O texto da resposta com o aviso do gráfico que caiu, se houver: é o
+    texto que vai para o histórico, para o WhatsApp e para quem lê sem blocos."""
+    aviso = extras.get("aviso_de_grafico")
+    return f"{texto}\n\n{aviso}" if aviso and aviso not in texto else texto
 
 
 def _guardar_dados_do_grafico(auditoria, resultado) -> None:
@@ -620,7 +670,8 @@ def _redigir(plano, resultado, message, provider, catalog, auditoria, historico,
         extras["sugestoes"] = sugestoes
     # Verificação não vira gráfico: o resultado é cadastral, e desenhá-lo
     # daria ao diagnóstico a aparência da resposta que não existe.
-    grafico = None if (plano.excel or verificacao) else _grafico(resposta.chart, resultado, message, plano)
+    motivos = []
+    grafico = None if (plano.excel or verificacao) else _grafico(resposta.chart, resultado, message, plano, motivos)
     if grafico:
         extras["grafico"] = grafico
         _guardar_dados_do_grafico(auditoria, resultado)
@@ -629,13 +680,14 @@ def _redigir(plano, resultado, message, provider, catalog, auditoria, historico,
         # Resposta em blocos (ADR-0025): o gráfico vem de dentro deles, e a
         # tela desenha tabela e gráfico com os dados da consulta.
         blocos, dados = _validar_blocos(
-            resposta.blocos, [(resultado, plano.sql)], message
+            resposta.blocos, [(resultado, plano.sql)], message, motivos
         )
         blocos, dados = _garantir_a_tabela(blocos, dados, resultado, lista_longa, resposta.reply)
         if blocos:
             extras.pop("grafico", None)
             extras["blocos"] = blocos
             extras["dados_blocos"] = dados
+    _avisar_grafico_que_caiu(extras, motivos)
 
     conferencia = check_grounding(
         resposta.reply, resultado.columns, resultado.rows, message.content, plano.sql,
@@ -1133,7 +1185,8 @@ def _redigir_analise(com_dado, message, provider, auditoria, historico, plano=No
         auditoria.chamada(AICall.Stage.ANSWER if tentativa == 1 else AICall.Stage.REWRITE, resposta.usage)
         conferencia = check_grounding_varias(resposta.reply, suporte, message.content)
         if conferencia.ok:
-            blocos, dados = _validar_blocos(resposta.blocos, fontes, message)
+            motivos_do_grafico = []
+            blocos, dados = _validar_blocos(resposta.blocos, fontes, message, motivos_do_grafico)
             if entregas:
                 blocos, dados = _garantir_as_entregas(blocos, dados, com_dado, resposta.reply)
             extras = {"caveats": list(resposta.caveats)}
@@ -1143,10 +1196,11 @@ def _redigir_analise(com_dado, message, provider, auditoria, historico, plano=No
             if blocos:
                 extras["blocos"] = blocos
                 extras["dados_blocos"] = dados
+            _avisar_grafico_que_caiu(extras, motivos_do_grafico)
             if rascunhos:
                 extras["rascunho_reprovado"] = rascunhos
                 extras["motivos_ancoragem"] = motivos
-            return resposta.reply, extras
+            return _com_aviso(resposta.reply, extras), extras
         rascunhos.append(resposta.reply)
         motivos.append(conferencia.reason)
 
@@ -1421,14 +1475,17 @@ def _garantir_a_tabela(blocos, dados, resultado, lista_longa: bool, texto: str) 
     return blocos, {**dados, "0": _dados_da_consulta(resultado)}
 
 
-def _dados_da_consulta(resultado) -> dict:
-    return {
-        "columns": list(resultado.columns),
-        "rows": [list(linha) for linha in resultado.rows[:LINHAS_DOS_BLOCOS]],
-    }
+def _dados_da_consulta(resultado, inteiro: bool = False) -> dict:
+    """As linhas que a tela recebe. Tabela: as primeiras (a lista inteira está
+    na planilha). Gráfico: o resultado inteiro — com 237 linhas ordenadas por
+    especialidade, as 100 primeiras desenhavam só as especialidades de A a C
+    (conversa 18, 2026-09-23)."""
+    linhas = resultado.rows if inteiro else resultado.rows[:LINHAS_DOS_BLOCOS]
+    return {"columns": list(resultado.columns), "rows": [list(linha) for linha in linhas],
+            "total": resultado.row_count}
 
 
-def _validar_blocos(blocos, fontes, message) -> tuple:
+def _validar_blocos(blocos, fontes, message, motivos=None) -> tuple:
     """Confere cada bloco contra as consultas de verdade (ADR-0025).
 
     `fontes` é [(resultado, sql)], na ordem dos índices que a redação usou.
@@ -1451,10 +1508,12 @@ def _validar_blocos(blocos, fontes, message) -> tuple:
             colunas = [c for c in bloco.get("colunas") or [] if c in resultado.columns] or list(resultado.columns)
             validos.append({"tipo": "tabela", "consulta": indice, "colunas": colunas})
         elif tipo == "grafico":
-            grafico = _grafico(bloco.get("grafico"), resultado, message, SimpleNamespace(sql=sql))
+            grafico = _grafico(bloco.get("grafico"), resultado, message, SimpleNamespace(sql=sql), motivos)
             if not grafico:
                 continue
             validos.append({"tipo": "grafico", "consulta": indice, "grafico": grafico})
+            dados[str(indice)] = _dados_da_consulta(resultado, inteiro=True)
+            continue
         else:
             continue
         dados.setdefault(str(indice), _dados_da_consulta(resultado))
@@ -1919,6 +1978,7 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
     # resultado completo continua na tela, como segunda opção).
     plano_da_redacao = replace(plano, excel=False) if vai_preencher else plano
     texto, raw = _redigir(plano_da_redacao, resultado, message, provider, catalog, auditoria, historico)
+    texto = _com_aviso(texto, raw)
     texto += _nota_de_truncamento(resultado, catalog.max_rows)
     if plano.ressalva_forecast:
         # Projeção de Sell Out ou Sell In: a orientação sobre o dashboard é

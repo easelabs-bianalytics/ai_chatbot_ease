@@ -1,0 +1,64 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<div style="max-width: 640px; line-height: 1.6">
+  {% if not configurada %}
+    <p><strong>A Evolution não está configurada</strong> neste ambiente (falta <code>EVOLUTION_API_KEY</code>).
+    As mensagens não saem: o canal usa o cliente de teste.</p>
+  {% endif %}
+  {% if erro %}<p style="color:#E5484D">{{ erro }}</p>{% endif %}
+  {% if mensagem %}<p style="color:#3FB868">{{ mensagem }}</p>{% endif %}
+
+  <table>
+    <tr><th>Estado</th><td>{{ estado|default:"desconhecido" }}{% if estado == "open" %} — conectado{% endif %}</td></tr>
+    <tr><th>Conectado como</th><td>{{ conectado_como|default:"—" }}{% if nome_do_perfil %} ({{ nome_do_perfil }}){% endif %}</td></tr>
+    <tr><th>Número do Jarvis</th><td>{{ numero|default:"(WHATSAPP_NUMERO_JARVIS vazio: só “@jarvis” escrito chama no grupo)" }}</td></tr>
+    <tr><th>Identificador @lid</th><td>{{ lid|default:"(WHATSAPP_LID_JARVIS vazio)" }}</td></tr>
+    <tr><th>Webhook</th><td>{% if webhook %}com segredo{% else %}<strong>sem WHATSAPP_WEBHOOK_TOKEN: recusando tudo</strong>{% endif %}</td></tr>
+    <tr><th>Liberados</th><td>{{ contatos }} contato(s), {{ grupos }} grupo(s)</td></tr>
+  </table>
+
+  {% if qr %}
+    <h2>Parear</h2>
+    <p>No celular do Jarvis: WhatsApp → Aparelhos conectados → Conectar aparelho, e leia o código.
+    Ele vale por alguns segundos; se expirar, recarregue.</p>
+    <img src="{{ qr }}" alt="QR para parear" width="280" height="280">
+    {% if codigo %}<p>Ou use o código: <strong>{{ codigo }}</strong></p>{% endif %}
+  {% elif estado != "open" and configurada %}
+    <p><a class="button" href="?qr=1">Mostrar o QR para parear</a></p>
+  {% endif %}
+
+  {% if grupos_do_numero %}
+    <h2>Grupos de que o Jarvis participa</h2>
+    <p class="help">Para o Jarvis responder num grupo, cadastre o identificador em
+    <a href="/admin/whatsapp/grupowhatsapp/add/">Grupos do WhatsApp</a>. Grupo fora do cadastro é ignorado.</p>
+    <table>
+      <tr><th>Grupo</th><th>Identificador</th><th>Liberado</th></tr>
+      {% for g in grupos_do_numero %}
+        <tr><td>{{ g.nome }}</td><td><code>{{ g.jid }}</code></td><td>{% if g.liberado %}sim{% else %}não{% endif %}</td></tr>
+      {% endfor %}
+    </table>
+  {% endif %}
+
+  {% if mencoes %}
+    <h2>Menções que o Jarvis não reconheceu</h2>
+    <p class="help">Marcações feitas em grupos liberados que não chamaram o Jarvis. Se você marcou o Jarvis
+    e ele não respondeu, o identificador dele está na coluna “Marcados” (termina em <code>@lid</code>):
+    ponha em <code>WHATSAPP_LID_JARVIS</code>.</p>
+    <table>
+      <tr><th>Grupo</th><th>Mensagem</th><th>Marcados</th></tr>
+      {% for m in mencoes %}
+        <tr><td><code>{{ m.grupo }}</code></td><td>{{ m.texto }}</td><td>{% for j in m.mencionados %}<code>{{ j }}</code> {% endfor %}</td></tr>
+      {% endfor %}
+    </table>
+  {% endif %}
+
+  {% if configurada %}
+  <form method="post" style="margin-top: 16px">{% csrf_token %}
+    <input type="hidden" name="acao" value="configurar">
+    <button type="submit" class="button">Configurar a instância</button>
+    <p class="help">Cria a instância se não existir, liga os grupos (a trava é o cadastro), recusa chamadas
+    e aponta o webhook para dentro da task.</p>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

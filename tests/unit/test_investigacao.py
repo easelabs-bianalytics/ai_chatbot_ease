@@ -256,9 +256,11 @@ def test_bloco_que_aponta_dado_errado_cai(conversa, catalogo):
 
     guardados = reply.raw_response["blocos"]
     # Índice 7 não existe e o gráfico aponta coluna inexistente: caem. A
-    # tabela com coluna inventada vira a tabela com todas as colunas.
-    assert [b["tipo"] for b in guardados] == ["texto", "tabela"]
+    # tabela com coluna inventada vira a tabela com todas as colunas. O
+    # gráfico que caiu é dito no fim, em vez de sumir em silêncio.
+    assert [b["tipo"] for b in guardados] == ["texto", "tabela", "texto"]
     assert guardados[1]["colunas"] == ["gr", "var_und", "var_pct"]
+    assert "Não consegui desenhar o gráfico" in guardados[2]["texto"]
 
 
 def test_blocos_sem_texto_nenhum_sao_descartados(conversa, catalogo):

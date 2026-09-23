@@ -134,6 +134,7 @@ INSTALLED_APPS = [
     "catalog",
     "reporting",
     "web",
+    "whatsapp",
 ]
 
 MIDDLEWARE = [

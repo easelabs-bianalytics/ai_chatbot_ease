@@ -14,19 +14,14 @@ from rest_framework.views import APIView
 from ai_orchestrator import progresso
 from ai_orchestrator.tasks import process_message
 from conversations.models import Conversation, Project
-from catalog.loader import get_catalog
-from datasource.executors.base import QueryExecutionError
 from datasource.executors.factory import get_configured_executor
-from datasource.export import montar_planilha
-from datasource.models import DataExport, QueryRun
-from datasource.sql_guard import validate_sql
+from messaging import fonte, planilha_da_resposta
 from messaging.channels.web import WebChannel
 from messaging.models import Avaliacao, Message
 from messaging.services import ingest_inbound_message
 from attachments import deposito
-from attachments.imagem import preparar as preparar_imagem
-from attachments.limites import EXTENSOES_DE_PLANILHA, MAX_BYTES, AnexoRecusado
-from attachments.planilha import ler_estrutura
+from attachments.receber import preparar_anexo
+from attachments.limites import MAX_BYTES, AnexoRecusado
 
 _channel = WebChannel()
 
@@ -38,6 +33,9 @@ def _conversation_json(conversation):
         "status": conversation.status,
         "project": conversation.project_id,
         "position": conversation.position,
+        # Conversa que veio do WhatsApp (ADR-0028): a lista marca, e a
+        # resposta a uma pergunta feita aqui fica aqui.
+        "canal": conversation.canal,
         "created_at": conversation.created_at.isoformat(),
         "updated_at": conversation.updated_at.isoformat(),
     }
@@ -52,103 +50,6 @@ def _nome_de_projeto(bruto):
     if not nome:
         raise ValueError("dê um nome ao projeto")
     return nome
-
-
-def _fonte(resposta, mostrar_custo: bool):
-    """De onde saiu a resposta: a consulta que rodou, a referência em que se
-    baseou, quando e com quantas linhas (FR da Fase 6).
-
-    É o que permite ao usuário confiar no número sem confiar na IA — e ao
-    time de BI conferir uma resposta estranha sem abrir o Admin."""
-    pergunta = resposta.in_reply_to
-    reply = getattr(pergunta, "ai_reply", None) if pergunta is not None else None
-    if reply is None:
-        return None
-
-    consultas = sorted(reply.query_runs.all(), key=lambda q: q.attempt)
-    executada = next(
-        (q for q in reversed(consultas) if q.status == QueryRun.Status.SUCCESS), None
-    )
-    fonte = {
-        "decisao": reply.decision,
-        "regra": reply.rule,
-        "respondida_em": reply.created_at.isoformat(),
-        "tentativas": len(consultas),
-        "consulta": None,
-    }
-    if executada is not None:
-        fonte["consulta"] = {
-            "sql": executada.sql,
-            "referencia": executada.reference_query_id,
-            "linhas": executada.row_count,
-            "cortada": executada.truncated,
-            "duracao_ms": executada.duration_ms,
-        }
-        pedido = bool((reply.raw_response or {}).get("excel"))
-        # Uma linha só é um número, e ele já está no texto da resposta: um
-        # botão de planilha ali só promete algo que não acrescenta nada.
-        # Com duas ou mais, a planilha é o jeito de levar o resultado inteiro,
-        # mesmo quando a resposta é só texto. Pedido explícito sempre vence.
-        fonte["excel"] = pedido or (executada.row_count or 0) > 1
-        fonte["excel_pedido"] = pedido
-        grafico = (reply.raw_response or {}).get("grafico")
-        amostra = executada.result_sample or {}
-        if grafico and amostra.get("rows"):
-            # O gráfico é desenhado no navegador com os números da consulta.
-            fonte["grafico"] = grafico
-            fonte["dados"] = {"columns": amostra.get("columns", []), "rows": amostra["rows"]}
-    origem = (reply.raw_response or {}).get("grafico_de")
-    if origem and not fonte.get("grafico"):
-        # Ajuste de gráfico (regra `ajuste_de_grafico`): a resposta não rodou
-        # consulta nenhuma; os números vêm da que desenhou o gráfico original.
-        anterior = Message.objects.filter(pk=origem).select_related("in_reply_to__ai_reply").first()
-        anterior_reply = getattr(getattr(anterior, "in_reply_to", None), "ai_reply", None)
-        consulta = (
-            anterior_reply.query_runs.filter(status=QueryRun.Status.SUCCESS).order_by("-attempt").first()
-            if anterior_reply
-            else None
-        )
-        amostra = (consulta.result_sample or {}) if consulta else {}
-        indice = (reply.raw_response or {}).get("grafico_de_consulta")
-        if indice is not None and anterior_reply is not None:
-            # O gráfico ajustado estava num bloco: os números são os do bloco.
-            amostra = ((anterior_reply.raw_response or {}).get("dados_blocos") or {}).get(str(indice)) or {}
-        if amostra.get("rows"):
-            fonte["grafico"] = (reply.raw_response or {}).get("grafico")
-            fonte["dados"] = {"columns": amostra.get("columns", []), "rows": amostra["rows"]}
-
-    sugestoes = (reply.raw_response or {}).get("sugestoes")
-    if sugestoes:
-        fonte["sugestoes"] = sugestoes
-
-    raw = reply.raw_response or {}
-    if raw.get("blocos"):
-        # Resposta em blocos (ADR-0025): a tela desenha na ordem, com os
-        # dados de cada consulta citada. O gráfico solto dá lugar aos blocos.
-        fonte["blocos"] = raw["blocos"]
-        fonte["dados_blocos"] = raw.get("dados_blocos") or {}
-        fonte.pop("grafico", None)
-        fonte.pop("dados", None)
-    if raw.get("entregas"):
-        # Várias entregas (ADR-0026): o painel mostra a consulta de cada uma,
-        # no mesmo formato da investigação. A planilha sairia de uma só.
-        fonte["investigacao"] = [
-            {"rodada": 1, "hipotese": e.get("titulo", ""), "sql": e.get("sql", ""),
-             "linhas": e.get("linhas"), "erro": e.get("erro", "")}
-            for e in raw["entregas"]
-        ]
-        fonte["excel"] = False
-    if raw.get("investigacao"):
-        # Uma investigação roda várias consultas: o painel de fonte mostra
-        # todas, cada uma com a hipótese que testou. A planilha de download
-        # sairia de uma só delas, escolhida ao acaso — melhor não oferecer.
-        fonte["investigacao"] = raw["investigacao"]
-        fonte["excel"] = False
-    if mostrar_custo:
-        fonte["custo_usd"] = float(reply.cost_estimate or 0)
-        fonte["tokens"] = (reply.tokens_input or 0) + (reply.tokens_output or 0)
-        fonte["tempo_ms"] = reply.latency_ms
-    return fonte
 
 
 def _tem_avaliacao(message) -> bool:
@@ -194,7 +95,7 @@ def _message_json(message, mostrar_custo: bool = False):
             dados["entendimento"] = andamento["entendimento"]
     if message.direction == message.Direction.OUTBOUND:
         dados["in_reply_to"] = message.in_reply_to_id
-        dados["fonte"] = _fonte(message, mostrar_custo)
+        dados["fonte"] = fonte.montar(message, mostrar_custo)
         avaliacao = getattr(message, "avaliacao", None) if _tem_avaliacao(message) else None
         if avaliacao is not None:
             dados["avaliacao"] = {"nota": avaliacao.nota, "comentario": avaliacao.comentario}
@@ -511,10 +412,6 @@ class MessageAvaliacaoView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-# Limite da planilha: bem acima das 500 linhas da conversa, porque o arquivo
-# não passa pela IA (não custa token), mas finito, para uma lista gigante
-# não pesar no banco de negócio. O tempo máximo da consulta continua valendo.
-EXPORT_MAX_ROWS = 50_000
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
@@ -535,65 +432,11 @@ class MessageExcelView(APIView):
             conversation=conversation,
             direction=Message.Direction.OUTBOUND,
         )
-        pergunta = resposta.in_reply_to
-        reply = getattr(pergunta, "ai_reply", None) if pergunta is not None else None
-        consulta = (
-            reply.query_runs.filter(status=QueryRun.Status.SUCCESS).order_by("-attempt").first()
-            if reply is not None
-            else None
-        )
-        if consulta is None:
-            return Response(
-                {"error": "esta resposta não tem dados para exportar"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        registro = DataExport(user=request.user, message=resposta, sql=consulta.sql)
-        catalogo = get_catalog()
-        guard = validate_sql(consulta.sql, catalogo, max_rows=EXPORT_MAX_ROWS)
-        if not guard.approved:
-            registro.status, registro.error = DataExport.Status.ERROR, guard.reason
-            registro.save()
-            return Response({"error": "a consulta não passou no validador"}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            resultado = get_configured_executor().run(guard.sql, max_rows=EXPORT_MAX_ROWS)
-        except QueryExecutionError as exc:
-            registro.status, registro.error = DataExport.Status.ERROR, str(exc)
-            registro.save()
-            return Response(
-                {"error": "não consegui gerar a planilha agora; tente de novo em instantes"},
-                status=status.HTTP_502_BAD_GATEWAY,
-            )
-
-        agora = timezone.localtime()
-        observacao = (
-            f"Lista cortada em {EXPORT_MAX_ROWS:,} linhas; refine o filtro para ter o restante.".replace(",", ".")
-            if resultado.truncated
-            else "Lista completa."
-        )
-        conteudo = montar_planilha(
-            resultado.columns,
-            resultado.rows,
-            {
-                "pergunta": pergunta.content,
-                "gerada_em": agora.strftime("%d/%m/%Y %H:%M"),
-                "linhas": resultado.row_count,
-                "observacao": observacao,
-                "referencia": consulta.reference_query_id,
-                "sql": consulta.sql,
-            },
-        )
-
-        registro.status = DataExport.Status.OK
-        registro.row_count = resultado.row_count
-        registro.truncated = resultado.truncated
-        registro.duration_ms = resultado.duration_ms
-        registro.save()
-
-        nome = slugify(conversation.title or pergunta.content)[:50] or "consulta"
-        http = HttpResponse(conteudo, content_type=XLSX)
-        http["Content-Disposition"] = f'attachment; filename="jarvis_{nome}_{agora:%Y%m%d-%H%M}.xlsx"'
+        planilha = planilha_da_resposta.gerar(resposta, request.user, get_configured_executor())
+        if planilha.erro:
+            return Response({"error": planilha.erro}, status=planilha.status)
+        http = HttpResponse(planilha.conteudo, content_type=XLSX)
+        http["Content-Disposition"] = f'attachment; filename="{planilha.nome}"'
         return http
 
 
@@ -629,38 +472,11 @@ class AnexoView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        nome = (arquivo.name or "arquivo")[:255]
-        dados = arquivo.read()
-
         try:
-            if Path(nome).suffix.lower() in EXTENSOES_DE_PLANILHA:
-                estrutura = ler_estrutura(nome, dados)
-                resumo = estrutura.resumo
-                tipo = Message.Anexo.PLANILHA
-                detalhe = {"linhas": estrutura.linhas, "colunas": [c.nome for c in estrutura.colunas]}
-            else:
-                preparada = preparar_imagem(dados)
-                # Guarda a imagem REDUZIDA, não a original: é ela que vai ao
-                # modelo, e o original não serve para mais nada.
-                dados = preparada.dados
-                resumo = (
-                    f"Imagem {preparada.formato_original} de {preparada.largura}×{preparada.altura}"
-                    + (" (reduzida)" if preparada.reduzida else "")
-                )
-                tipo = Message.Anexo.IMAGEM
-                detalhe = {
-                    "largura": preparada.largura,
-                    "altura": preparada.altura,
-                    "tokens_estimados": preparada.tokens_estimados,
-                }
+            etiqueta = preparar_anexo((arquivo.name or "arquivo")[:255], arquivo.read())
         except AnexoRecusado as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-
-        token = deposito.guardar(dados)
-        return Response(
-            {"token": token, "tipo": tipo, "nome": nome, "resumo": resumo, "detalhe": detalhe},
-            status=status.HTTP_201_CREATED,
-        )
+        return Response(etiqueta, status=status.HTTP_201_CREATED)
 
 
 class MessagePlanilhaView(APIView):

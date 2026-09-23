@@ -89,12 +89,30 @@ def _identidades(user) -> set:
 
 def limite_de(user) -> tuple[int, int] | None:
     """(por dia, por semana), ou None para quem não tem limite."""
+    grupo = _grupo_whatsapp(user)
+    if grupo is not None:
+        # Grupo do WhatsApp (ADR-0028): a cota é do grupo, no cadastro dele.
+        return grupo.limite_diario, grupo.limite_semanal
     identidades = _identidades(user)
     if identidades & (SEM_LIMITE | CONTAS_INTERNAS):
         return None
     if identidades & COM_MAIS_CONSULTAS:
         return LIMITE_COM_MAIS_CONSULTAS, SEMANAL_COM_MAIS_CONSULTAS
     return LIMITE_PADRAO, SEMANAL_PADRAO
+
+
+PREFIXO_DE_GRUPO = "whatsapp-grupo-"
+
+
+def _grupo_whatsapp(user):
+    # Só o usuário técnico de grupo vai ao banco: quem pergunta todo dia não
+    # paga uma consulta a mais para descobrir que não é grupo.
+    if not str(getattr(user, "username", "") or "").startswith(PREFIXO_DE_GRUPO):
+        return None
+    try:
+        return user.grupo_whatsapp
+    except Exception:  # noqa: BLE001 — sem grupo (RelatedObjectDoesNotExist) ou usuário sem pk
+        return None
 
 
 def inicio_da_semana(hoje=None):

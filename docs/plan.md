@@ -233,6 +233,19 @@ na `main` do `sales_force_crm`
 
 **Pré-requisitos dos próximos deploys** (entram aqui assim que surgem):
 
+- [ ] **WhatsApp (Fase 13, ADR-0028):**
+  - snapshot, depois a role e o schema `evolution` (script 04, D-07);
+  - três secrets novos;
+  - repositório ECR e espelho da imagem da Evolution;
+  - `migrate` de `conversations.0004`, `messaging.0007` e `whatsapp.0001`;
+  - `apply` com alvo nos recursos da Evolution e na task do Jarvis (que
+    sobe para 2 GB).
+
+  A ordem completa está na Fase 13. Os secrets precisam existir ANTES do
+  bump do Jarvis: a task nova pede `EVOLUTION_API_KEY` e
+  `WHATSAPP_WEBHOOK_TOKEN`, e sem eles fica presa em
+  `ResourceInitializationError`.
+
 - [ ] Rodar `migrate` na task avulsa antes do bump: `ai_orchestrator.0006`
       (etapa `self_check`) e `messaging.0006` (tabela `Avaliacao`), ADR-0027
 - [ ] Antes de cada deploy, rodar `run_synthetic_cases` (a suíte completa com
@@ -1596,6 +1609,153 @@ para os exemplos das conversas 14 e 15:
       pergunta com duas entregas ("evolução e ranking"), com o modelo real
 - [ ] Depois de uma semana de uso: `bi_report` para comparar a taxa de
       reescrita com os 26% e rodar `casos_do_uso`
+
+---
+
+### Primeiro 👎: gráfico descartado em silêncio (2026-09-23, conversa 18)
+
+- [x] **O incidente:** "Separar as especialidades em gráficos" voltou sem
+      gráfico, com o texto afirmando "está separada em um gráfico por
+      especialidade". Comentário do 👎: *"Ele não separou a especialidade em
+      Gráficos, conforme eu pedi"*. A resposta anterior ("empilhe por
+      especialidade") tinha o mesmo defeito
+- [x] **Causa:**
+  - a redação propôs o gráfico certo nas duas vezes;
+  - o teto de 12 categorias, que entrou na correção da conversa 14 e servia
+    para DEDUZIR o grupo, valia também para o grupo PEDIDO. As 30
+    especialidades derrubaram o gráfico sem aviso;
+  - o bloco guardava só as 100 primeiras linhas (de 237, em ordem
+    alfabética), então um gráfico aceito desenharia só as especialidades do
+    começo do alfabeto
+- [x] **Correção:**
+  - o teto só vale para deduzir;
+  - o bloco de gráfico recebe o resultado inteiro (e a tabela da tela mostra
+    100 linhas, com aviso);
+  - gráfico pedido que cai é dito na resposta, com o motivo
+    (`aviso_de_grafico` e `motivos_do_grafico` no `raw_response`);
+  - a redação não afirma o desenho
+- [x] **Visual, na tela e no PNG do WhatsApp:**
+  - gráficos separados: até 9 painéis, da maior categoria para a menor, com
+    o total no título, cor por categoria e aviso de quantas ficaram de fora;
+  - empilhado: as 6 maiores em ordem de tamanho, "Outras" em cinza e por
+    último
+- [x] Conferido com os dados reais da conversa 18 (237 linhas e 30
+      especialidades, relidas com o usuário somente leitura): os dois
+      gráficos saem, e na ordem certa
+- [x] `uv run pytest`: 821 passaram
+- [ ] Ir ao ar
+
+## Fase 13 — Jarvis no WhatsApp (ADR-0028)
+**Status: 🟡 código e infra prontos, sem deploy e sem número conectado (2026-09-23)**
+
+Pedido do Rubens: o Jarvis também no WhatsApp, com as mesmas funções do
+chat web, sem mudar o chat web:
+
+- **Individual:** só para os números liberados.
+- **Grupos:** o Jarvis responde quando alguém o marca com @jarvis.
+
+Decisões do Rubens em 2026-09-23:
+
+- **Provedor:** Evolution API, com um chip novo usado só pelo Jarvis.
+- **Grupos:** em grupo liberado, qualquer membro pode chamar.
+- **Número:** será providenciado (D-06).
+
+### O que foi feito
+
+- [x] **ADR-0028**; D-06, D-07 e O-18 em `open-decisions.md`
+- [x] **App `whatsapp/`**:
+  - `ContatoWhatsApp` (número → usuário), `GrupoWhatsApp` (com usuário
+    técnico e cota própria) e `EnvioWhatsApp` (o id de cada mensagem do
+    Jarvis, para ligar reação e citação de volta);
+  - `entrada.py` lê o evento: texto, imagem, documento, áudio, reação,
+    menção pelo número ou pelo @lid, citação, e o número escondido atrás de
+    @lid;
+  - `servicos.py` faz o caminho inteiro. A trava é o cadastro; no grupo, só
+    responde quando chamado. Tem os comandos "parar", "nova conversa",
+    "fonte" e "1"/"2"/"3", o anexo pelo mesmo caminho do chat web e a
+    conversa cortada depois de 8 h paradas. A resposta vem do MESMO
+    orquestrador;
+  - `saida.py` e `formato.py` entregam a resposta: texto na marcação do
+    WhatsApp, tabela curta em bloco, lista longa em `.xlsx`, gráfico em PNG,
+    planilha preenchida e continuações numeradas;
+  - `graficos.py` desenha o PNG com o `vl-convert` (Vega-Lite, sem
+    navegador e sem rede). O formato simples é traduzido para Vega-Lite com
+    o mesmo ajuste da tela: "Categoria 1", separar e corte de barras;
+  - `aviso.py` manda "Entendi: …" uma vez por pergunta, ligado a um sinal
+    novo do `progresso`;
+  - `cliente.py` fala com a Evolution (a implementação real e a fake dos
+    testes), no padrão do ADR-0005;
+  - webhook com o segredo no caminho; página "Conexão do WhatsApp" no Admin
+    (estado, QR, configurar); comando `whatsapp_configurar`
+- [x] **Reaproveitado do chat web**, sem duplicar: `messaging/fonte.py` (o
+  que a resposta mostra), `messaging/planilha_da_resposta.py` (o `.xlsx`) e
+  `attachments/receber.py` (o anexo)
+- [x] **Chat web:** as conversas do WhatsApp aparecem na lista de quem
+  perguntou, marcadas "WhatsApp"
+- [x] **Cota:** o grupo tem limite próprio no cadastro; a pessoa, o dela
+- [x] **Local:** a Evolution v2.3.7 no `docker-compose`
+  (`--profile whatsapp`, porta 8082). O contrato HTTP foi conferido contra
+  ela, sem número: criar a instância, configurar, apontar o webhook, pedir o
+  QR e ler o estado
+- [x] **Terraform** no `sales_force_crm`, branch `feat/infra-jarvis` (só na
+  árvore de trabalho; sem commit, sem plan, sem apply):
+  - service próprio `cockpit-prod-jarvis-evolution-service`, nunca duas
+    tasks (máximo 100% e mínimo 0%);
+  - SG próprio, regra no RDS e DNS privado
+    `evolution.cockpit-prod-jarvis.local` (Cloud Map);
+  - repositório ECR para o espelho da imagem;
+  - variáveis e secrets novos no Jarvis e a task do Jarvis com 2 GB;
+  - `terraform validate` e `fmt` limpos
+- [x] `infra/rds/04_criar_schema_evolution.sql`: role `jarvis_evolution` e
+  schema `evolution`
+- [x] `uv run pytest`: 816 passaram (51 novos do WhatsApp)
+- [x] Guia de uso e setup: [`docs/whatsapp.md`](whatsapp.md), com o chip, os passos com comandos e a operação do dia a dia. A página de conexão do Admin lista os grupos do número (para o cadastro) e as menções não reconhecidas (para achar o @lid)
+
+### Ordem do deploy (a partir do D-07; o chip pode vir depois)
+
+1. **Banco:** snapshot do `cockpit-prod-db`; depois o script 04 com o master
+   (a senha é gerada na hora e não vai para o arquivo).
+2. **Secrets à mão**, como os outros:
+   - `cockpit-prod-jarvis-evolution-api-key` (aleatório);
+   - `cockpit-prod-jarvis-evolution-db-uri`
+     (`postgresql://jarvis_evolution:<senha>@<host>:5432/easelabs?schema=evolution&sslmode=require`);
+   - `cockpit-prod-jarvis-whatsapp-webhook-token` (aleatório, 32+
+     caracteres).
+3. **Repositório ECR:** commit e push dos `.tf` na `feat/infra-jarvis`, e
+   `apply -target=aws_ecr_repository.jarvis_evolution
+   -target=aws_ecr_lifecycle_policy.jarvis_evolution`.
+4. **Espelho da imagem:** `docker pull evoapicloud/evolution-api:v2.3.7`,
+   tag `cockpit-prod-jarvis-evolution:v2.3.7` e push para o ECR.
+5. **Imagem do Jarvis** com este código, a task avulsa de `migrate`
+   (`conversations.0004`, `messaging.0007`, `whatsapp.0001`,
+   `ai_orchestrator.0006`, `messaging.0006`) e o bump.
+6. **`plan` com alvo**, lido de verdade, e depois `apply`:
+   - `module.network.aws_security_group.jarvis_evolution`;
+   - `module.network.aws_security_group.rds` (tem de sair *update
+     in-place*);
+   - `module.network.aws_service_discovery_private_dns_namespace.jarvis`;
+   - `module.compute.aws_service_discovery_service.jarvis_evolution`;
+   - `module.compute.aws_ecs_task_definition.jarvis_evolution`;
+   - `module.compute.aws_ecs_service.jarvis_evolution`;
+   - `module.compute.aws_iam_role_policy.execution_jarvis_evolution_secrets`;
+   - `module.compute.aws_ecs_task_definition.jarvis` e
+     `module.compute.aws_ecs_service.jarvis`;
+   - `module.compute.aws_iam_role_policy.execution_jarvis_secrets`.
+7. **Conexão**, com o chip: Admin → Conexão do WhatsApp → Configurar a
+   instância → Mostrar o QR → ler o QR no celular do Jarvis.
+8. Preencher `jarvis_whatsapp_numero` e `jarvis_whatsapp_lid` (o @lid
+   aparece na página de conexão), `plan`/`apply` da task do Jarvis.
+9. **Cadastros e teste:** cadastrar um contato no Admin e testar no
+   individual: pergunta com número, gráfico, planilha, 👎, "parar". Depois
+   cadastrar um grupo de teste, só com o time, e testar @jarvis e a citação.
+
+### Pendências
+
+- [ ] D-06: o chip
+- [ ] D-07: role e schema da Evolution no RDS
+- [ ] Deploy (ordem acima) e teste de ponta a ponta com o número
+- [ ] Conferir no aparelho a legibilidade do texto, da tabela e do gráfico
+- [ ] Áudio: transcrever em vez de pedir o texto (fora deste escopo)
 
 ---
 

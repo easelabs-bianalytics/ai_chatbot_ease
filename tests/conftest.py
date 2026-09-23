@@ -13,6 +13,12 @@ REAL_SERVICE_ENV_VARS = (
     "ANALYTICS_DB_NAME",
     "ANALYTICS_DB_USER",
     "ANALYTICS_DB_PASS",
+    # A Evolution (ADR-0028): com chave, o canal mandaria mensagem de verdade.
+    "EVOLUTION_API_KEY",
+    "EVOLUTION_API_BASE_URL",
+    "WHATSAPP_WEBHOOK_TOKEN",
+    "WHATSAPP_NUMERO_JARVIS",
+    "WHATSAPP_LID_JARVIS",
 )
 
 

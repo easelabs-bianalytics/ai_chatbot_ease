@@ -17,6 +17,8 @@ usa-se fake ou o banco analítico sintético local.
 | D-03 | Chave da API OpenAI no `.env` (ADR-0016) | Usuário | Fase 5 | Em coleta (2026-09-17). Vai em `AI_PROVIDER_API_KEY`, escrita direto no arquivo |
 | D-04 | Catálogo aprovado (schemas/tabelas permitidos, colunas bloqueadas, dicionário), complementando `chatbot_bi_referencia_querys.md` | Time de BI | Validação (Fase 7) | Pendente |
 | D-05 | Lista de usuários internos autorizados | Gestão | Go-live | Pendente |
+| D-06 | Chip dedicado para o Jarvis no WhatsApp (ADR-0028): número novo, fora de qualquer grupo, aberto no aparelho a cada 14 dias | Rubens | Conectar o canal WhatsApp | Em providência (2026-09-23). Até lá, tudo roda com o cliente fake |
+| D-07 | Role `jarvis_evolution` e schema `evolution` no `easelabs` (script 04 em `infra/rds/`), com snapshot antes | DBA / Rubens | Subir a Evolution em produção | Pendente |
 
 ## Decisões de produto e dados
 
@@ -33,6 +35,7 @@ usa-se fake ou o banco analítico sintético local.
 | O-09 | SSO para login | Fora do MVP | Pós-MVP | Pendente |
 | O-10 | Formato das consultas de referência | Continuam em `chatbot_bi_referencia_querys.md`, injetado no prompt, sem migração para YAML (ADR-0006, ADR-0014) | — | Decidido em 2026-09-14 |
 | O-16 | Banco da aplicação (histórico, usuários, auditoria) na AWS | **Recomendado**: `CREATE DATABASE jarvis` na instância existente, com schema `jarvis` e role própria — no PostgreSQL não há acesso entre databases sem FDW, então isola quase como uma instância separada, sem custo novo. Alternativa: instância RDS própria (~US$ 15 a 25/mês). Descartado o schema dentro do `easelabs`, que colocaria o usuário com escrita no mesmo database dos dados de negócio. Desenho em `plan.md`, Fase 9. A trava do ADR-0002 precisa passar a recusar só o host de negócio | Deploy (Fase 9) | A decidir com a DBA — a instância é produção de outro produto (`cockpit-prod`) |
+| O-18 | Dado de negócio em grupo de WhatsApp: a resposta fica visível para todos os membros, inclusive quem não usa o chat web | Liberar grupo a grupo no Admin, com o grupo sabendo disso; qualquer membro pode chamar (decisão do Rubens, 2026-09-23) | — | Decidido; revisar com a gestão antes de liberar grupo com gente de fora do time |
 | O-15 | Uma rede pode ter mais de uma raiz de CNPJ | ✅ Confirmado pelo usuário em 2026-09-17: é normal, não é erro de cadastro. O documento de referência foi corrigido (seção 3.4): as raízes são descobertas por `ILIKE` no nome e todas entram no filtro | — | Resolvido |
 | O-14 | Teto de gasto mensal com a IA | Limite configurável: aviso no Admin em 80% e recusa cordial ao atingir 100% | Produção | Proposto em 2026-09-17 (ADR-0016) |
 | O-13 | Nome de pessoa que casa com mais de uma ("Alexandre") | O pipeline faz uma consulta só; o planejador traz o nome completo no resultado e a redação pergunta qual quando vier mais de um | — | Proposto em 2026-09-16; conferir nos casos E11 |

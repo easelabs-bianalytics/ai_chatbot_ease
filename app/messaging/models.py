@@ -78,6 +78,11 @@ class Message(models.Model):
     # Token da planilha PREENCHIDA, para o botão de baixar. Também vence.
     anexo_resposta_token = models.CharField(max_length=64, blank=True)
     anexo_resposta_nome = models.CharField(max_length=255, blank=True)
+    # Quem escreveu, no WhatsApp (ADR-0028). Num grupo a conversa é do grupo,
+    # e é isto que diz qual membro perguntou.
+    # `db_default`: ver `Conversation.canal`.
+    autor_externo = models.CharField(max_length=40, blank=True, db_default="")
+    autor_nome = models.CharField(max_length=120, blank=True, db_default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

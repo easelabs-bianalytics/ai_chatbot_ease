@@ -349,7 +349,7 @@
   const itemConversa = (c, i) => `
     <div class="conversa-linha" style="animation-delay:${Math.min(i, 8) * 25}ms" draggable="true" data-arrastar="${c.id}">
       <button class="conversa-item${c.id === state.conversaId ? ' ativa' : ''}" type="button" data-id="${c.id}" title="${esc(c.title || 'Nova conversa')}">
-        <span class="conversa-titulo">${esc(c.title || 'Nova conversa')}</span>
+        <span class="conversa-titulo">${c.canal === 'whatsapp' ? '<span class="conversa-canal" title="Conversa do WhatsApp">WhatsApp</span>' : ''}${esc(c.title || 'Nova conversa')}</span>
       </button>
       <button class="item-acoes" type="button" data-menu-conversa="${c.id}" aria-label="Opções da conversa" aria-haspopup="true">${ICONES.mais}</button>
     </div>`;
@@ -1179,9 +1179,14 @@
     const indices = (bloco.colunas?.length ? bloco.colunas : dados.columns)
       .map((c) => dados.columns.indexOf(c)).filter((i) => i >= 0);
     const cabecalho = indices.map((i) => rotuloColuna(dados.columns[i]));
-    const linhas = dados.rows.map((linha) => indices.map((i) => fmtCelula(linha[i], dados.columns[i])));
+    const linhas = dados.rows.slice(0, LINHAS_NA_TABELA_DA_TELA)
+      .map((linha) => indices.map((i) => fmtCelula(linha[i], dados.columns[i])));
     const titulo = bloco.titulo ? `<div class="bloco-titulo">${esc(bloco.titulo)}</div>` : '';
-    return `<div class="md bloco bloco-tabela">${titulo}${tabelaHtml(cabecalho, linhas)}</div>`;
+    const total = dados.total || dados.rows.length;
+    const nota = total > linhas.length
+      ? `<div class="grafico-nota">Mostrando ${fmtNum(linhas.length)} de ${fmtNum(total)} linhas; a lista completa está no botão Baixar Excel.</div>`
+      : '';
+    return `<div class="md bloco bloco-tabela">${titulo}${tabelaHtml(cabecalho, linhas)}${nota}</div>`;
   };
 
   const corpoEmBlocos = (fonte, id) => fonte.blocos.map((bloco, k) => {
@@ -1219,6 +1224,11 @@
   // Série por categoria: as maiores ganham cor, o resto soma em "Outras".
   // Mais de seis cores num cartão de conversa ninguém distingue.
   const MAX_GRUPOS = 6;
+  // Gráficos separados (um por categoria): até 3×3 cabe na conversa.
+  const MAX_MULTIPLOS = 9;
+  // Linhas da tabela na conversa. O bloco agora traz o resultado inteiro (o
+  // gráfico precisa dele); a lista completa está no botão Baixar Excel.
+  const LINHAS_NA_TABELA_DA_TELA = 100;
   const MAX_FATIAS = 8;
   // As cores do gráfico saem dos mesmos tokens da interface: assim ele
   // acompanha o tema sem ter uma paleta paralela para manter.
@@ -1247,16 +1257,25 @@
       const i = colunas.indexOf(series[0]);
       const totais = new Map();
       rows.forEach((l) => totais.set(l[ig], (totais.get(l[ig]) || 0) + (Number(l[i]) || 0)));
-      const valores = [...totais.entries()].sort((a, b) => b[1] - a[1]).map(([v]) => v).slice(0, MAX_GRUPOS);
+      // As maiores primeiro, até MAX_MULTIPLOS painéis: 30 especialidades em
+      // 30 gráficos não se leem (conversa 18, 2026-09-23). O resto é dito.
+      const ordem = [...totais.entries()].sort((a, b) => b[1] - a[1]);
+      const escolhidas = ordem.slice(0, MAX_MULTIPLOS);
       const escala = maximo([series[0]]);
-      return valores.map((v) => ({
-        grafico: { ...base, series: [series[0]], titulo: nomeDoGrupo(grafico.grupo, v), escalaMax: escala },
+      const paineis = escolhidas.map(([v, total], n) => ({
+        grafico: { ...base, series: [series[0]], titulo: nomeDoGrupo(grafico.grupo, v),
+          total: fmtValor(total, series[0]), escalaMax: escala, cor: CORES[n % CORES.length] },
         dados: { columns: colunas, rows: rows.filter((l) => l[ig] === v) },
       }));
+      paineis.ocultas = ordem.length - escolhidas.length;
+      paineis.rotulo = rotuloSerie(grafico.grupo);
+      return paineis;
     }
     if (series.length > 1) {
       const escala = maximo(series);
-      return series.map((s) => ({ grafico: { ...base, series: [s], titulo: rotuloSerie(s), escalaMax: escala }, dados }));
+      return series.map((s, n) => ({
+        grafico: { ...base, series: [s], titulo: rotuloSerie(s), escalaMax: escala, cor: CORES[n % CORES.length] }, dados,
+      }));
     }
     return [];
   };
@@ -1270,14 +1289,15 @@
         GRAFICOS.set(chave, m);
         return `
           <div class="grafico-multiplo">
-            <div class="grafico-subtitulo">${esc(m.grafico.titulo)}</div>
+            <div class="grafico-subtitulo">${esc(m.grafico.titulo)}${m.grafico.total ? `<span class="grafico-subtitulo-total">${esc(m.grafico.total)} no período</span>` : ''}</div>
             <div class="grafico-area"><canvas data-grafico="${chave}" role="img"></canvas></div>
           </div>`;
       }).join('');
       return `
         <div class="grafico">
           ${fonte.grafico.titulo ? `<div class="grafico-titulo">${esc(fonte.grafico.titulo)}</div>` : ''}
-          <div class="grafico-multiplos">${paineis}</div>
+          <div class="grafico-multiplos${multiplos.length > 4 ? ' grafico-multiplos-muitos' : ''}">${paineis}</div>
+          ${multiplos.ocultas > 0 ? `<div class="grafico-nota">Mostrando as ${multiplos.length} maiores de ${multiplos.length + multiplos.ocultas} (${esc(multiplos.rotulo)}); as demais estão na tabela e na planilha.</div>` : ''}
         </div>`;
     }
     const area = fonte.grafico.tipo === 'vega'
@@ -1656,7 +1676,8 @@
     };
 
     const semAnimacao = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const corDe = (c, n) => (c.outras ? COR_OUTRAS : CORES[n % CORES.length]);
+    // Painel de gráficos separados: a cor é a da categoria, não a da posição.
+    const corDe = (c, n) => (c.outras ? COR_OUTRAS : (grafico.cor && conjuntos.length === 1 ? grafico.cor : CORES[n % CORES.length]));
     const chart = new Chart(canvas, {
       type: pizza ? 'doughnut' : linha ? 'line' : 'bar',
       data: {

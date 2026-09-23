@@ -43,6 +43,38 @@ services:
       - bi_chatbot_analyticsdata:/var/lib/postgresql/data
       - ./infra/analytics_db/init:/docker-entrypoint-initdb.d:ro
 
+  # Evolution API (ADR-0028), só com `--profile whatsapp`: quem não mexe no
+  # WhatsApp não sobe nada a mais. Porta 8082 porque a 8080 é da Evolution do
+  # projeto de referência, que roda na mesma máquina. A sessão fica no Postgres
+  # da aplicação, num schema próprio; mensagens não são gravadas por ela.
+  evolution:
+    profiles: ["whatsapp"]
+    image: evoapicloud/evolution-api:v2.3.7
+    restart: unless-stopped
+    depends_on: [db]
+    ports:
+      - "${EVOLUTION_LOCAL_PORT:-8082}:8080"
+    environment:
+      SERVER_URL: http://localhost:${EVOLUTION_LOCAL_PORT:-8082}
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-troque-esta-chave-local}
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://${APP_DB_USER:-bi_chatbot}:${APP_DB_PASSWORD:-bi_chatbot_dev}@db:5432/${APP_DB_NAME:-bi_chatbot}?schema=evolution
+      DATABASE_CONNECTION_CLIENT_NAME: jarvis_local
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "false"
+      DATABASE_SAVE_MESSAGE_UPDATE: "false"
+      DATABASE_SAVE_DATA_CONTACTS: "false"
+      DATABASE_SAVE_DATA_CHATS: "false"
+      DATABASE_SAVE_DATA_LABELS: "false"
+      DATABASE_SAVE_DATA_HISTORIC: "false"
+      CACHE_REDIS_ENABLED: "false"
+      CACHE_LOCAL_ENABLED: "true"
+      WEBHOOK_GLOBAL_ENABLED: "false"
+      CONFIG_SESSION_PHONE_CLIENT: Jarvis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
 volumes:
   bi_chatbot_pgdata:
   bi_chatbot_redisdata:

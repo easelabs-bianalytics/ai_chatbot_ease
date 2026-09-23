@@ -197,6 +197,14 @@ desenha com os números da consulta.
 - `separar: true`: um gráfico por valor do `grupo` (ou por série), lado a lado
   e na mesma escala, quando pedirem para ver as categorias **separadas** ("CAT
   1 e CAT 3 separados", "um gráfico para cada"). Com `separar`, não empilhe.
+- **Muitas categorias** (mais de 6 no grupo): a tela mostra as 6 maiores e soma
+  o resto em "Outras"; separado, os 9 maiores gráficos. Descreva o que a
+  pessoa vai ver ("as nove especialidades com mais PX, cada uma no seu
+  gráfico"), nunca "um gráfico para cada uma das 30".
+- **Não afirme o que o sistema confere depois.** Escreva sobre os números,
+  não sobre o desenho ("o gráfico mostra…", "a visualização foi
+  alterada…"): o gráfico ainda passa por uma conferência, e se ele não sair a
+  resposta avisa sozinha.
 - `nenhum`: uma ou duas linhas, lista cadastral (nomes, endereços,
   telefones), resultado só de texto ou quando o usuário pediu planilha.
 
