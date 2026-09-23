@@ -169,7 +169,11 @@ def test_do_terceiro_tema_em_diante_vai_o_resumo(catalogo):
 
     assert len(contexto.secoes) == 3
     assert "Tema relacionado (resumo)" in contexto.texto
-    assert contexto.tokens_estimados < 20000
+    # Era 20 mil. Subiu em 2026-09-23 com as análises de mercado por classe
+    # (B32–B42), que vão completas junto com o Sell Out: ~7 mil tokens a mais,
+    # ~US$ 0,012 por pergunta de vendas pelo custo real de set/26. Decisão
+    # consciente de custo; se passar disso, o caminho é a seção própria.
+    assert contexto.tokens_estimados < 27000
 
 
 def test_schema_vai_filtrado_pelas_tabelas_do_tema(catalogo):
@@ -189,7 +193,10 @@ def test_sem_tema_reconhecido_vai_so_o_nucleo(catalogo):
     assert contexto.secoes == ()
     assert "-- A01 ·" not in contexto.texto
     assert "PRECISO DA SEÇÃO" in contexto.texto
-    assert contexto.tokens_estimados < 3000
+    # Era 3 mil. O preâmbulo ganhou em 2026-09-23 o roteiro de raciocínio
+    # para pergunta sem consulta pronta (~1,1 mil tokens, ~US$ 0,002 por
+    # pergunta): é o único lugar que chega à IA em todo tema.
+    assert contexto.tokens_estimados < 3500
 
 
 def test_segunda_tentativa_pede_o_documento_inteiro(catalogo):
@@ -207,7 +214,8 @@ def test_contexto_da_resposta_nao_leva_o_documento(catalogo):
     contexto = montar_contexto_da_resposta(catalogo)
 
     assert "```sql" not in contexto.texto
-    assert contexto.tokens_estimados < 1500
+    # Era 1,5 mil; subiu com o preâmbulo (ver o teste do núcleo acima).
+    assert contexto.tokens_estimados < 2000
     assert "ainda não está disponível" in contexto.texto
 
 

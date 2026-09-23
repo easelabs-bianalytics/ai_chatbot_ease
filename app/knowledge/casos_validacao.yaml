@@ -319,6 +319,43 @@ casos:
     sql_deve_conter: ["limit5", "max(data)"]
     nota: Último trimestre = 3 competências mais recentes da base, não os 3 meses antes de hoje.
 
+  - id: A19-px-extrato-laboratorio
+    grupo: referencia
+    pergunta: Quantas prescrições de Extrato cada laboratório teve no último MAT, com o share de PX?
+    esperado: answer_with_data
+    referencia: A19
+    trocas:
+      - de: "r.descmole = 'CANABIDIOL'"
+        para: "r.descmole = 'EXTRATO CANNABIS SATIVA'"
+    sql_deve_conter: ["extratocannabissativa"]
+    nota: Classe na auditoria é molécula (descmole), não a regra do nome do mercado.
+
+  - id: A19-px-isolados-por-produto
+    grupo: referencia
+    pergunta: Quais produtos Isolados foram mais prescritos no último MAT? Quero o share de PX de cada um.
+    esperado: answer_with_data
+    referencia: A19
+    comparar_resultado: false
+    sql_deve_conter: ["audit.produto", "canabidiol"]
+    nota: >-
+      O exemplo do "mindset" do preâmbulo: não há consulta pronta. A IA precisa levar a B33 (lista
+      da classe com share, no mercado) para a auditoria, partindo da A19 e trocando o agrupamento
+      de laboratório para audit.produto.nome. Deve avisar que a prescrição não separa por frasco.
+      Conferido no RDS em 23/09/2026: 34 produtos, 370,9 mil PX, Ease 100 mg/mL em 4º (8,49%).
+
+  - id: A20-conversao-extrato
+    grupo: referencia
+    pergunta: Quantas unidades de Extrato da Ease saem por prescrição no MAT?
+    esperado: answer_with_data
+    referencia: A20
+    trocas:
+      - de: "r.descmole = 'CANABIDIOL'"
+        para: "r.descmole = 'EXTRATO CANNABIS SATIVA'"
+      - de: "(234194, 254655, 309653)"
+        para: "(259434)"
+    sql_deve_conter: ["vw_sell_out", "259434"]
+    nota: Mesma classe e mesmo período nos dois lados; é proporção, não rastreio receita a receita.
+
   # ------------------------------------------------------------------
   # 2.1 Sell Out Ease Total
   # ------------------------------------------------------------------
@@ -603,6 +640,122 @@ casos:
       A classe do produto é derivada do nome (MEVATYL → EXT → Isolado), nunca procurada como
       palavra: `desc_apresentacao ILIKE '%ISOLADO%'` devolve zero linhas. Conferido no RDS em
       22/09/2026: 729.227 unidades no Varejo e 121.112 no Mercado Público.
+
+  - id: B32-classes-mercado-publico
+    grupo: referencia
+    pergunta: Quanto cada classe de produto (Isolado, Extrato, Mevatyl) vende no Mercado Público no MAT?
+    esperado: answer_with_data
+    referencia: B32
+    comparar_resultado: false
+    sql_deve_conter: ["hospitalar"]
+    nota: >-
+      Conferido no RDS em 23/09/2026 — Mercado Público: Isolado 121.112, Extrato 3.709,
+      Mevatyl 565.
+
+  - id: B33-extrato-varejo
+    grupo: referencia
+    pergunta: Exporta as unidades de todos os Extratos vendidos no Varejo no MAT, com o market share.
+    esperado: answer_with_data
+    referencia: B33
+    trocas:
+      - de: "classe = 'Isolado'"
+        para: "classe = 'Extrato'"
+    sql_deve_conter: ["'extrato'"]
+    sql_nao_deve_conter: ["ilike'%extrato%'"]
+    nota: Share dentro da classe e do canal; a palavra "extrato" não existe na descrição.
+
+  - id: B34-faixas-mercado-publico
+    grupo: referencia
+    pergunta: Em qual faixa de concentração a Ease é mais forte no Mercado Público?
+    esperado: answer_with_data
+    referencia: B34
+    trocas:
+      - de: "WHERE canal = 'Varejo'"
+        para: "WHERE canal = 'Mercado Público'"
+    sql_deve_conter: ["conc"]
+
+  - id: B35-share-mensal-extrato
+    grupo: referencia
+    pergunta: Como evoluiu o share da Ease nos Extratos no Varejo nos últimos 12 meses?
+    esperado: answer_with_data
+    referencia: B35
+    trocas:
+      - de: "classe='Isolado'"
+        para: "classe='Extrato'"
+    sql_deve_conter: ["'extrato'"]
+
+  - id: B36-mat-contra-mat-extrato
+    grupo: referencia
+    pergunta: Nos Extratos, crescemos ou perdemos espaço em relação ao MAT passado?
+    esperado: answer_with_data
+    referencia: B36
+    trocas:
+      - de: "classe='Isolado'"
+        para: "classe='Extrato'"
+    sql_deve_conter: ["'extrato'", "202409"]
+
+  - id: B37-ranking-extrato
+    grupo: referencia
+    pergunta: Em que posição a Ease está no mercado de Extratos no Varejo?
+    esperado: answer_with_data
+    referencia: B37
+    trocas:
+      - de: "classe='Isolado'"
+        para: "classe='Extrato'"
+    sql_deve_conter: ["'extrato'"]
+
+  - id: B38-share-uf-extrato
+    grupo: referencia
+    pergunta: Em quais estados temos mais share nos Extratos?
+    esperado: answer_with_data
+    referencia: B38
+    trocas:
+      - de: "m.classe='Isolado'"
+        para: "m.classe='Extrato'"
+    sql_deve_conter: ["cddd.utc"]
+    nota: Corte de UF com volume irrelevante antes de ranquear por share.
+
+  - id: B39-canais-extrato
+    grupo: referencia
+    pergunta: Como fica o Extrato no Varejo contra o Mercado Público?
+    esperado: answer_with_data
+    referencia: B39
+    trocas:
+      - de: "classe='Isolado'"
+        para: "classe='Extrato'"
+    sql_deve_conter: ["'extrato'"]
+
+  - id: B40-ticket-isolados
+    grupo: referencia
+    pergunta: Qual o ticket médio de cada apresentação de Isolado no Varejo no MAT?
+    esperado: answer_with_data
+    referencia: B40
+    trocas:
+      - de: "-- AND m.classe = 'Isolado'"
+        para: "AND m.classe = 'Isolado' --"
+    sql_deve_conter: ["799", "286", "174.3"]
+    nota: Ticket da Ease é o preço fixo da empresa; o dos concorrentes vem do painel (valor_/und).
+
+  - id: B41-cobertura-extrato
+    grupo: referencia
+    pergunta: Em quantos bricks o mercado vende Extrato e em quantos nós vendemos?
+    esperado: answer_with_data
+    referencia: B41
+    trocas:
+      - de: "classe='Isolado'"
+        para: "classe='Extrato'"
+    sql_deve_conter: ["cod_utc"]
+
+  - id: B42-crescimento-extrato
+    grupo: referencia
+    pergunta: Quais Extratos mais cresceram no último MAT?
+    esperado: answer_with_data
+    referencia: B42
+    trocas:
+      - de: "classe='Isolado'"
+        para: "classe='Extrato'"
+    sql_deve_conter: ["'extrato'"]
+    nota: Base mínima no MAT anterior; lançamento é tratado à parte, sem variação percentual.
 
   # ------------------------------------------------------------------
   # 3. Estoque, ruptura e categoria de PDV

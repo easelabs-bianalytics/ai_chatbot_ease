@@ -41,6 +41,69 @@ A resposta precisa dizer **o que aconteceu**: *"não encontrei esse representant
 Ricardo Bastos?"*, *"o Ricardo Reis foi desligado em 18/05/2026, então não há ago/26 para
 comparar"*, *"esse mês ainda não tem carga"*. Nunca "a consulta não retornou nada".
 
+## Quando não houver consulta exata: o raciocínio vale mais que a consulta
+
+**Pergunta sem consulta pronta é o caso normal, não a exceção.** As referências abaixo ensinam
+*padrões* (lista com share, ranking, evolução mensal, MAT contra MAT, recorte por UF...) e *regras*
+de cada base. O usuário vai combinar um padrão de um tema com a medida de outro. Nunca responda
+"não tenho essa consulta": monte a partir do que este documento ensina. Só diga que não dá quando
+o **dado** não existir na base (regra acima).
+
+**O fluxo, sempre nesta ordem:**
+
+1. **Decomponha a pergunta** em medida (unidades, faturamento, PX, estoque, adesões, visitas),
+   recorte (classe, produto, laboratório, canal, geografia, pessoa) e período.
+2. **Escolha a base pela medida, não pelas palavras da pergunta:**
+
+   | Medida pedida | Base | Seção |
+   |---|---|---|
+   | Prescrição (PX), médico, especialidade | `audit` | 1 |
+   | Unidades e faturamento **da Ease** | `cddd` (sell out) | 2.1 e 2.2 |
+   | Unidades e faturamento **do mercado**, share entre laboratórios | `td.fato_td` | 2.3 |
+   | Estoque, ruptura, categoria de PDV | `estoque_redes` | 3 |
+   | Adesão, transação, voucher | `pbm` | 4 |
+   | Representante, painel, visita | `cddd` e `audit.rx_*` | 5 |
+
+3. **Ache a referência mais parecida com o padrão**, mesmo que seja de outro tema, e copie a
+   *forma* dela: janela de tempo, denominador do share, filtros, cortes de base mínima.
+4. **Traduza cada conceito para a base escolhida.** O mesmo conceito tem nome e coluna diferentes
+   em cada uma — é aqui que a maioria dos erros acontece:
+
+   | Conceito | Mercado (`td`) | Prescrição (`audit`) | Sell out Ease (`cddd`) |
+   |---|---|---|---|
+   | Classe Isolado / Extrato | regra do nome da apresentação (2.3) | `molecula_produto_relacao.descmole` = `'CANABIDIOL'` / `'EXTRATO CANNABIS SATIVA'` | pelo SKU (`cod_apres`) |
+   | Laboratório | `cddd.fab.desc_fab` (via `apres` → `prod`) | `audit.laboratorio.nome` (via `cdglaboratorio`, `'EAS'` = Ease) | só Ease |
+   | Produto | apresentação: SKU com tamanho de frasco | `audit.produto.nome`: marca + concentração + forma, **sem tamanho de frasco** | SKU |
+   | Canal Varejo × Mercado Público | `cddd.canal.desc_canal` (`HOSPITALAR` = Mercado Público) | **não existe** | colunas de fonte (`cdd`, `mp`, `extras`...) |
+   | Geografia | brick `cod_utc` → `cddd.utc` | brick do médico `audit.medico.utc_codigo`; UF = `left(crm, 2)` | PDV |
+   | Período | `cod_anomes`, texto `'YYYYMM'` | `data`, competência no dia 1 | `date` |
+
+5. **Coluna que este documento não mostra:** confira em `information_schema.columns` antes de usar.
+6. **Confira o resultado antes de responder:** o share soma 100% no denominador certo (mesma
+   classe, mesmo canal)? O total bate com a ordem de grandeza de uma referência vizinha? Um número
+   fora do esperado é sinal de filtro errado, não de descoberta.
+7. **Diga na resposta o que você adaptou:** de qual referência partiu, o período usado e os limites
+   da base (ex.: "a prescrição não separa por frasco", "a auditoria não tem canal").
+
+**Exemplo.** *"Me dá a lista dos produtos Isolados com a prescrição e o share de PX no MAT."* Não há
+consulta pronta — a B33 faz isso no mercado, não na prescrição. O caminho:
+
+- a medida é PX → base `audit`, seção 1. A referência de partida é a **A19** (PX de uma molécula
+  por laboratório); o padrão "lista da classe com share" vem da **B33**;
+- "Isolado" na auditoria é `descmole = 'CANABIDIOL'`, e não a regra do nome, que é do mercado;
+- "produto" é `audit.produto.nome`, ligado à prescrição pela mesma chave composta da
+  `molecula_produto_relacao`. Troque o agrupamento da A19 de laboratório para produto; o share
+  continua `SUM(SUM(p.px1)) OVER ()`;
+- avise dois limites: a prescrição abre por concentração e forma, **não por frasco** (o Isolado
+  100 mg/mL da Ease de 10 e de 30 mL é uma linha só), e não existe Varejo × Mercado Público na
+  auditoria;
+- confira: MAT set/25–ago/26 dá 34 produtos e 370,9 mil PX; Prati VD 20 mg/mL lidera (33,27%) e o
+  Ease 100 mg/mL é o 4º (8,49%). O total bate com a soma da A19.
+
+**Períodos.** MAT = os 12 meses fechados até o último mês com carga (`MAT Ago/26` = set/25 a
+ago/26). Pedido de MAT que ainda não fechou: use o último MAT completo e diga qual período usou e
+por quê. Trimestre, mês e YTD seguem a mesma lógica: nunca complete meses que não têm carga.
+
 ---
 
 ## 1. Auditoria e Prescrição Médica
@@ -382,6 +445,73 @@ LIMIT 10;
 
 "Último trimestre" = as 3 competências mais recentes da base. A query usa o **território** do
 representante (bricks dele); para o **painel**, troque o filtro pelo da A14.
+
+### Prescrição de uma classe inteira (molécula)
+
+*"Quantas prescrições os produtos Isolados tiveram no MAT? E cada laboratório?"*
+
+- Classe na auditoria = molécula: Isolado = `CANABIDIOL`; Extrato = `EXTRATO CANNABIS SATIVA`.
+- A prescrição **não separa por SKU nem por frasco**: separa por produto (marca + concentração +
+  forma). Não prometa abertura por apresentação.
+- O nome do laboratório está em `audit.laboratorio`; `audit.prescricao` traz só o código.
+- Para a lista **por produto**, troque o agrupamento para `audit.produto.nome` (exemplo no início
+  deste documento).
+
+```sql
+-- A19 · Prescrição de uma molécula (classe) por laboratório, com share de PX
+SELECT l.nome AS laboratorio,
+       SUM(p.px1) AS px,
+       ROUND((100*SUM(p.px1)/SUM(SUM(p.px1)) OVER ())::numeric, 2) AS share_px
+FROM audit.prescricao p
+JOIN audit.molecula_produto_relacao r
+  ON r.cdgmarca = p.cdgmarca AND r.codigoconcentracao = p.cdgconcentracao
+ AND r.codigoapresentacao = p.cdgapresentacao AND r.codigoforma = p.cdgforma::text
+ AND r.cdglaboratorio = p.cdglaboratorio
+LEFT JOIN audit.laboratorio l ON l.codigo = p.cdglaboratorio
+WHERE r.descmole = 'CANABIDIOL'                       -- Isolado; Extrato = 'EXTRATO CANNABIS SATIVA'
+  AND p.data BETWEEN '2025-09-01' AND '2026-08-01'    -- competências mensais (dia 1)
+GROUP BY 1
+ORDER BY px DESC;
+```
+
+Conferido no RDS em 23/09/2026 (Canabidiol, MAT set/25–ago/26): Prati-Donaduzzi 165.560 PX
+(44,63%), Greencare 50.004 (13,48%), **Ease Labs 33.847 (9,12%)**, Mantecorp 33.311 (8,98%),
+Eurofarma 28.223 (7,61%).
+
+### Unidades por prescrição (conversão)
+
+*"Quantas unidades saem por prescrição?"*
+
+Cruza duas bases de natureza diferente: prescrição (`audit`, mensal, painel médico) e sell out
+(`cddd.vw_sell_out`). É um indicador de **proporção**, não rastreabilidade receita a receita — diga
+isso na resposta. Use o mesmo período nos dois lados e a mesma classe (Isolados Ease = SKUs
+`234194`, `254655`, `309653`; Extrato Ease = `259434` com `descmole = 'EXTRATO CANNABIS SATIVA'`).
+
+```sql
+-- A20 · Unidades vendidas por prescrição (conversão PX → sell out Ease)
+WITH px AS (
+  SELECT SUM(p.px1) AS px
+  FROM audit.prescricao p
+  JOIN audit.molecula_produto_relacao r
+    ON r.cdgmarca = p.cdgmarca AND r.codigoconcentracao = p.cdgconcentracao
+   AND r.codigoapresentacao = p.cdgapresentacao AND r.codigoforma = p.cdgforma::text
+   AND r.cdglaboratorio = p.cdglaboratorio
+  WHERE r.descmole = 'CANABIDIOL' AND p.cdglaboratorio = 'EAS'
+    AND p.data BETWEEN '2025-09-01' AND '2026-08-01'
+),
+un AS (
+  SELECT SUM(s.cdd + s.extras + s.mp + s.ss - s.pbm) AS unidades
+  FROM cddd.vw_sell_out s
+  WHERE s.cod_apres IN (234194, 254655, 309653)      -- Isolados Ease
+    AND s.date >= '2025-09-01' AND s.date < '2026-09-01'
+)
+SELECT px.px, ROUND(un.unidades::numeric, 0) AS unidades,
+       ROUND((un.unidades/NULLIF(px.px, 0))::numeric, 2) AS unidades_por_px
+FROM px, un;
+```
+
+Conferido no RDS em 23/09/2026 (Isolados Ease, MAT set/25–ago/26): 33.847 PX e 48.265 unidades =
+**1,43 unidade por prescrição**.
 
 ---
 
@@ -1120,6 +1250,450 @@ for `202608`) e **diga na resposta qual período foi usado e por quê**.
 Conferido no RDS em 22/09/2026, MAT set/25–ago/26: Isolados somam **729.227** unidades no
 Varejo (39 apresentações) e **121.112** no Mercado Público (34). Maior do varejo:
 Prati-Donaduzzi 20 mg/mL 30 mL, 215.844 un (29,60%).
+
+#### ⭐ Análises avançadas de mercado: classe, canal e período
+
+Perguntas de análise que exigem raciocínio, não só um filtro. Quase todas são a mesma base — o
+mercado classificado por classe e canal — com uma pergunta diferente em cima. **Confirme antes os
+parâmetros que o usuário não disse:**
+
+| Parâmetro | Valores |
+|---|---|
+| **Classe** | `Isolado` · `Extrato` · `Mevatyl` |
+| **Canal** | `Varejo` (tudo que não é `HOSPITALAR`) · `Mercado Público` (`HOSPITALAR`) · os dois |
+| **Período** | MAT (12 meses fechados), trimestre, mês, YTD |
+| **Laboratório** | `EASE LABS` ou qualquer concorrente da `cddd.fab` |
+
+Regras que valem para todas:
+
+- **Share = parte ÷ total da mesma classe no mesmo canal.** Nunca misture canais no denominador.
+- `und` e `valor_` vêm ×1000: divida por 1000 (inclusive nos cortes de `HAVING`).
+- A classe vem do nome (ver ⚠️ acima), com o `COALESCE` de `td.apres` para produto novo.
+- Ease = `laboratorio = 'EASE LABS'` no bloco abaixo. SKUs Ease: `234194` Isolado 100 mg/mL 30 mL ·
+  `254655` Isolado 100 mg/mL 10 mL · `309653` Isolado 20 mg/mL 30 mL · `259434` Extrato 36,76 mg/mL
+  30 mL.
+- Os números abaixo foram conferidos no RDS em **23/09/2026**, MAT = set/25 a ago/26 (`'202509'` a
+  `'202608'`). Mudam a cada carga; servem para conferir o caminho e a ordem de grandeza.
+
+*"Quanto cada classe vende em cada canal?"* — o bloco `mercado` desta consulta é a base de todas as
+seguintes; reaproveite-o para qualquer pergunta nova de mercado por classe.
+
+```sql
+-- B32 · Base de mercado por classe e canal (bloco reutilizável)
+WITH mercado AS (
+  SELECT f.cod_apresentacao, f.cod_anomes, f.cod_utc, f.und, f.valor_,
+         COALESCE(a.desc_apresentacao, ta.desc_apresentacao) AS desc_apres,
+         COALESCE(fb.desc_fab, 'NÃO IDENTIFICADO')            AS laboratorio,
+         CASE WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%MEVATYL%' THEN 'Mevatyl'
+              WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%EXT%'     THEN 'Extrato'
+              ELSE 'Isolado' END                               AS classe,
+         CASE WHEN dc.desc_canal = 'HOSPITALAR' THEN 'Mercado Público' ELSE 'Varejo' END AS canal
+  FROM td.fato_td f
+  LEFT JOIN cddd.apres a  ON a.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN td.apres ta   ON ta.cod_apresentacao = f.cod_apresentacao   -- produto novo ainda fora da cddd.apres
+  LEFT JOIN cddd.prod pr  ON pr.cod_marca = COALESCE(a.cod_marca, ta.cod_marca)
+  LEFT JOIN cddd.fab fb   ON fb.cod_fab = pr.cod_fab
+  LEFT JOIN cddd.canal dc ON dc.cod_subcanal = f.cod_subcanal
+)
+SELECT classe, canal,
+       SUM(und)/1000 AS unidades,
+       ROUND(100*SUM(und)/SUM(SUM(und)) OVER (PARTITION BY canal), 2) AS share_no_canal
+FROM mercado
+WHERE cod_anomes BETWEEN '202509' AND '202608'          -- MAT
+GROUP BY 1, 2
+ORDER BY canal, unidades DESC;
+```
+
+Varejo: Isolado 729.227 un. (74,47%), Extrato 250.001 (25,53%), Mevatyl 31. Mercado Público:
+Isolado 121.112 (96,59%), Extrato 3.709, Mevatyl 565.
+
+*"Exporta as unidades vendidas de todos os produtos Isolados no Varejo, com o market share."*
+Variações: Extrato · Mercado Público · trimestre ou ano. Para os dois canais lado a lado, use a
+**B31**. Uma apresentação pode ter dois códigos e um nome comercial só.
+
+```sql
+-- B33 · Unidades e share de uma classe, por apresentação, num canal
+WITH mercado AS (
+  SELECT f.cod_apresentacao, f.cod_anomes, f.cod_utc, f.und, f.valor_,
+         COALESCE(a.desc_apresentacao, ta.desc_apresentacao) AS desc_apres,
+         COALESCE(fb.desc_fab, 'NÃO IDENTIFICADO')            AS laboratorio,
+         CASE WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%MEVATYL%' THEN 'Mevatyl'
+              WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%EXT%'     THEN 'Extrato'
+              ELSE 'Isolado' END                               AS classe,
+         CASE WHEN dc.desc_canal = 'HOSPITALAR' THEN 'Mercado Público' ELSE 'Varejo' END AS canal
+  FROM td.fato_td f
+  LEFT JOIN cddd.apres a  ON a.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN td.apres ta   ON ta.cod_apresentacao = f.cod_apresentacao   -- produto novo ainda fora da cddd.apres
+  LEFT JOIN cddd.prod pr  ON pr.cod_marca = COALESCE(a.cod_marca, ta.cod_marca)
+  LEFT JOIN cddd.fab fb   ON fb.cod_fab = pr.cod_fab
+  LEFT JOIN cddd.canal dc ON dc.cod_subcanal = f.cod_subcanal
+)
+SELECT desc_apres, laboratorio,
+       SUM(und)/1000 AS unidades,
+       ROUND(100*SUM(und)/SUM(SUM(und)) OVER (), 2) AS share_pct
+FROM mercado
+WHERE classe = 'Isolado'            -- ou 'Extrato' / 'Mevatyl'
+  AND canal  = 'Varejo'             -- ou 'Mercado Público'; para os dois, use a B31
+  AND cod_anomes BETWEEN '202509' AND '202608'
+GROUP BY 1, 2
+ORDER BY unidades DESC;
+```
+
+39 apresentações, total 729.227 un. Líder: Prati-Donaduzzi VD 20 mg/mL 30 mL, 215.844 un.
+(29,60%); depois Mantecorp 23,75 10 mL (65.313) e Greencare 23,75 10 mL (65.207).
+
+*"Em qual faixa de concentração a Ease é mais forte?"* — faixas do Power BI (tabela ⚠️ acima).
+Faixa sem venda da Ease aparece com zero, não some da resposta.
+
+```sql
+-- B34 · Market share da Ease por faixa de concentração
+WITH mercado AS (
+  SELECT f.cod_apresentacao, f.cod_anomes, f.cod_utc, f.und, f.valor_,
+         COALESCE(a.desc_apresentacao, ta.desc_apresentacao) AS desc_apres,
+         COALESCE(fb.desc_fab, 'NÃO IDENTIFICADO')            AS laboratorio,
+         CASE WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%MEVATYL%' THEN 'Mevatyl'
+              WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%EXT%'     THEN 'Extrato'
+              ELSE 'Isolado' END                               AS classe,
+         CASE WHEN dc.desc_canal = 'HOSPITALAR' THEN 'Mercado Público' ELSE 'Varejo' END AS canal,
+         CASE WHEN COALESCE(a.desc_apresentacao, ta.desc_apresentacao) = 'EXT DE CANNABIS ACH ACH 3676MG/ML GT-OR FR X 30ML N03A'
+              THEN 36.76
+              ELSE replace(COALESCE(NULLIF(regexp_replace(COALESCE(a.und_concentracao, ''), '[^0-9.,].*$', ''), ''),
+                                    regexp_replace(COALESCE(a.desc_concentracao, ta.desc_concentracao, ''), '[^0-9.,].*$', '')), ',', '.')::numeric
+         END AS conc
+  FROM td.fato_td f
+  LEFT JOIN cddd.apres a  ON a.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN td.apres ta   ON ta.cod_apresentacao = f.cod_apresentacao   -- produto novo ainda fora da cddd.apres
+  LEFT JOIN cddd.prod pr  ON pr.cod_marca = COALESCE(a.cod_marca, ta.cod_marca)
+  LEFT JOIN cddd.fab fb   ON fb.cod_fab = pr.cod_fab
+  LEFT JOIN cddd.canal dc ON dc.cod_subcanal = f.cod_subcanal
+)
+SELECT classe,
+       CASE WHEN classe='Isolado' AND conc <= 35  THEN 'Isolado até 35 mg/mL'
+            WHEN classe='Isolado' AND conc <= 50  THEN 'Isolado até 50 mg/mL'
+            WHEN classe='Isolado' AND conc <= 150 THEN 'Isolado 50 a 149 mg/mL'
+            WHEN classe='Isolado'                 THEN 'Isolado acima 150 mg/mL'
+            WHEN classe='Extrato' AND (conc < 80 OR conc = 200) THEN 'Extrato < 0,2% THC'
+            WHEN classe='Extrato'                 THEN 'Extrato > 0,2% THC'
+            ELSE 'Mevatyl' END AS faixa,
+       SUM(und)/1000 AS un_mercado,
+       COALESCE(SUM(und) FILTER (WHERE laboratorio='EASE LABS'), 0)/1000 AS un_ease,
+       ROUND(100*COALESCE(SUM(und) FILTER (WHERE laboratorio='EASE LABS'), 0)/NULLIF(SUM(und), 0), 2) AS share_ease
+FROM mercado
+WHERE canal = 'Varejo' AND cod_anomes BETWEEN '202509' AND '202608'
+GROUP BY 1, 2
+ORDER BY un_mercado DESC;
+```
+
+A Ease tem **47,65%** da faixa "Isolado 50 a 149 mg/mL" (43.078 de 90.401) e **18,36%** do
+"Extrato < 0,2% THC" (38.601 de 210.255), mas só **0,52%** da maior faixa do mercado, "Isolado até
+35 mg/mL" (537.341 un.). É essa leitura que explica o share total.
+
+*"Como evoluiu o share da Ease nos Isolados nos últimos 12 meses?"* — share mês a mês, sempre na
+mesma classe e canal. Aponte a tendência, não só os números.
+
+```sql
+-- B35 · Share da Ease dentro de uma classe, mês a mês
+WITH mercado AS (
+  SELECT f.cod_apresentacao, f.cod_anomes, f.cod_utc, f.und, f.valor_,
+         COALESCE(a.desc_apresentacao, ta.desc_apresentacao) AS desc_apres,
+         COALESCE(fb.desc_fab, 'NÃO IDENTIFICADO')            AS laboratorio,
+         CASE WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%MEVATYL%' THEN 'Mevatyl'
+              WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%EXT%'     THEN 'Extrato'
+              ELSE 'Isolado' END                               AS classe,
+         CASE WHEN dc.desc_canal = 'HOSPITALAR' THEN 'Mercado Público' ELSE 'Varejo' END AS canal
+  FROM td.fato_td f
+  LEFT JOIN cddd.apres a  ON a.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN td.apres ta   ON ta.cod_apresentacao = f.cod_apresentacao   -- produto novo ainda fora da cddd.apres
+  LEFT JOIN cddd.prod pr  ON pr.cod_marca = COALESCE(a.cod_marca, ta.cod_marca)
+  LEFT JOIN cddd.fab fb   ON fb.cod_fab = pr.cod_fab
+  LEFT JOIN cddd.canal dc ON dc.cod_subcanal = f.cod_subcanal
+)
+SELECT cod_anomes,
+       SUM(und)/1000 AS un_classe,
+       SUM(und) FILTER (WHERE laboratorio='EASE LABS')/1000 AS un_ease,
+       ROUND(100*SUM(und) FILTER (WHERE laboratorio='EASE LABS')/NULLIF(SUM(und), 0), 2) AS share_pct
+FROM mercado
+WHERE classe='Isolado' AND canal='Varejo' AND cod_anomes BETWEEN '202509' AND '202608'
+GROUP BY 1
+ORDER BY 1;
+```
+
+Caiu de **6,85%** (set/25) para **5,80%** (ago/26), com piso de 5,67% em jun/26. As unidades da
+Ease ficaram estáveis (3,5 a 4 mil/mês) enquanto o mercado cresceu de 57 para 67 mil: perda de
+share por crescimento do mercado, não por queda de volume.
+
+*"Crescemos ou perdemos espaço em relação ao MAT passado?"* — os dois MATs completos (24 meses no
+filtro), separando o efeito volume do efeito share.
+
+```sql
+-- B36 · MAT contra MAT anterior, dentro de uma classe
+WITH mercado AS (
+  SELECT f.cod_apresentacao, f.cod_anomes, f.cod_utc, f.und, f.valor_,
+         COALESCE(a.desc_apresentacao, ta.desc_apresentacao) AS desc_apres,
+         COALESCE(fb.desc_fab, 'NÃO IDENTIFICADO')            AS laboratorio,
+         CASE WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%MEVATYL%' THEN 'Mevatyl'
+              WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%EXT%'     THEN 'Extrato'
+              ELSE 'Isolado' END                               AS classe,
+         CASE WHEN dc.desc_canal = 'HOSPITALAR' THEN 'Mercado Público' ELSE 'Varejo' END AS canal
+  FROM td.fato_td f
+  LEFT JOIN cddd.apres a  ON a.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN td.apres ta   ON ta.cod_apresentacao = f.cod_apresentacao   -- produto novo ainda fora da cddd.apres
+  LEFT JOIN cddd.prod pr  ON pr.cod_marca = COALESCE(a.cod_marca, ta.cod_marca)
+  LEFT JOIN cddd.fab fb   ON fb.cod_fab = pr.cod_fab
+  LEFT JOIN cddd.canal dc ON dc.cod_subcanal = f.cod_subcanal
+)
+SELECT CASE WHEN cod_anomes BETWEEN '202509' AND '202608' THEN 'MAT atual' ELSE 'MAT anterior' END AS periodo,
+       SUM(und)/1000 AS un_classe,
+       SUM(und) FILTER (WHERE laboratorio='EASE LABS')/1000 AS un_ease,
+       ROUND(100*SUM(und) FILTER (WHERE laboratorio='EASE LABS')/NULLIF(SUM(und), 0), 2) AS share_pct
+FROM mercado
+WHERE classe='Isolado' AND canal='Varejo' AND cod_anomes BETWEEN '202409' AND '202608'
+GROUP BY 1
+ORDER BY 1 DESC;
+```
+
+Mercado 548.638 → **729.227** un. (+32,9%); Ease 39.944 → **45.867** (+14,8%); share 7,28% →
+**6,29%**. A Ease cresceu, mas menos que o mercado.
+
+*"Em que posição estamos no mercado de Isolados?"*
+
+```sql
+-- B37 · Ranking de laboratórios numa classe e posição da Ease
+WITH mercado AS (
+  SELECT f.cod_apresentacao, f.cod_anomes, f.cod_utc, f.und, f.valor_,
+         COALESCE(a.desc_apresentacao, ta.desc_apresentacao) AS desc_apres,
+         COALESCE(fb.desc_fab, 'NÃO IDENTIFICADO')            AS laboratorio,
+         CASE WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%MEVATYL%' THEN 'Mevatyl'
+              WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%EXT%'     THEN 'Extrato'
+              ELSE 'Isolado' END                               AS classe,
+         CASE WHEN dc.desc_canal = 'HOSPITALAR' THEN 'Mercado Público' ELSE 'Varejo' END AS canal
+  FROM td.fato_td f
+  LEFT JOIN cddd.apres a  ON a.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN td.apres ta   ON ta.cod_apresentacao = f.cod_apresentacao   -- produto novo ainda fora da cddd.apres
+  LEFT JOIN cddd.prod pr  ON pr.cod_marca = COALESCE(a.cod_marca, ta.cod_marca)
+  LEFT JOIN cddd.fab fb   ON fb.cod_fab = pr.cod_fab
+  LEFT JOIN cddd.canal dc ON dc.cod_subcanal = f.cod_subcanal
+)
+SELECT laboratorio,
+       SUM(und)/1000 AS unidades,
+       ROUND(100*SUM(und)/SUM(SUM(und)) OVER (), 2) AS share_pct,
+       RANK() OVER (ORDER BY SUM(und) DESC) AS posicao
+FROM mercado
+WHERE classe='Isolado' AND canal='Varejo' AND cod_anomes BETWEEN '202509' AND '202608'
+GROUP BY 1
+ORDER BY posicao;
+```
+
+1º Prati-Donaduzzi 51,46%, 2º Greencare 11,09%, 3º Eurofarma 9,43%, 4º Mantecorp 9,38%, **5º Ease
+Labs 6,29%**, 6º Aché 5,24%.
+
+*"Em quais estados temos mais share nos Isolados?"* — a UF vem do brick (`cddd.utc`), porque a
+`td.fato_td` não tem PDV. Corte UFs de volume irrelevante antes de ranquear, senão um estado com
+200 unidades lidera a lista.
+
+```sql
+-- B38 · Share da Ease numa classe, por UF
+WITH mercado AS (
+  SELECT f.cod_apresentacao, f.cod_anomes, f.cod_utc, f.und, f.valor_,
+         COALESCE(a.desc_apresentacao, ta.desc_apresentacao) AS desc_apres,
+         COALESCE(fb.desc_fab, 'NÃO IDENTIFICADO')            AS laboratorio,
+         CASE WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%MEVATYL%' THEN 'Mevatyl'
+              WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%EXT%'     THEN 'Extrato'
+              ELSE 'Isolado' END                               AS classe,
+         CASE WHEN dc.desc_canal = 'HOSPITALAR' THEN 'Mercado Público' ELSE 'Varejo' END AS canal
+  FROM td.fato_td f
+  LEFT JOIN cddd.apres a  ON a.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN td.apres ta   ON ta.cod_apresentacao = f.cod_apresentacao   -- produto novo ainda fora da cddd.apres
+  LEFT JOIN cddd.prod pr  ON pr.cod_marca = COALESCE(a.cod_marca, ta.cod_marca)
+  LEFT JOIN cddd.fab fb   ON fb.cod_fab = pr.cod_fab
+  LEFT JOIN cddd.canal dc ON dc.cod_subcanal = f.cod_subcanal
+)
+SELECT u.uf,
+       SUM(m.und)/1000 AS un_classe,
+       SUM(m.und) FILTER (WHERE m.laboratorio='EASE LABS')/1000 AS un_ease,
+       ROUND(100*SUM(m.und) FILTER (WHERE m.laboratorio='EASE LABS')/NULLIF(SUM(m.und), 0), 2) AS share_pct
+FROM mercado m
+LEFT JOIN cddd.utc u ON u.cod_utc = m.cod_utc
+WHERE m.classe='Isolado' AND m.canal='Varejo' AND m.cod_anomes BETWEEN '202509' AND '202608'
+GROUP BY 1
+HAVING SUM(m.und) > 1000000        -- ignora UF com menos de 1.000 unidades no período (und vem ×1000)
+ORDER BY share_pct DESC;
+```
+
+MG 10,48% (7.901 de 75.389), DF 9,21%, SE 8,21%, RJ 7,67%, RS 7,35% — todos acima da média
+nacional de 6,29%.
+
+*"Como fica Varejo contra Mercado Público no mesmo produto?"*
+
+```sql
+-- B39 · Varejo contra Mercado Público numa classe
+WITH mercado AS (
+  SELECT f.cod_apresentacao, f.cod_anomes, f.cod_utc, f.und, f.valor_,
+         COALESCE(a.desc_apresentacao, ta.desc_apresentacao) AS desc_apres,
+         COALESCE(fb.desc_fab, 'NÃO IDENTIFICADO')            AS laboratorio,
+         CASE WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%MEVATYL%' THEN 'Mevatyl'
+              WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%EXT%'     THEN 'Extrato'
+              ELSE 'Isolado' END                               AS classe,
+         CASE WHEN dc.desc_canal = 'HOSPITALAR' THEN 'Mercado Público' ELSE 'Varejo' END AS canal
+  FROM td.fato_td f
+  LEFT JOIN cddd.apres a  ON a.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN td.apres ta   ON ta.cod_apresentacao = f.cod_apresentacao   -- produto novo ainda fora da cddd.apres
+  LEFT JOIN cddd.prod pr  ON pr.cod_marca = COALESCE(a.cod_marca, ta.cod_marca)
+  LEFT JOIN cddd.fab fb   ON fb.cod_fab = pr.cod_fab
+  LEFT JOIN cddd.canal dc ON dc.cod_subcanal = f.cod_subcanal
+)
+SELECT canal,
+       SUM(und)/1000 AS un_classe,
+       SUM(und) FILTER (WHERE laboratorio='EASE LABS')/1000 AS un_ease,
+       ROUND(100*SUM(und) FILTER (WHERE laboratorio='EASE LABS')/NULLIF(SUM(und), 0), 2) AS share_pct
+FROM mercado
+WHERE classe='Isolado' AND cod_anomes BETWEEN '202509' AND '202608'
+GROUP BY 1;
+```
+
+Varejo 729.227 un. com 6,29% de share; Mercado Público 121.112 un. com **2,40%**. O Mercado
+Público é 14% do volume da classe e a Ease é bem menos presente nele.
+
+*"Me dá a lista de todas as apresentações e o ticket médio de cada uma no período."* Variações: uma
+classe · um canal · um laboratório · outro período.
+
+- **Concorrentes:** ticket = `valor_ ÷ und` do painel (os dois ×1000, a divisão dispensa o ajuste).
+  É preço de mercado no canal, não preço de tabela.
+- **Ease: não use o preço do painel.** O ticket é definido pela empresa e entra fixo, por
+  `cod_apresentacao`: `234194` Isolado 30 = R$ 799,00 · `254655` Isolado 10 = R$ 286,00 · `259434`
+  Extrato = R$ 302,00 · `309653` Isolado 20 = R$ 174,30.
+- Apresentação Ease **sem ticket mapeado** sai com o valor do painel e é sinalizada (hoje, a
+  `CANNABIS SATIVA EAS EAS 79,14MG`, com 1 unidade no MAT). SKU novo da Ease sem ticket: avise,
+  não invente preço.
+- A lista traz **todas** as apresentações com venda no recorte, não só as maiores.
+- Deixe claro na resposta que o ticket da Ease é preço interno e o dos concorrentes é preço de
+  mercado: naturezas diferentes na mesma coluna.
+
+```sql
+-- B40 · Ticket médio de cada apresentação (Ease com preço fixo)
+WITH mercado AS (
+  SELECT f.cod_apresentacao, f.cod_anomes, f.cod_utc, f.und, f.valor_,
+         COALESCE(a.desc_apresentacao, ta.desc_apresentacao) AS desc_apres,
+         COALESCE(fb.desc_fab, 'NÃO IDENTIFICADO')            AS laboratorio,
+         CASE WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%MEVATYL%' THEN 'Mevatyl'
+              WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%EXT%'     THEN 'Extrato'
+              ELSE 'Isolado' END                               AS classe,
+         CASE WHEN dc.desc_canal = 'HOSPITALAR' THEN 'Mercado Público' ELSE 'Varejo' END AS canal
+  FROM td.fato_td f
+  LEFT JOIN cddd.apres a  ON a.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN td.apres ta   ON ta.cod_apresentacao = f.cod_apresentacao   -- produto novo ainda fora da cddd.apres
+  LEFT JOIN cddd.prod pr  ON pr.cod_marca = COALESCE(a.cod_marca, ta.cod_marca)
+  LEFT JOIN cddd.fab fb   ON fb.cod_fab = pr.cod_fab
+  LEFT JOIN cddd.canal dc ON dc.cod_subcanal = f.cod_subcanal
+),
+ticket_ease (cod_apresentacao, produto, preco) AS (
+  VALUES (234194, 'Isolado 30', 799.00::numeric),
+         (254655, 'Isolado 10', 286.00),
+         (259434, 'Extrato',    302.00),
+         (309653, 'Isolado 20', 174.30)
+)
+SELECT m.desc_apres AS apresentacao,
+       m.laboratorio,
+       m.classe,
+       m.cod_apresentacao,
+       SUM(m.und)/1000 AS unidades,
+       ROUND(CASE WHEN te.preco IS NOT NULL THEN te.preco
+                  ELSE SUM(m.valor_)/NULLIF(SUM(m.und), 0) END::numeric, 2) AS ticket_medio,
+       CASE WHEN te.preco IS NOT NULL THEN 'ticket Ease (fixo)'
+            ELSE 'painel (valor_/und)' END AS origem
+FROM mercado m
+LEFT JOIN ticket_ease te ON te.cod_apresentacao = m.cod_apresentacao
+WHERE m.canal = 'Varejo'                        -- ou 'Mercado Público'; remova para os dois
+  AND m.cod_anomes BETWEEN '202509' AND '202608'
+  -- AND m.classe = 'Isolado'                   -- opcional: uma classe só
+GROUP BY 1, 2, 3, 4, te.preco
+ORDER BY unidades DESC;
+```
+
+Varejo: **58 apresentações**. Ease (fixo): Extrato R$ 302,00 (38.601 un.), Isolado 30 R$ 799,00
+(26.083), Isolado 10 R$ 286,00 (16.994), Isolado 20 R$ 174,30 (2.789). Concorrentes: Prati VD
+20 mg/mL 30 mL R$ 182,93 (215.844 un.), Prati VD 20 mg/mL 10 mL R$ 60,63 (o menor), Mantecorp
+23,75 10 mL R$ 137,93, Greencare 23,75 10 mL R$ 140,36. Maior ticket: Mevatyl, R$ 3.150,23.
+
+*"Em quantos bricks o mercado vende Isolado e em quantos nós vendemos?"* — por brick (`cod_utc`),
+porque o mercado não tem PDV. "Não vendeu" é ausência de venda no período, não de cadastro.
+
+```sql
+-- B41 · Cobertura de bricks: onde o mercado vende e a Ease não
+WITH mercado AS (
+  SELECT f.cod_apresentacao, f.cod_anomes, f.cod_utc, f.und, f.valor_,
+         COALESCE(a.desc_apresentacao, ta.desc_apresentacao) AS desc_apres,
+         COALESCE(fb.desc_fab, 'NÃO IDENTIFICADO')            AS laboratorio,
+         CASE WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%MEVATYL%' THEN 'Mevatyl'
+              WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%EXT%'     THEN 'Extrato'
+              ELSE 'Isolado' END                               AS classe,
+         CASE WHEN dc.desc_canal = 'HOSPITALAR' THEN 'Mercado Público' ELSE 'Varejo' END AS canal
+  FROM td.fato_td f
+  LEFT JOIN cddd.apres a  ON a.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN td.apres ta   ON ta.cod_apresentacao = f.cod_apresentacao   -- produto novo ainda fora da cddd.apres
+  LEFT JOIN cddd.prod pr  ON pr.cod_marca = COALESCE(a.cod_marca, ta.cod_marca)
+  LEFT JOIN cddd.fab fb   ON fb.cod_fab = pr.cod_fab
+  LEFT JOIN cddd.canal dc ON dc.cod_subcanal = f.cod_subcanal
+)
+SELECT COUNT(*) FILTER (WHERE un_mercado > 0) AS bricks_com_mercado,
+       COUNT(*) FILTER (WHERE un_ease > 0)    AS bricks_com_ease,
+       ROUND(100.0*COUNT(*) FILTER (WHERE un_ease > 0)/NULLIF(COUNT(*) FILTER (WHERE un_mercado > 0), 0), 1) AS cobertura_pct
+FROM (
+  SELECT cod_utc,
+         SUM(und) AS un_mercado,
+         SUM(und) FILTER (WHERE laboratorio='EASE LABS') AS un_ease
+  FROM mercado
+  WHERE classe='Isolado' AND canal='Varejo' AND cod_anomes BETWEEN '202509' AND '202608'
+  GROUP BY 1) x;
+```
+
+Mercado em **16.918 bricks**, Ease em **5.714**: cobertura de **33,8%**. Para listar os bricks sem
+Ease, troque o `SELECT` externo por `WHERE un_mercado > 0 AND COALESCE(un_ease, 0) = 0` e junte com
+`cddd.utc` e `cddd.forca_vendas`.
+
+*"Quais produtos mais cresceram no último MAT?"* — corte a base pequena (produto que foi de 3 para
+60 unidades cresce 1.900% e não diz nada). Produto que não existia no MAT anterior é lançamento:
+trate à parte, sem variação percentual.
+
+```sql
+-- B42 · Apresentações que mais cresceram numa classe (MAT contra MAT)
+WITH mercado AS (
+  SELECT f.cod_apresentacao, f.cod_anomes, f.cod_utc, f.und, f.valor_,
+         COALESCE(a.desc_apresentacao, ta.desc_apresentacao) AS desc_apres,
+         COALESCE(fb.desc_fab, 'NÃO IDENTIFICADO')            AS laboratorio,
+         CASE WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%MEVATYL%' THEN 'Mevatyl'
+              WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%EXT%'     THEN 'Extrato'
+              ELSE 'Isolado' END                               AS classe,
+         CASE WHEN dc.desc_canal = 'HOSPITALAR' THEN 'Mercado Público' ELSE 'Varejo' END AS canal
+  FROM td.fato_td f
+  LEFT JOIN cddd.apres a  ON a.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN td.apres ta   ON ta.cod_apresentacao = f.cod_apresentacao   -- produto novo ainda fora da cddd.apres
+  LEFT JOIN cddd.prod pr  ON pr.cod_marca = COALESCE(a.cod_marca, ta.cod_marca)
+  LEFT JOIN cddd.fab fb   ON fb.cod_fab = pr.cod_fab
+  LEFT JOIN cddd.canal dc ON dc.cod_subcanal = f.cod_subcanal
+)
+SELECT desc_apres,
+       SUM(und) FILTER (WHERE cod_anomes BETWEEN '202509' AND '202608')/1000 AS mat_atual,
+       SUM(und) FILTER (WHERE cod_anomes BETWEEN '202409' AND '202508')/1000 AS mat_anterior,
+       ROUND(100.0*(SUM(und) FILTER (WHERE cod_anomes BETWEEN '202509' AND '202608')
+                  - SUM(und) FILTER (WHERE cod_anomes BETWEEN '202409' AND '202508'))
+             /NULLIF(SUM(und) FILTER (WHERE cod_anomes BETWEEN '202409' AND '202508'), 0), 1) AS var_pct
+FROM mercado
+WHERE classe='Isolado' AND canal='Varejo' AND cod_anomes BETWEEN '202409' AND '202608'
+GROUP BY 1
+HAVING SUM(und) FILTER (WHERE cod_anomes BETWEEN '202409' AND '202508') > 5000000   -- base mínima: 5.000 un. no MAT anterior
+ORDER BY var_pct DESC;
+```
+
+Eurofarma 20 mg/mL 30 mL +443,9% (8.892 → 48.360), Prati VD 20 mg/mL 10 mL +99,5%, Aché 100 mg/mL
+30 mL +85,1%, União Química 34,36 +75,5%, Aché 100 mg/mL 10 mL +67,3%.
+
+**Nomes comerciais na resposta.** A descrição do banco (`CANABIDIOL P.D P.D SOL VD 20MG/ML SL-OR FR
+X 30ML + 2 SER N03A`) não é o nome que a diretoria usa (`Prati Donaduzzi VD CBD 20 mg/mL - 30mL`).
+Quando a entrega for para apresentação, aplique o de-para do Power BI: pares de descrições que
+viram o mesmo nome comercial **somam numa linha só** (ex.: `CANNABIS SATIVA EAS EAS 79,14MG` entra
+em `Ease Labs CBD 100 mg/mL - 30 mL`); produto novo ainda sem nome comercial (hoje 4 da Life
+Science, 1 Biolab 10 mL e 2 da Makrofarma) mantém a descrição original, sinalizado.
 
 ---
 
