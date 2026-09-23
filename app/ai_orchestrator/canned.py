@@ -64,6 +64,12 @@ LIMITE_DE_CUSTO = (
     "time de BI & Analytics para verificar a situação."
 )
 
+# O da pessoa é diferente dos outros dois: aqui há o que fazer — voltar
+# amanhã, ou pedir ao time. Por isso ele diz o número e diz quando volta.
+LIMITE_DIARIO = "Você atingiu 100% do limite de perguntas diário. A cota volta amanhã."
+
+LIMITE_SEMANAL = "Você atingiu 100% do limite de perguntas semanal. A cota volta na segunda."
+
 SEM_CREDITOS = (
     "No momento estou sem créditos para consultar os dados. Por favor, fale "
     "com o time de BI & Analytics para verificar a situação."
@@ -75,8 +81,12 @@ CONVERSA_COM_NUMERO = (
 )
 
 RESULTADO_VAZIO = (
-    "A consulta rodou e não retornou nenhuma linha para o que você pediu. "
-    "Vale conferir o período e os filtros."
+    "A consulta rodou e não retornou nenhuma linha, e a verificação que fiz em "
+    "seguida não esclareceu o motivo. Isso quase nunca quer dizer que não houve "
+    "movimento: costuma ser um filtro que não casou com o cadastro — um nome "
+    "escrito de outro jeito, uma categoria que no banco tem outro rótulo, ou um "
+    "período ainda sem carga. Me diga de outro jeito o que você procura, ou peça "
+    "a lista do que existe naquele campo, que eu confiro."
 )
 
 

@@ -277,8 +277,22 @@ resultado:
   representante). Para pessoa, traga também até quando ela esteve ativa
   (`cddd.dim_ct.data_demissao`,
   `cddd.scd_ct_territorio.data_saida_territorio`).
+- **o valor que você filtrou existe naquela coluna?** É o caso mais comum
+  quando o filtro é de produto, categoria ou descrição. Antes de concluir
+  qualquer coisa, traga os valores que **de fato** existem na coluna
+  (`SELECT DISTINCT ...`, ou um `LIKE` com um pedaço menor da palavra),
+  sem o filtro que zerou. Exemplo real: filtrar
+  `desc_apresentacao ILIKE '%ISOLADO%'` devolve zero porque essa palavra não
+  está na descrição — os isolados se chamam `CANABIDIOL ...`. Categoria de
+  produto **não se procura pelo nome da categoria**: ela é derivada, e a
+  regra está na seção 2.3 do documento de referência.
 - o período tem dado? Traga os últimos meses com movimento para aquele
   recorte.
+
+Na resposta, **diga o que faltou**, com os valores que você encontrou. Nunca
+responda apenas "não há resultado" nem "nenhum dado encontrado": para quem
+perguntou, isso é indistinguível de "não vendeu nada", e quase sempre é o
+filtro que estava errado, não o dado que não existe.
 
 Prefira uma consulta só, com `UNION ALL` ou colunas lado a lado, que
 responda as duas coisas. Ela é curta e cadastral: sem `SUM` do período que

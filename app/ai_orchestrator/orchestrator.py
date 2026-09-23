@@ -20,7 +20,7 @@ import re
 from dataclasses import dataclass, field, replace
 from types import SimpleNamespace
 
-from ai_orchestrator import ajuste_grafico, budget, canned, progresso
+from ai_orchestrator import ajuste_grafico, budget, canned, limites, progresso
 from ai_orchestrator.context import MAX_PASSOS_POR_RODADA, MAX_RODADAS, PEDIDO_DE_SECAO
 from ai_orchestrator.grounding import check_grounding, check_grounding_varias
 from ai_orchestrator.models import AICall, AIReply, CatalogGap
@@ -40,6 +40,7 @@ from ai_orchestrator.rules import apply_rules
 from attachments import deposito, planilha as planilha_anexada
 from attachments.limites import SEGUNDOS_DA_SAIDA, AnexoRecusado
 from catalog.loader import get_catalog
+from datasource.colunas import e_percentual
 from datasource.executors.base import (
     QueryExecutionError,
     QueryObjectMissing,
@@ -158,26 +159,29 @@ def _tabela(resultado) -> str:
     (ADR-0010)."""
     cabecalho = " | ".join(resultado.columns)
     linhas = [
-        " | ".join(formatar_valor(v) for v in linha)
+        " | ".join(formatar_valor(v, c) for v, c in zip(linha, resultado.columns))
         for linha in resultado.rows[:MAX_LINHAS_NA_TABELA]
     ]
     return "\n".join([cabecalho, *linhas])
 
 
-def formatar_valor(valor) -> str:
+def formatar_valor(valor, coluna=None) -> str:
     """Valor do banco para ler, no padrão brasileiro.
 
     Sem isto a tabela mostrava `7233.0` e `-234.87999999999982` — ruído de
     ponto flutuante que ninguém escreveu (caso real de 2026-09-21). Inteiro
-    sem casa decimal; o resto com até duas casas, como a redação faz."""
+    sem casa decimal; o resto com até duas casas, como a redação faz. Coluna
+    de percentual sai com o símbolo: "9,23" sozinho não diz de quê."""
     if valor is None:
         return ""
     if isinstance(valor, bool) or not isinstance(valor, (int, float)):
         return str(valor)
     if float(valor).is_integer():
-        return f"{int(valor):,}".replace(",", ".")
-    texto = f"{valor:,.2f}".rstrip("0").rstrip(".")
-    return texto.replace(",", "_").replace(".", ",").replace("_", ".")
+        texto = f"{int(valor):,}".replace(",", ".")
+    else:
+        texto = f"{valor:,.2f}".rstrip("0").rstrip(".")
+        texto = texto.replace(",", "_").replace(".", ",").replace("_", ".")
+    return f"{texto}%" if e_percentual(coluna) else texto
 
 
 def _nota_de_truncamento(resultado, max_rows: int) -> str:
@@ -301,8 +305,11 @@ def _executar_com_correcao(plano, message, provider, executor, catalog, auditori
 
 NOTA_DE_VAZIO = (
     "A consulta rodou sem erro e não retornou nenhuma linha. Descubra o motivo: "
-    "o nome pode não ter casado com o cadastro, a pessoa pode não estar ativa no "
-    "período, ou o período pode não ter carga."
+    "o valor que você filtrou pode não existir naquela coluna (caso mais comum em "
+    "filtro de produto, categoria ou descrição — traga os valores que existem de "
+    "verdade, com DISTINCT ou um LIKE mais curto), o nome pode não ter casado com "
+    "o cadastro, a pessoa pode não estar ativa no período, ou o período pode não "
+    "ter carga."
 )
 
 
@@ -535,11 +542,6 @@ def _redigir(plano, resultado, message, provider, catalog, auditoria, historico,
     }
 
 
-ROTULO_DA_IMAGEM = (
-    "**Li a imagem que você enviou.** O que vem abaixo sai do que está nela, "
-    "não do banco de dados da Ease Labs — não tenho como conferir esses "
-    "números na base.\n\n"
-)
 
 
 def _ler_imagem(message, provider, auditoria, historico) -> _Decisao | None:
@@ -599,8 +601,12 @@ def _ler_imagem(message, provider, auditoria, historico) -> _Decisao | None:
         )
 
     return _Decisao(
+        # Quem avisa que isto saiu da imagem, e não do banco, é o rótulo
+        # "Leitura da imagem" que a tela põe em toda resposta com esta
+        # decisão. O parágrafo que repetia isso em palavras saía em todas as
+        # leituras e empurrava a resposta para baixo.
         decision=AIReply.Decision.IMAGE_READING,
-        reply=ROTULO_DA_IMAGEM + texto,
+        reply=texto,
         raw={
             "leitura": leitura.leitura,
             "instrucoes_na_imagem": leitura.instrucoes_ignoradas,
@@ -817,7 +823,14 @@ def _investigar(plano, message, provider, executor, catalog, auditoria, historic
     atual, rodada = plano, 1
     while True:
         for passo in atual.investigacao[:MAX_PASSOS_POR_RODADA]:
+            # Entre uma hipótese e outra: é aqui que a parada economiza de
+            # verdade — cada rodada custa uma chamada ao planejador e até
+            # quatro consultas, e a análise final vem depois de todas.
+            if foi_interrompida(message):
+                return _interrompida()
             passos.append(_testar_hipotese(passo, rodada, message, executor, catalog, auditoria))
+        if foi_interrompida(message):
+            return _interrompida()
         if rodada >= MAX_RODADAS or atual.rodada_final:
             # O próprio planejador disse que estas consultas fecham a
             # investigação: a chamada seguinte só serviria para ele repetir
@@ -1208,7 +1221,39 @@ def _ajustar_grafico(message) -> _Decisao | None:
     )
 
 
+def foi_interrompida(message) -> bool:
+    """A pessoa apertou parar enquanto isto rodava.
+
+    Lido do banco a cada etapa porque o worker está em OUTRO processo: o
+    clique chega pela API, que só escreve o status. É de propósito que a
+    conferência seja uma consulta barata por etapa, e não um sinal — o que
+    se quer evitar é a chamada seguinte ao modelo, que custa mil vezes mais
+    do que este SELECT.
+    """
+    atual = Message.objects.filter(pk=message.pk).values_list("status", flat=True).first()
+    return atual == Message.Status.CANCELLED
+
+
+def _interrompida() -> _Decisao:
+    """Sem texto de resposta: quem parou não quer ler nada.
+
+    O AIReply mesmo assim é gravado, com as chamadas que já tinham sido
+    feitas e o custo delas. Pergunta interrompida que sumisse da auditoria
+    faria o `bi_report` mentir sobre o gasto do mês.
+    """
+    return _Decisao(
+        decision=AIReply.Decision.CANCELLED,
+        reply="",
+        rule="interrompida_pelo_usuario",
+        message_status=Message.Status.CANCELLED,
+    )
+
+
 def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
+    if foi_interrompida(message):
+        # Parada enquanto esperava na fila: nada foi chamado, nada foi gasto.
+        return _interrompida()
+
     regra = apply_rules(message.content, catalog)
     if regra is not None and regra.rule == "mensagem_sem_pergunta" and _responde_a_um_pedido_de_detalhe(message):
         # "2026", "3000": sem letra nenhuma, mas é a resposta ao "de qual
@@ -1232,6 +1277,25 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
             decision=AIReply.Decision.FAILED,
             reply=canned.LIMITE_DE_CUSTO,
             rule="teto_de_custo_do_mes",
+            message_status=Message.Status.FAILED,
+        )
+
+    # E o teto do dia, desta pessoa. Vem logo depois do teto do mês e antes
+    # de tudo que custa: quem estourou a cota não gasta um centavo para
+    # descobrir isso. O aviso diz o número e diz quando volta.
+    cota = limites.situacao(message.conversation.user)
+    if cota["excedeu"]:
+        janela = cota[cota["motivo"]]
+        logger.info("Cota %s atingida por %s", cota["motivo"], message.conversation.user)
+        # O texto não diz o número: a aba de limites também não diz, e duas
+        # telas do mesmo produto não podem discordar sobre o que a pessoa
+        # pode saber. A auditoria registra os dois, para quem administra.
+        texto = canned.LIMITE_DIARIO if cota["motivo"] == "dia" else canned.LIMITE_SEMANAL
+        return _Decisao(
+            decision=AIReply.Decision.FAILED,
+            reply=texto,
+            rule="limite_diario_da_pessoa",
+            raw={"janela": cota["motivo"], "limite": janela["limite"], "usadas": janela["usadas"]},
             message_status=Message.Status.FAILED,
         )
 
@@ -1269,6 +1333,12 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
         )
         auditoria.chamada(AICall.Stage.FIX, plano.usage)
 
+    # O plano já foi pago quando voltou; o que a parada evita daqui para a
+    # frente é a consulta ao banco e a redação (~US$ 0,015), e numa
+    # investigação, as rodadas seguintes inteiras.
+    if foi_interrompida(message):
+        return _interrompida()
+
     if plano.intent == Plan.Intent.CONVERSATION:
         return _conversa(plano, message, historico)
 
@@ -1303,6 +1373,9 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
     plano, resultado, erro, falha = _executar_com_correcao(
         plano, message, provider, executor, catalog, auditoria, historico
     )
+
+    if foi_interrompida(message):
+        return _interrompida()
 
     if falha == "indisponivel":
         # Não é lacuna do catálogo nem erro da IA: o banco não respondeu.
@@ -1484,6 +1557,12 @@ def handle_message(message, channel=None, provider=None, executor=None, catalog=
             raw={"erro": str(exc)},
             message_status=Message.Status.FAILED,
         )
+
+    # A resposta pode ter ficado pronta no mesmo instante do clique em parar.
+    # Nesse caso ela é descartada: quem apertou parar não quer ler. O custo
+    # já gasto continua indo para a auditoria, logo abaixo.
+    if decisao.message_status != Message.Status.CANCELLED and foi_interrompida(message):
+        decisao = _interrompida()
 
     reply = _gravar(message, catalog, auditoria, decisao)
 

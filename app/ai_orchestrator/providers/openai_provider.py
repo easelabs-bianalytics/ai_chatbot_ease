@@ -112,6 +112,7 @@ class PreenchimentoEstruturado(BaseModel):
     """Só nomes de coluna. Valor nenhum passa por aqui — quem preenche a
     célula é o `openpyxl` com o resultado da consulta (ADR-0024)."""
 
+    aba: str = Field(default="", description="nome da aba a preencher; vazio se o arquivo tem uma só")
     coluna_chave: str = Field(default="", description="cabeçalho da planilha que identifica a linha")
     chave_no_resultado: str = Field(default="", description="coluna do SELECT que casa com a coluna_chave")
     colunas: list[ColunaPreenchida] = Field(
@@ -339,7 +340,12 @@ def _preenchimento(conteudo, *, pedido: bool) -> dict:
     colunas = [c for c in colunas if c["coluna_destino"] and c["valor_no_resultado"]]
     if not (chave and chave_no_resultado and colunas):
         return {}
-    return {"coluna_chave": chave, "chave_no_resultado": chave_no_resultado, "colunas": colunas}
+    return {
+        "coluna_chave": chave,
+        "chave_no_resultado": chave_no_resultado,
+        "colunas": colunas,
+        "aba": (getattr(bruto, "aba", "") or "").strip(),
+    }
 
 
 def _custo(modelo: str, entrada: int, cache: int, saida: int, gravado: int = 0) -> float:
@@ -516,7 +522,11 @@ class OpenAIProvider(AIProvider):
                 "linhas que exemplos, aí sim traga todas as chaves; o casamento é feito depois, "
                 "fora da consulta. Não escreva os "
                 "valores: eles vêm do banco. Se faltar informação para algum indicador (período, "
-                "definição), peça esclarecimento em vez de supor."
+                "definição), peça esclarecimento em vez de supor.\n\n"
+                "**Arquivo com mais de uma aba**: o resumo traz todas. Se a pergunta disser qual "
+                "aba é (pelo nome ou pelas colunas que ela descreve), ponha o nome exato em "
+                "`aba` e trabalhe só nela. Se não disser e mais de uma servir, peça "
+                "esclarecimento listando as abas: preencher a errada devolve um arquivo errado."
             )
         entrada += f"\n\n# Pergunta do usuário\n\n{request.question}"
 
@@ -595,10 +605,14 @@ class OpenAIProvider(AIProvider):
         if request.tabela_em_bloco:
             entrada += (
                 f"\n\n# Lista longa\n\nO resultado tem {total} linhas e a tela desenha a tabela "
-                f"inteira a partir do banco. Você recebeu só uma amostra de {len(linhas)}. "
-                "Escreva o texto (o que a lista mostra, os extremos, a ressalva que importar) e "
+                f"inteira a partir do banco. Você recebeu {len(linhas)} linhas de amostra, só "
+                "para escrever o texto: **nada se perdeu**, o usuário vai ver a lista completa. "
+                "Escreva o texto (o que a lista traz, os extremos, a ressalva que importar) e "
                 "aponte a tabela num bloco `tabela` da consulta 0 — **não escreva as linhas**. "
-                "Copiar a lista gasta a resposta inteira e ela chega cortada."
+                "Copiar a lista gasta a resposta inteira e ela chega cortada. "
+                "A amostra são as primeiras linhas na ordem da consulta, então ela pode cobrir "
+                "só um grupo (um canal, um mês). Nunca descreva a amostra como se fosse o "
+                "resultado inteiro, e não tire conclusão sobre um grupo que você não viu todo."
             )
         entrada += f"\n\nTotal de linhas no resultado: {total}"
         if request.excel:
@@ -611,9 +625,13 @@ class OpenAIProvider(AIProvider):
             # Só aqui a tabela é resumida: o modelo não recebeu tudo, então
             # listar "todas" seria listar as que couberam, sem dizer isso.
             entrada += (
-                f"\n\n# Lista longa\n\nVocê recebeu {len(linhas)} das {total} linhas. Mostre as "
-                "que recebeu, diga quantas ficaram de fora e aponte o botão \"Baixar Excel\" "
-                "abaixo da resposta, que traz a lista completa."
+                f"\n\n# Lista longa\n\nVocê recebeu {len(linhas)} linhas de amostra; o resultado "
+                f"tem {total}, e a lista completa chega ao usuário pela planilha. "
+                "Entregue o que ele pediu: comece pela resposta, mostre o que a amostra ilustra "
+                "e aponte o botão \"Baixar Excel\" abaixo da resposta, que traz a lista inteira. "
+                "**Não abra a resposta pelo que você não viu**: não chame o resultado de parcial, "
+                "não conte quantas linhas ficaram de fora e não peça desculpa. Nada se perdeu — "
+                "só a sua amostra é menor que a lista."
             )
         else:
             entrada += (
