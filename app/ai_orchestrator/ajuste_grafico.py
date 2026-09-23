@@ -23,9 +23,16 @@ _GRAFICO = r"(?:grafico|visual|desenho)"
 
 _TIPOS = (
     ("barras_horizontais", r"barras?\s+horizontais?|horizontal"),
+    ("pizza", r"\bpizza\b|\brosca\b"),
+    ("area", r"\barea\b"),
     ("barras", r"\bbarras?\b|\bcolunas?\b"),
     ("linha", r"\blinhas?\b"),
 )
+_EMPILHAR = re.compile(r"\bempilh")
+# "empilhe POR especialidade", "abra POR rede": abrir por uma categoria que
+# não está no resultado é dado novo, e quem resolve é a IA com uma consulta.
+# Em 2026-09-23 esse pedido não podia ser tratado como troca de desenho.
+_POR_CATEGORIA = re.compile(r"\b(?:por|pela|pelo|entre)\s+[a-z]")
 
 # "só os 5 primeiros", "top 10", "os 3 maiores" — o número sempre acompanha
 # uma palavra de ranking, senão seria pedido de outro recorte de dado.
@@ -47,8 +54,13 @@ def ler_ajuste(mensagem: str) -> dict | None:
     if not texto or len(texto) > MAX_LETRAS:
         return None
 
+    if _POR_CATEGORIA.search(texto):
+        return None
+
     tem_comando = re.search(_VERBOS, texto) or re.search(_GRAFICO, texto)
     ajuste = {}
+    if _EMPILHAR.search(texto):
+        ajuste["empilhado"] = True
 
     if tem_comando:
         for nome, padrao in _TIPOS:
@@ -72,6 +84,10 @@ def aplicar(grafico: dict, ajuste: dict) -> dict:
     novo = dict(grafico or {})
     if "tipo" in ajuste:
         novo["tipo"] = ajuste["tipo"]
+    if ajuste.get("empilhado"):
+        novo["empilhado"] = True
+        if novo.get("tipo") not in ("barras", "barras_horizontais", "area"):
+            novo["tipo"] = "barras"
     if "limite" in ajuste:
         if ajuste["limite"]:
             novo["limite"] = ajuste["limite"]
@@ -84,6 +100,8 @@ NOMES = {
     "linha": "linha",
     "barras": "barras",
     "barras_horizontais": "barras horizontais",
+    "area": "área",
+    "pizza": "pizza",
 }
 
 
@@ -93,6 +111,8 @@ def descrever(ajuste: dict, total: int | None = None) -> str:
     partes = []
     if "tipo" in ajuste:
         partes.append(f"troquei o gráfico para {NOMES[ajuste['tipo']]}")
+    if ajuste.get("empilhado"):
+        partes.append("empilhei as séries")
     if ajuste.get("limite"):
         n = ajuste["limite"]
         partes.append(f"deixei os {n} primeiros no desenho")

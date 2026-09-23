@@ -432,7 +432,10 @@ def test_sugestao_de_grafico_volta_junto_com_a_resposta(catalogo):
                       rows=(("2026-08", 777),), truncated=False)
     )
 
-    assert resposta.chart == {"tipo": "linha", "x": "mes", "series": ["unidades"], "titulo": "Unidades por mês"}
+    assert resposta.chart == {
+        "tipo": "linha", "x": "mes", "series": ["unidades"], "grupo": "", "empilhado": False,
+        "titulo": "Unidades por mês",
+    }
 
 
 def test_lista_longa_manda_a_redacao_apontar_para_a_planilha(catalogo):

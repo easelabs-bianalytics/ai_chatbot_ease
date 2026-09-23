@@ -155,9 +155,16 @@ class PlanoEstruturado(BaseModel):
 
 
 class GraficoEstruturado(BaseModel):
-    tipo: str = Field(default="nenhum", description="linha, barras, barras_horizontais ou nenhum")
+    tipo: str = Field(
+        default="nenhum", description="linha, barras, barras_horizontais, area, pizza ou nenhum"
+    )
     x: str = Field(default="", description="nome exato da coluna do resultado para o eixo X")
     series: list[str] = Field(default_factory=list, description="nomes exatos de 1 a 3 colunas numéricas")
+    grupo: str = Field(
+        default="",
+        description="coluna de categoria que vira uma série por valor (formato longo); vazia se não houver",
+    )
+    empilhado: bool = Field(default=False, description="empilhar as séries (barras e área)")
     titulo: str = Field(default="", description="título curto do gráfico")
 
 

@@ -22,6 +22,9 @@ from ai_orchestrator.ajuste_grafico import aplicar, descrever, ler_ajuste
         ("mostra os 3 maiores", {"limite": 3}),
         ("muda para barras e só os 8 primeiros", {"tipo": "barras", "limite": 8}),
         ("mostra todos no gráfico", {"limite": 0}),
+        ("muda para pizza", {"tipo": "pizza"}),
+        ("troca para área", {"tipo": "area"}),
+        ("empilha as barras", {"empilhado": True}),
     ],
 )
 def test_le_o_pedido_de_ajuste(mensagem, esperado):
@@ -80,3 +83,21 @@ def test_texto_avisa_que_a_tabela_nao_encolheu():
 
 def test_texto_sem_corte_nao_fala_de_tabela():
     assert "tabela" not in descrever({"tipo": "barras"}, total=31)
+
+
+@pytest.mark.parametrize(
+    "mensagem",
+    [
+        # 2026-09-23: abrir por uma categoria é dado novo, não troca de desenho
+        "Mude a visualização para barra e empilhe por especialidade",
+        "muda para barras por rede",
+    ],
+)
+def test_abrir_por_categoria_fica_com_a_ia(mensagem):
+    assert ler_ajuste(mensagem) is None
+
+
+def test_empilhar_troca_a_linha_por_barras():
+    assert aplicar({"tipo": "linha", "x": "mes", "series": ["a", "b"]}, {"empilhado": True}) == {
+        "tipo": "barras", "x": "mes", "series": ["a", "b"], "empilhado": True,
+    }

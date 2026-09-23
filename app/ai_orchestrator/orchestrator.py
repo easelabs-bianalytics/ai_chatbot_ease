@@ -438,7 +438,9 @@ def _sugestoes(brutas, message) -> list:
     return limpas
 
 
-TIPOS_DE_GRAFICO = frozenset({"linha", "barras", "barras_horizontais"})
+TIPOS_DE_GRAFICO = frozenset({"linha", "barras", "barras_horizontais", "area", "pizza"})
+# Empilhar só faz sentido onde as partes somam um todo visível.
+EMPILHAVEIS = frozenset({"barras", "barras_horizontais", "area"})
 MAX_SERIES = 3
 
 
@@ -466,10 +468,25 @@ def _grafico(sugestao, resultado, message, plano) -> dict | None:
     if not series:
         return None
 
+    tipo = sugestao["tipo"]
+    # Série por categoria (formato longo, "mês × especialidade × PX"): a
+    # coluna de grupo é texto, e cada valor dela vira uma série na tela. Foi o
+    # que faltou em 2026-09-23 para "empilhe por especialidade" sair legível.
+    grupo = sugestao.get("grupo") or ""
+    if tipo == "pizza" or grupo not in colunas or grupo == x or numerica(grupo):
+        grupo = ""
+    if grupo or tipo == "pizza":
+        series = series[:1]      # uma medida, repartida pelas categorias
+
     titulo = " ".join(str(sugestao.get("titulo") or "").split())[:80]
     if titulo and not check_grounding(titulo, resultado.columns, resultado.rows, message.content, plano.sql).ok:
         titulo = ""
-    return {"tipo": sugestao["tipo"], "x": x, "series": series[:MAX_SERIES], "titulo": titulo}
+    grafico = {"tipo": tipo, "x": x, "series": series[:MAX_SERIES], "titulo": titulo}
+    if grupo:
+        grafico["grupo"] = grupo
+    if sugestao.get("empilhado") and tipo in EMPILHAVEIS and (grupo or len(series) > 1):
+        grafico["empilhado"] = True
+    return grafico
 
 
 def _guardar_dados_do_grafico(auditoria, resultado) -> None:

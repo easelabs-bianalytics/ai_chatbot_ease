@@ -742,12 +742,56 @@ def test_grafico_sugerido_pela_ia_vai_com_os_dados_da_consulta(conversa, catalog
     assert guardado["rows"] == [["2026-07", 761], ["2026-08", 777]]
 
 
+PX_POR_ESPECIALIDADE = make_result(
+    ("competencia", "especialidade", "px"),
+    [("2026-01", "NEUROLOGIA", 900), ("2026-01", "PSIQUIATRIA", 700), ("2026-02", "NEUROLOGIA", 950)],
+)
+
+
+def test_grafico_por_categoria_empilhado(conversa, catalogo):
+    """"Empilhe por especialidade" (2026-09-23): o resultado vem em formato
+    longo, e cada especialidade vira uma série na tela."""
+    reply = _com_grafico(
+        conversa, catalogo,
+        {"tipo": "barras", "x": "competencia", "series": ["px"], "grupo": "especialidade",
+         "empilhado": True, "titulo": ""},
+        resultado=PX_POR_ESPECIALIDADE, texto="Neurologia lidera com 950 PX em fev/2026.",
+    )
+
+    assert reply.raw_response["grafico"] == {
+        "tipo": "barras", "x": "competencia", "series": ["px"], "titulo": "",
+        "grupo": "especialidade", "empilhado": True,
+    }
+
+
+@pytest.mark.parametrize(
+    "chart,esperado",
+    [
+        # grupo numérico não é categoria
+        ({"tipo": "barras", "x": "competencia", "series": ["px"], "grupo": "px"}, {}),
+        # linha não empilha
+        ({"tipo": "linha", "x": "competencia", "series": ["px"], "grupo": "especialidade", "empilhado": True},
+         {"grupo": "especialidade"}),
+        # pizza reparte uma medida pelas fatias: não tem grupo
+        ({"tipo": "pizza", "x": "especialidade", "series": ["px"], "grupo": "competencia"}, {}),
+    ],
+)
+def test_grupo_e_empilhado_so_onde_fazem_sentido(conversa, catalogo, chart, esperado):
+    reply = _com_grafico(
+        conversa, catalogo, {**chart, "titulo": ""},
+        resultado=PX_POR_ESPECIALIDADE, texto="Neurologia lidera com 950 PX em fev/2026.",
+    )
+
+    grafico = reply.raw_response["grafico"]
+    assert {k: grafico[k] for k in ("grupo", "empilhado") if k in grafico} == esperado
+
+
 @pytest.mark.parametrize(
     "chart",
     [
         {"tipo": "linha", "x": "competencia", "series": ["unidades"], "titulo": ""},
         {"tipo": "linha", "x": "mes", "series": ["faturamento"], "titulo": ""},
-        {"tipo": "pizza", "x": "mes", "series": ["unidades"], "titulo": ""},
+        {"tipo": "radar", "x": "mes", "series": ["unidades"], "titulo": ""},
         {"tipo": "nenhum", "x": "", "series": [], "titulo": ""},
     ],
 )

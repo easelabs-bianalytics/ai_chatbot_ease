@@ -1210,7 +1210,13 @@
   // resultado da consulta, já conferido pelo orquestrador. Aqui é só desenho.
   const GRAFICOS = new Map();
   const DESENHADOS = new Map();   // canvas -> instância, para refazer ao trocar de tema
-  const CORES = ['#5558D4', '#3FB868', '#F5A623'];
+  const CORES = ['#5558D4', '#3FB868', '#F5A623', '#E5484D', '#0EA5E9', '#A855F7', '#14B8A6', '#F472B6'];
+  // "Outras" é sempre cinza: é a soma do que ficou de fora, não uma categoria.
+  const COR_OUTRAS = '#9CA1B8';
+  // Série por categoria: as maiores ganham cor, o resto soma em "Outras".
+  // Mais de seis cores num cartão de conversa ninguém distingue.
+  const MAX_GRUPOS = 6;
+  const MAX_FATIAS = 8;
   // As cores do gráfico saem dos mesmos tokens da interface: assim ele
   // acompanha o tema sem ter uma paleta paralela para manter.
   const token = (nome) => getComputedStyle(document.documentElement).getPropertyValue(nome).trim();
@@ -1283,6 +1289,13 @@
     const ix = colunas.indexOf(grafico.x);
     const series = (grafico.series || []).filter((s) => colunas.includes(s));
     if (ix < 0 || !series.length) return;
+    // Formato longo (mês × especialidade × PX): cada valor de `grupo` vira
+    // uma série. Pizza reparte uma medida pelas categorias do eixo.
+    const grupo = grafico.grupo && colunas.includes(grafico.grupo) ? grafico.grupo : '';
+    const ig = grupo ? colunas.indexOf(grupo) : -1;
+    const pizza = grafico.tipo === 'pizza';
+    const emArea = grafico.tipo === 'area';
+    const empilhado = Boolean(grafico.empilhado) && !pizza;
 
     let linhas = (dados.rows || []).filter((l) => l[ix] !== null && l[ix] !== undefined);
     const porMes = ehMensal(linhas.map((l) => l[ix]));
@@ -1293,7 +1306,7 @@
       linhas = [...linhas].sort((a, b) => String(a[ix]).localeCompare(String(b[ix])));
     }
 
-    const linha = grafico.tipo === 'linha';
+    const linha = grafico.tipo === 'linha' || emArea;
     const horizontal = grafico.tipo === 'barras_horizontais';
     const valorDe = (l, nome) => l[colunas.indexOf(nome)];
     const notas = [];
@@ -1302,7 +1315,7 @@
     // ainda começando, não um resultado. Medido em 2026-09-21: a retenção de
     // jun/23 era 0 de 3 compradores, e desenhava uma subida de 0 a 30% que
     // não aconteceu. Saem do desenho, com aviso — e continuam na planilha.
-    if (linha && temporal) {
+    if (linha && temporal && !grupo) {
       const zerado = (l) => series.every((s) => {
         const v = valorDe(l, s);
         return v === null || v === undefined || Number(v) === 0;
@@ -1322,12 +1335,71 @@
     // ordem que o SQL pediu — as primeiras são as que importam — e avisa.
     const total = linhas.length;
     // O corte pedido na conversa ("só os cinco primeiros") vence o automático.
-    const corte = grafico.limite || (linha ? 0 : MAX_CATEGORIAS);
+    // Com grupo e na pizza o corte é depois, sobre as categorias: cortar as
+    // linhas do formato longo levaria meio mês de uma série e nada da outra.
+    const corte = grupo || pizza ? 0 : grafico.limite || (linha ? 0 : MAX_CATEGORIAS);
     if (corte && total > corte) linhas = linhas.slice(0, corte);
     const deFora = total - linhas.length;
 
+    // Rótulos do eixo e séries do desenho, nos três formatos.
+    let valoresX;
+    let conjuntos;
+    const numero = (v) => Number(v) || 0;
+    if (grupo) {
+      const medida = series[0];
+      const porX = new Map();
+      const totais = new Map();
+      valoresX = [];
+      linhas.forEach((l) => {
+        const chave = String(l[ix]);
+        const nome = String(l[ig] ?? 'Sem categoria');
+        if (!porX.has(chave)) { porX.set(chave, new Map()); valoresX.push(l[ix]); }
+        porX.get(chave).set(nome, (porX.get(chave).get(nome) || 0) + numero(valorDe(l, medida)));
+        totais.set(nome, (totais.get(nome) || 0) + numero(valorDe(l, medida)));
+      });
+      if (!temporal) valoresX = valoresX.slice(0, grafico.limite || MAX_CATEGORIAS);
+      const ordem = [...totais.entries()].sort((a, b) => b[1] - a[1]).map(([nome]) => nome);
+      const principais = ordem.slice(0, MAX_GRUPOS);
+      const resto = ordem.slice(MAX_GRUPOS);
+      conjuntos = principais.map((nome) => ({
+        nome, dados: valoresX.map((v) => porX.get(String(v)).get(nome) ?? null),
+      }));
+      if (resto.length) {
+        conjuntos.push({
+          nome: 'Outras', outras: true,
+          dados: valoresX.map((v) => resto.reduce((s, nome) => s + (porX.get(String(v)).get(nome) || 0), 0)),
+        });
+        notas.push(`${resto.length === 1 ? '1 categoria menor está somada' : `${resto.length} categorias menores estão somadas`} em "Outras"; a lista inteira está na tabela e na planilha.`);
+      }
+    } else if (pizza) {
+      // A mesma categoria em várias linhas (um mês por linha) é uma fatia
+      // só: soma antes de fatiar, senão a pizza repete o nome.
+      const medida = series[0];
+      const totais = new Map();
+      linhas.forEach((l) => {
+        const chave = String(l[ix] ?? 'Sem categoria');
+        totais.set(chave, (totais.get(chave) || 0) + numero(valorDe(l, medida)));
+      });
+      const ordenadas = [...totais.entries()].sort((a, b) => b[1] - a[1]);
+      const fatias = ordenadas.slice(0, MAX_FATIAS);
+      const resto = ordenadas.slice(MAX_FATIAS);
+      valoresX = fatias.map(([nome]) => nome);
+      const dados = fatias.map(([, valor]) => valor);
+      if (resto.length) {
+        valoresX.push('Outras');
+        dados.push(resto.reduce((s, [, valor]) => s + valor, 0));
+        notas.push(`${resto.length === 1 ? '1 fatia menor está somada' : `${resto.length} fatias menores estão somadas`} em "Outras".`);
+      }
+      conjuntos = [{ nome: rotuloSerie(medida), dados }];
+    } else {
+      valoresX = linhas.map((l) => l[ix]);
+      conjuntos = series.map((nome) => ({ nome: rotuloSerie(nome), dados: linhas.map((l) => valorDe(l, nome)) }));
+    }
+    // A medida de cada série, para formatar o número (grupo e pizza têm uma só).
+    const colunaDaSerie = (n) => (grupo || pizza ? series[0] : series[n]);
+
     const area = canvas.parentElement;
-    if (horizontal) area.style.height = `${linhas.length * ALTURA_POR_BARRA + 24}px`;
+    if (horizontal) area.style.height = `${valoresX.length * ALTURA_POR_BARRA + 24}px`;
     if (deFora > 0) {
       notas.push(`Mostrando ${linhas.length} de ${fmtNum(total)} — a lista inteira está na tabela acima e na planilha.`);
     }
@@ -1338,16 +1410,16 @@
       area.after(nota);
     }
 
-    const umaSerie = series.length === 1;
+    const umaSerie = conjuntos.length === 1 && !pizza;
     const emPercentual = series.every(ehPercentual);
-    const passo = temporal && porMes && !horizontal ? passoDoEixo(linhas.length, area.clientWidth || 600) : 1;
+    const passo = temporal && porMes && !horizontal && !pizza ? passoDoEixo(valoresX.length, area.clientWidth || 600) : 1;
 
     // Com uma série só, o número vai na ponta da barra e o eixo de valores
     // some: dois jeitos de ler o mesmo número é um a mais do que o preciso.
     const numeroNaBarra = {
       id: 'numeroNaBarra',
       afterDatasetsDraw(c) {
-        if (linha || !umaSerie) return;
+        if (linha || !umaSerie || pizza || empilhado) return;
         const ctx = c.ctx;
         ctx.save();
         ctx.font = '600 11px Inter, sans-serif';
@@ -1385,10 +1457,11 @@
     // horizontal. 36 meses inclinados a 45° não se liam (2026-09-21).
     const mesmoMesDoPasso = (i) => {
       if (passo === 1) return true;
-      const d = partesDeData(linhas[i]?.[ix]);
+      const d = partesDeData(valoresX[i]);
       return d ? (Number(d.mes) - 1) % passo === 0 : true;
     };
     const eixoDeCategoria = {
+      stacked: empilhado,
       grid: { display: false },
       border: { display: false },
       ticks: {
@@ -1401,6 +1474,7 @@
     };
     // Escondido quando o número já está na barra; na linha ele é necessário.
     const eixoDeValor = {
+      stacked: empilhado,
       display: linha || !umaSerie,
       beginAtZero: true,
       grace: '8%',
@@ -1413,24 +1487,35 @@
     };
 
     const semAnimacao = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const corDe = (c, n) => (c.outras ? COR_OUTRAS : CORES[n % CORES.length]);
     const chart = new Chart(canvas, {
-      type: linha ? 'line' : 'bar',
+      type: pizza ? 'doughnut' : linha ? 'line' : 'bar',
       data: {
-        labels: linhas.map((l) => rotuloEixo(l[ix], porMes)),
-        datasets: series.map((nome, n) => ({
-          label: rotuloSerie(nome),
-          data: linhas.map((l) => valorDe(l, nome)),
-          borderColor: CORES[n % CORES.length],
-          backgroundColor: linha ? 'transparent' : CORES[n % CORES.length],
-          borderWidth: linha ? 2.5 : 0,
-          borderRadius: linha ? 0 : 5,
-          pointRadius: 3,
-          pointBackgroundColor: CORES[n % CORES.length],
-          tension: 0.25,
-          barPercentage: 0.72,
-          categoryPercentage: 0.86,
-          maxBarThickness: 34,
-        })),
+        labels: valoresX.map((v) => (pizza ? encurtar(String(v), 28) : rotuloEixo(v, porMes))),
+        datasets: pizza
+          ? [{
+            label: conjuntos[0].nome,
+            data: conjuntos[0].dados,
+            backgroundColor: valoresX.map((v, n) => (v === 'Outras' ? COR_OUTRAS : CORES[n % CORES.length])),
+            borderColor: token('--bg-card') || '#fff',
+            borderWidth: 2,
+          }]
+          : conjuntos.map((c, n) => ({
+            label: c.nome,
+            data: c.dados,
+            borderColor: corDe(c, n),
+            // área: preenchida, e empilhada cada uma sobre a de baixo
+            backgroundColor: emArea ? `${corDe(c, n)}55` : linha ? 'transparent' : corDe(c, n),
+            fill: emArea ? (empilhado && n > 0 ? '-1' : 'origin') : false,
+            borderWidth: linha ? 2.5 : 0,
+            borderRadius: linha || empilhado ? 0 : 5,
+            pointRadius: emArea ? 0 : 3,
+            pointBackgroundColor: corDe(c, n),
+            tension: 0.25,
+            barPercentage: 0.72,
+            categoryPercentage: 0.86,
+            maxBarThickness: 34,
+          })),
       },
       options: {
         responsive: true,
@@ -1439,28 +1524,33 @@
         animation: semAnimacao ? false : { duration: 500 },
         // espaço para o número na ponta da barra não encostar na borda
         layout: { padding: { right: horizontal && umaSerie ? 40 : 4, top: umaSerie && !linha ? 14 : 2 } },
-        interaction: { mode: 'index', intersect: false },
+        interaction: pizza ? { mode: 'nearest', intersect: true } : { mode: 'index', intersect: false },
         plugins: {
           // Uma série só já está dita no título e na resposta.
           legend: {
-            display: series.length > 1, position: 'bottom',
+            display: conjuntos.length > 1 || pizza, position: pizza ? 'right' : 'bottom',
             labels: { boxWidth: 10, boxHeight: 10, usePointStyle: true, font: { size: 11 } },
           },
           tooltip: {
             backgroundColor: token('--toast-bg'), bodyColor: token('--toast-fg'),
-            titleColor: token('--toast-fg'), padding: 10, cornerRadius: 8, displayColors: series.length > 1,
+            titleColor: token('--toast-fg'), padding: 10, cornerRadius: 8,
+            displayColors: conjuntos.length > 1 || pizza,
             callbacks: {
-              label: (c) => ` ${c.dataset.label}: ${fmtValor(c.parsed[horizontal ? 'x' : 'y'], series[c.datasetIndex])}`,
+              label: (c) => (pizza
+                ? ` ${c.label}: ${fmtValor(c.parsed, series[0])}`
+                : ` ${c.dataset.label}: ${fmtValor(c.parsed[horizontal ? 'x' : 'y'], colunaDaSerie(c.datasetIndex))}`),
             },
           },
         },
-        scales: horizontal
-          ? { x: eixoDeValor, y: eixoDeCategoria }
-          : { x: eixoDeCategoria, y: eixoDeValor },
+        scales: pizza
+          ? {}
+          : horizontal
+            ? { x: eixoDeValor, y: eixoDeCategoria }
+            : { x: eixoDeCategoria, y: eixoDeValor },
       },
       plugins: [fundoDoCartao, numeroNaBarra],
     });
-    canvas.setAttribute('aria-label', `${grafico.titulo || 'Gráfico'} — ${linhas.length} pontos`);
+    canvas.setAttribute('aria-label', `${grafico.titulo || 'Gráfico'} — ${valoresX.length} pontos`);
     DESENHADOS.set(canvas, chart);
     return chart;
   };
