@@ -593,6 +593,17 @@ casos:
       - de: "'%HERMES%'"
         para: "'%MARTA%'"
 
+  - id: B31-isolados-mat
+    grupo: referencia
+    pergunta: Me exporta o total de unidades de todos os Produtos Isolados no MAT, com o share de cada apresentação?
+    esperado: answer_with_data
+    referencia: B31
+    parametros: {anomes_ini: "202509", anomes_fim: "202608"}
+    nota: >-
+      A classe do produto é derivada do nome (MEVATYL → EXT → Isolado), nunca procurada como
+      palavra: `desc_apresentacao ILIKE '%ISOLADO%'` devolve zero linhas. Conferido no RDS em
+      22/09/2026: 729.227 unidades no Varejo e 121.112 no Mercado Público.
+
   # ------------------------------------------------------------------
   # 3. Estoque, ruptura e categoria de PDV
   # ------------------------------------------------------------------

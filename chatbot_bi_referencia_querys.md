@@ -810,6 +810,47 @@ ou Total:**
   `cddd.fab.desc_fab` (nome) / `desc_sigla_fab` (`'EAS'` = Ease).
 - Representante: `td.fato_td.cod_utc` → `cddd.forca_vendas.cod_utc`.
 
+#### ⚠️ Classificação de produto — Isolado, Extrato e Mevatyl
+
+**As palavras "isolado" e "extrato" NÃO existem em `desc_apresentacao`.** Procurar
+`desc_apresentacao ILIKE '%ISOLADO%'` devolve zero linhas — os produtos se chamam
+`CANABIDIOL ...` (que são os isolados) e `EXT CANNABIS ...` (que são os extratos).
+
+A classificação oficial, a mesma do Power BI, é derivada do nome, nesta ordem:
+
+| Ordem | Condição sobre `upper(desc_apresentacao)` | Classe |
+|---|---|---|
+| 1 | contém `MEVATYL` | Mevatyl |
+| 2 | contém `EXT` | Extrato |
+| 3 | qualquer outro caso | **Isolado** |
+
+```text
+CASE WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%MEVATYL%' THEN 'Mevatyl'
+     WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%EXT%'     THEN 'Extrato'
+     ELSE 'Isolado' END AS classe
+```
+
+A ordem importa: o Mevatyl é testado antes do `EXT`. Como o Isolado é o `ELSE`, qualquer
+apresentação nova cai nele por padrão.
+
+**Apresentação nova pode ainda não estar em `cddd.apres`**: use `td.apres` como reserva, com
+`COALESCE(a.desc_apresentacao, ta.desc_apresentacao)` e
+`COALESCE(a.cod_marca, ta.cod_marca)`. Hoje são 5 produtos nessa situação (4 da Life Science e
+1 da TTH), e sem o `COALESCE` eles somem do resultado.
+
+**Faixas por concentração** (só quando pedirem esse detalhe). A concentração vem de
+`cddd.apres.und_concentracao` e, quando nula, do número em `cddd.apres.desc_concentracao`.
+Exceção conhecida: `EXT DE CANNABIS ACH ACH 3676MG/ML...` vale **36,76**.
+
+| Classe | Concentração | Faixa |
+|---|---|---|
+| Extrato | `< 80` ou `= 200` | Extrato < 0.2% THC |
+| Extrato | `100` a `133,33` ou `>= 160` | Extrato > 0,20% THC |
+| Isolado | `<= 35` | até 35 mg/mL |
+| Isolado | `<= 50` | até 50 mg/mL |
+| Isolado | `<= 150` | 50 a 149 mg/mL |
+| Isolado | `> 150` | acima de 150 mg/mL |
+
 *"Qual o faturamento do mercado varejo por mês?"*
 
 ```sql
@@ -1034,6 +1075,51 @@ GROUP BY 1, 2
 ORDER BY unidades_varejo DESC
 LIMIT 10;
 ```
+
+#### ⭐ Unidades e market share por apresentação, de uma classe de produto
+
+*"Quantas unidades de Produtos Isolados foram vendidas no MAT, com o market share?"*
+
+Junta tudo que esta seção tem de regra: a classificação pelo nome, o `COALESCE` com
+`td.apres`, os dois canais e o share dentro de cada canal. Para Extrato ou Mevatyl, troque
+só o `WHERE classe`.
+
+```sql
+-- B31 · Unidades e share por apresentação, de uma classe (Isolado / Extrato / Mevatyl)
+WITH base AS (
+  SELECT CASE WHEN dc.desc_canal = 'HOSPITALAR' THEN 'Mercado Público' ELSE 'Varejo' END AS canal,
+         COALESCE(a.desc_apresentacao, ta.desc_apresentacao) AS apresentacao,
+         COALESCE(fb.desc_fab, 'NÃO IDENTIFICADO') AS laboratorio,
+         CASE WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%MEVATYL%' THEN 'Mevatyl'
+              WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%EXT%'     THEN 'Extrato'
+              ELSE 'Isolado' END AS classe,
+         f.und / 1000.0 AS unidades
+  FROM td.fato_td f
+  LEFT JOIN cddd.canal dc ON dc.cod_subcanal = f.cod_subcanal
+  LEFT JOIN cddd.apres a  ON a.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN td.apres ta   ON ta.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN cddd.prod pr  ON pr.cod_marca = COALESCE(a.cod_marca, ta.cod_marca)
+  LEFT JOIN cddd.fab fb   ON fb.cod_fab = pr.cod_fab
+  WHERE f.cod_anomes BETWEEN :anomes_ini AND :anomes_fim   -- MAT = 12 meses fechados
+)
+SELECT canal, apresentacao, laboratorio,
+       SUM(unidades) AS unidades,
+       ROUND(100 * SUM(unidades) / SUM(SUM(unidades)) OVER (PARTITION BY canal), 2) AS share_canal
+FROM base
+WHERE classe = 'Isolado'
+GROUP BY 1, 2, 3
+ORDER BY canal, unidades DESC;
+```
+
+**MAT pedido além da base.** O TD é mercado auditado e fecha com atraso: o último mês
+disponível é `(SELECT MAX(cod_anomes) FROM td.fato_td)`. Quem pede "MAT Outubro/26" em
+setembro/26 está pedindo 12 meses dos quais só 10 existem. Não devolva um MAT capenga nem
+invente os meses que faltam: use o MAT dos 12 meses fechados (`202509`–`202608`, se o máximo
+for `202608`) e **diga na resposta qual período foi usado e por quê**.
+
+Conferido no RDS em 22/09/2026, MAT set/25–ago/26: Isolados somam **729.227** unidades no
+Varejo (39 apresentações) e **121.112** no Mercado Público (34). Maior do varejo:
+Prati-Donaduzzi 20 mg/mL 30 mL, 215.844 un (29,60%).
 
 ---
 
