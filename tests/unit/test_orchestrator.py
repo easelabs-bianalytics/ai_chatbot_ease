@@ -578,6 +578,47 @@ def test_conversa_com_numero_novo_vira_pedido_de_consulta(conversa, catalogo):
     assert "sem fonte" in reply.reply_text
 
 
+def test_interrogacao_no_meio_da_conversa_vai_para_a_ia(conversa, catalogo):
+    """Em 2026-09-23 o Jarvis prometeu um gráfico, não fez, e ao "?" do Paulo
+    respondeu "não consegui entender a pergunta". No meio de uma conversa,
+    "?" é cobrança do que faltou: quem lê é a IA, com o histórico."""
+    Message.objects.create(
+        conversation=conversa, direction=Message.Direction.OUTBOUND,
+        content="Vou ajustar para linhas por especialidade.", client_message_id="out-1",
+    )
+    provider = ScriptedAIProvider([plano()], [resposta("Pronto: linhas por especialidade, 47 PX.")])
+
+    reply = _responder(_pergunta(conversa, "?", client_id="c-2"), catalogo, provider=provider)
+
+    assert reply.rule != "mensagem_sem_pergunta"
+    assert len(provider.plan_requests) == 1
+
+
+def test_interrogacao_solta_numa_conversa_nova_continua_pedindo_a_pergunta(conversa, catalogo):
+    provider = ScriptedAIProvider()
+
+    reply = _responder(_pergunta(conversa, "?"), catalogo, provider=provider)
+
+    assert reply.rule == "mensagem_sem_pergunta"
+    assert provider.plan_requests == []
+
+
+def test_historico_leva_a_consulta_da_resposta_anterior(conversa, catalogo):
+    """"Faça um gráfico com esses dados" precisa saber quais dados: o
+    planejador passa a ver a consulta que sustentou a resposta anterior."""
+    provider = ScriptedAIProvider(
+        [plano(reference_query_id="A06"), plano()],
+        [resposta("Foram 47 PX."), resposta("Pronto, 47 PX no gráfico.")],
+    )
+    _responder(_pergunta(conversa, "PX por especialidade em 2026"), catalogo, provider=provider)
+
+    _responder(_pergunta(conversa, "faça um gráfico com esses dados", client_id="c-2"), catalogo, provider=provider)
+
+    anterior = [m for m in provider.plan_requests[1].history if m.direction == "out"][-1]
+    assert "consulta (base A06)" in anterior.fonte
+    assert "SELECT" in anterior.fonte.upper()
+
+
 def test_pergunta_sobre_a_resposta_anterior_usa_a_consulta_dela(conversa, catalogo):
     """"Qual MAT você considerou?" se responde com o período que estava na
     consulta anterior, não no texto dela. Em 2026-09-23 a resposta certa foi

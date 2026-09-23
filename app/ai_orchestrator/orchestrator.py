@@ -90,6 +90,13 @@ def _max_history_messages() -> int:
     return valor if valor > 0 else DEFAULT_MAX_HISTORY_MESSAGES
 
 
+# Quantas respostas recentes levam a consulta e o gráfico no histórico, e até
+# quantos caracteres de SQL cada uma: o bastante para saber período, filtros e
+# medida, sem dobrar o tamanho do contexto.
+FONTES_NO_HISTORICO = 3
+SQL_NO_HISTORICO = 1200
+
+
 def _historico(message: Message) -> tuple:
     """Mensagens anteriores da conversa, em ordem, sem a atual.
 
@@ -102,9 +109,36 @@ def _historico(message: Message) -> tuple:
         .filter(id__lt=message.id)
         .order_by("-id")[: _max_history_messages()]
     )
+    mensagens = list(reversed(list(anteriores)))
+    # Só as últimas respostas levam a fonte: é delas que o seguimento fala,
+    # e a consulta inteira de cada resposta antiga encheria o contexto.
+    com_fonte = {m.pk for m in [m for m in mensagens if m.direction == Message.Direction.OUTBOUND][-FONTES_NO_HISTORICO:]}
     return tuple(
-        HistoryMessage(direction=m.direction, text=m.content) for m in reversed(list(anteriores))
+        HistoryMessage(direction=m.direction, text=m.content, fonte=_fonte_da_resposta(m) if m.pk in com_fonte else "")
+        for m in mensagens
     )
+
+
+def _fonte_da_resposta(resposta) -> str:
+    """A consulta e o gráfico de uma resposta enviada, numa linha curta."""
+    pergunta = getattr(resposta, "in_reply_to", None)
+    reply = AIReply.objects.filter(message=pergunta).first() if pergunta is not None else None
+    if reply is None:
+        return ""
+    partes = []
+    consulta = reply.query_runs.filter(status=QueryRun.Status.SUCCESS).order_by("-id").first()
+    if consulta is not None:
+        referencia = f" (base {consulta.reference_query_id})" if consulta.reference_query_id else ""
+        sql = " ".join((consulta.sql or "").split())
+        partes.append(f"consulta{referencia}, {consulta.row_count or 0} linhas: {sql[:SQL_NO_HISTORICO]}")
+    grafico = (reply.raw_response or {}).get("grafico")
+    if grafico:
+        partes.append(
+            f"gráfico {grafico.get('tipo')} com x={grafico.get('x')}"
+            + (f", grupo={grafico['grupo']}" if grafico.get("grupo") else "")
+            + f", séries={grafico.get('series')}"
+        )
+    return " · ".join(partes)
 
 
 @dataclass
@@ -191,6 +225,10 @@ def _nota_de_truncamento(resultado, max_rows: int) -> str:
         f"\n\n(Resultado cortado no limite de {max_rows} linhas: o que você vê "
         "é uma parte, não o total.)"
     )
+
+
+def _tem_conversa_antes(message) -> bool:
+    return Message.objects.filter(conversation=message.conversation, id__lt=message.id).exists()
 
 
 def _responde_a_um_pedido_de_detalhe(message) -> bool:
@@ -1280,10 +1318,15 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
         return _interrompida()
 
     regra = apply_rules(message.content, catalog)
-    if regra is not None and regra.rule == "mensagem_sem_pergunta" and _responde_a_um_pedido_de_detalhe(message):
+    if regra is not None and regra.rule == "mensagem_sem_pergunta" and (
+        _responde_a_um_pedido_de_detalhe(message) or _tem_conversa_antes(message)
+    ):
         # "2026", "3000": sem letra nenhuma, mas é a resposta ao "de qual
         # ano?" que o Jarvis acabou de perguntar. Recusar como mensagem
         # inválida foi o que aconteceu em produção (2026-09-21).
+        # E "?" no meio de uma conversa quer dizer "cadê?": em 2026-09-23 o
+        # Jarvis prometeu um gráfico, não fez, e ao "?" respondeu com o texto
+        # de "não entendi a pergunta". Com conversa antes, quem lê é a IA.
         regra = None
     if regra is not None:
         return _Decisao(

@@ -207,10 +207,11 @@ class RespostaEstruturada(BaseModel):
 def _historico(mensagens) -> str:
     if not mensagens:
         return ""
-    linhas = [
-        f"{'Usuário' if m.direction == 'in' else 'Você'}: {m.text}".strip()
-        for m in mensagens
-    ]
+    linhas = []
+    for m in mensagens:
+        linhas.append(f"{'Usuário' if m.direction == 'in' else 'Você'}: {m.text}".strip())
+        if getattr(m, "fonte", ""):
+            linhas.append(f"  [o que sustentou esta resposta: {m.fonte}]")
     return "\n\n# Conversa até aqui\n\n" + "\n".join(linhas)
 
 

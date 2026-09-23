@@ -34,6 +34,10 @@ class AIOutputTruncated(AIProviderError):
 class HistoryMessage:
     direction: str  # "in" (pergunta) | "out" (resposta enviada)
     text: str
+    # Nas últimas respostas: a consulta e o gráfico que a sustentaram. Sem
+    # isto o planejador só via o texto, e "faça um gráfico com esses dados"
+    # ou "qual MAT você usou?" não tinham de onde partir (2026-09-23).
+    fonte: str = ""
 
 
 @dataclass(frozen=True)
