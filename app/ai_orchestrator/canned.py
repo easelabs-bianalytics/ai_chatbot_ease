@@ -75,9 +75,15 @@ SEM_CREDITOS = (
     "com o time de BI & Analytics para verificar a situação."
 )
 
+# Reserva de quando a resposta de conversa cita um número que não dá para
+# confirmar no que já está na conversa. A versão antiga ("me diga o período e o
+# recorte") soava como quem não entendeu a pergunta — e quase sempre a pessoa
+# estava falando da resposta anterior. Esta reconhece isso e diz onde está a fonte.
 CONVERSA_COM_NUMERO = (
-    "Para falar de números eu preciso consultar os dados. Me diga o período "
-    "e o recorte que você quer, que eu verifico no banco."
+    "Não consegui confirmar esse número só com o que já está nesta conversa, e "
+    "prefiro não te passar um valor sem fonte. O período e a consulta de cada "
+    "resposta ficam em \"Ver fonte e consulta\", logo abaixo dela. Se quiser, me "
+    "diga o recorte que eu consulto de novo no banco."
 )
 
 RESULTADO_VAZIO = (

@@ -1098,6 +1098,25 @@ def _validar_blocos(blocos, fontes, message) -> tuple:
     return validos, dados
 
 
+def _consultas_anteriores(message, limite: int = 10) -> list:
+    """(columns, rows, sql, row_count) das consultas que já rodaram nesta
+    conversa, da mais recente para trás."""
+    execucoes = QueryRun.objects.filter(
+        ai_reply__message__conversation=message.conversation,
+        ai_reply__message__id__lt=message.id,
+        status=QueryRun.Status.SUCCESS,
+    ).order_by("-id")[:limite]
+    return [
+        (
+            (q.result_sample or {}).get("columns") or (),
+            (q.result_sample or {}).get("rows") or (),
+            q.sql,
+            q.row_count,
+        )
+        for q in execucoes
+    ]
+
+
 def _conversa(plano, message, historico) -> _Decisao:
     """Resposta sem consulta (ADR-0019): cumprimento, o que o assistente
     faz, conceito do negócio ou leitura do que já apareceu na conversa.
@@ -1116,7 +1135,13 @@ def _conversa(plano, message, historico) -> _Decisao:
             raw={"reason": plano.reason, "rascunho": texto},
         )
     contexto = "\n".join([message.content, *(m.text for m in historico)])
-    if texto and check_grounding(texto, (), (), contexto, "").ok:
+    # Os números das consultas anteriores desta conversa também valem: "qual
+    # MAT você considerou?" se responde com o período que estava no SQL e no
+    # resultado da resposta anterior, não no texto dela. Sem isto, em
+    # 2026-09-23 a resposta certa ("set/2025 a ago/2026") virou o texto de
+    # reserva duas vezes seguidas, e o Jarvis pareceu não entender a pergunta.
+    consultas = [((), (), "", None), *_consultas_anteriores(message)]
+    if texto and check_grounding_varias(texto, consultas, contexto).ok:
         return _Decisao(
             decision=AIReply.Decision.CONVERSATION,
             reply=texto,

@@ -18,6 +18,7 @@ from sqlglot import exp
 
 _NUMERO = re.compile(r"\d[\d.,]*\d|\d")
 _MAX_CASAS_DECIMAIS = 6
+_MAT = re.compile(r"\bMAT\b", re.I)
 _DOSE_NO_NOME = re.compile(r"(\d+)\s*(?:ml|mg)\b", re.I)
 
 
@@ -124,6 +125,22 @@ def numeros_suportados(columns, rows, question: str, sql: str, row_count=None) -
     for coluna in columns or ():
         for numero in _DOSE_NO_NOME.findall(str(coluna)):
             suportados.add(float(numero))
+
+    # MAT é, por definição, 12 meses: "o MAT de set/2025 a ago/2026, os 12
+    # meses fechados" não inventa o 12. Só quando a pergunta ou a conversa
+    # fala em MAT — fora disso, 12 continua precisando de fonte.
+    if _MAT.search(question or ""):
+        suportados.add(12.0)
+
+    # Competência em AAAAMM ("202509", o `cod_anomes` do mercado): a resposta
+    # escreve "set/2025", e o 2025 e o 9 são o mesmo dado dito por extenso.
+    # Sem isto, em 2026-09-23 duas respostas certas de mercado ("de set/2025 a
+    # ago/2026") viraram tabela crua: o período veio do MAX da base, então o
+    # ano não estava em filtro nenhum. Só o que tem cara de competência — ano
+    # de 2000 a 2099 e mês de 1 a 12 —, para um SKU como 259434 não virar ano.
+    for n in list(suportados):
+        if n.is_integer() and 200001 <= n <= 209912 and 1 <= int(n) % 100 <= 12:
+            suportados |= {float(int(n) // 100), float(int(n) % 100)}
 
     # O texto não carrega o sinal: "caiu 61 unidades" e "recuou 13,4%" citam
     # o -61 e o -13,4 do resultado, e a expressão que acha números no texto

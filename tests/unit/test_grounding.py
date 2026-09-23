@@ -58,6 +58,29 @@ def test_quantidade_de_linhas_passa():
     assert _checar("São 2 SKUs no período.").ok
 
 
+def test_competencia_aaaamm_sustenta_o_mes_e_o_ano():
+    """O mercado devolve a competência como '202509' e a resposta escreve
+    "set/2025". Reprovar isso derrubou duas respostas certas (2026-09-23)."""
+    assert _checar(
+        "De set/2025 a ago/2026, o share foi de 16,65% a 14,65%.",
+        colunas=("cod_anomes", "share"),
+        linhas=(("202509", 16.65), ("202608", 14.65)),
+        pergunta="share nos últimos 12 meses",
+        sql="SELECT cod_anomes, 1 FROM td.fato_td GROUP BY 1",
+    ).ok
+
+
+def test_mat_sustenta_os_12_meses():
+    """MAT é 12 meses por definição; fora do assunto MAT, 12 precisa de fonte."""
+    assert _checar("O MAT são os 12 meses fechados.", pergunta="qual MAT você usou?").ok
+    assert not _checar("Foram 12 unidades.", pergunta="unidades em agosto").ok
+
+
+def test_codigo_de_seis_digitos_nao_vira_ano():
+    """SKU 259434 não é competência (mês 34): não sustenta um '2594'."""
+    assert not _checar("Foram 2594 unidades.").ok
+
+
 def test_literal_do_filtro_passa():
     assert _checar(
         "Em 2026-08-01 em diante, 47 unidades.",

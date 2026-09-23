@@ -575,7 +575,32 @@ def test_conversa_com_numero_novo_vira_pedido_de_consulta(conversa, catalogo):
     assert reply.decision == AIReply.Decision.CONVERSATION
     assert reply.rule == "conversa_com_numero_sem_fonte"
     assert "12" not in reply.reply_text
-    assert "consultar os dados" in reply.reply_text
+    assert "sem fonte" in reply.reply_text
+
+
+def test_pergunta_sobre_a_resposta_anterior_usa_a_consulta_dela(conversa, catalogo):
+    """"Qual MAT você considerou?" se responde com o período que estava na
+    consulta anterior, não no texto dela. Em 2026-09-23 a resposta certa foi
+    trocada pelo texto de reserva duas vezes seguidas, e o Jarvis pareceu não
+    entender uma pergunta sobre o que ele mesmo tinha acabado de responder."""
+    mat = make_result(("cod_anomes", "unidades"), [("202509", 57146.0), ("202608", 67136.0)])
+    texto = "Considerei o MAT de set/2025 a ago/2026: os 12 meses fechados até a última carga."
+    provider = ScriptedAIProvider(
+        [plano(), plano(intent=Plan.Intent.CONVERSATION, sql="", user_message=texto)],
+        [resposta("No MAT, o mercado de Isolados chegou a 67.136 unidades no último mês.")],
+    )
+    _responder(
+        _pergunta(conversa, "unidades de Isolado no MAT"),
+        catalogo, provider=provider, executor=FakeQueryExecutor([mat]),
+    )
+
+    reply = _responder(
+        _pergunta(conversa, "Qual foi o MAT que você considerou?", client_id="c-2"),
+        catalogo, provider=provider,
+    )
+
+    assert reply.decision == AIReply.Decision.CONVERSATION
+    assert reply.reply_text == texto
 
 
 def test_pergunta_fica_marcada_como_em_consulta_so_quando_o_banco_e_chamado(conversa, catalogo):
