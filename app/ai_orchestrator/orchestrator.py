@@ -13,6 +13,7 @@ se a resposta cita número sem suporte, ela reescreve uma vez com o motivo
 honesto, em vez de insistir.
 """
 
+import datetime
 import json
 import logging
 import numbers
@@ -23,7 +24,7 @@ from types import SimpleNamespace
 
 from ai_orchestrator import ajuste_grafico, autocritica, budget, canned, limites, progresso, resumo
 from ai_orchestrator.context import MAX_PASSOS_POR_RODADA, MAX_RODADAS, PEDIDO_DE_SECAO
-from ai_orchestrator.grounding import check_grounding, check_grounding_varias
+from ai_orchestrator.grounding import _tem_suporte, check_grounding, check_grounding_varias, numeros_do_texto
 from ai_orchestrator.models import AICall, AIReply, CatalogGap
 from ai_orchestrator.providers.base import (
     AIOutputTruncated,
@@ -1233,7 +1234,7 @@ def _redigir_analise(com_dado, message, provider, auditoria, historico, plano=No
         titulo = p["hipotese"]
         if titulo and not check_grounding(titulo, (), (), message.content, "").ok:
             titulo = ""
-        blocos.append({"tipo": "tabela", "consulta": i, "colunas": list(p["resultado"].columns), "titulo": titulo})
+        blocos.append({"tipo": "tabela", "consulta": i, "colunas": _colunas_da_tabela(None, p["resultado"]), "titulo": titulo})
         dados[str(i)] = _dados_da_consulta(p["resultado"])
     texto = (
         "Não consegui escrever o texto com segurança; estes são os resultados de cada parte do pedido:"
@@ -1262,7 +1263,7 @@ def _garantir_as_entregas(blocos, dados, com_dado, texto) -> tuple:
     for i, p in enumerate(com_dado):
         if i in citadas:
             continue
-        bloco = {"tipo": "tabela", "consulta": i, "colunas": list(p["resultado"].columns)}
+        bloco = {"tipo": "tabela", "consulta": i, "colunas": _colunas_da_tabela(None, p["resultado"], _texto_dos_blocos(blocos))}
         titulo = p["hipotese"]
         if titulo and check_grounding(titulo, (), (), "", "").ok:
             bloco["titulo"] = titulo
@@ -1500,8 +1501,57 @@ def _garantir_a_tabela(blocos, dados, resultado, lista_longa: bool, texto: str) 
         blocos = [{"tipo": "texto", "texto": texto}] if texto else []
     if not blocos:
         return [], {}
-    blocos = [*blocos, {"tipo": "tabela", "consulta": 0, "colunas": list(resultado.columns)}]
+    blocos = [*blocos, {"tipo": "tabela", "consulta": 0, "colunas": _colunas_da_tabela(None, resultado, _texto_dos_blocos(blocos))}]
     return blocos, {**dados, "0": _dados_da_consulta(resultado)}
+
+
+# A partir de quantas linhas uma coluna constante é resumo repetido, e não
+# informação da linha. Com uma ou duas, a "constante" pode ser a própria
+# resposta.
+LINHAS_PARA_PODAR_CONSTANTE = 3
+
+
+_DATA_ISO = re.compile(r"^\d{4}-\d{2}-\d{2}")
+
+
+def _resumo_repetido(valor, texto: str) -> bool:
+    """O valor constante de uma coluna é resumo da análise, e não dado da
+    linha: uma data (a de corte, o último mês realizado) ou um número que o
+    texto já cita. Número constante que o texto não cita fica — "todos os CDs
+    com DDE 0" é a informação da lista, não um resumo."""
+    if isinstance(valor, (datetime.date, datetime.datetime)) or (isinstance(valor, str) and _DATA_ISO.match(valor)):
+        return True
+    if isinstance(valor, bool) or not isinstance(valor, numbers.Number):
+        return False
+    return any(_tem_suporte(token, candidatos, {float(valor)}) for token, candidatos in numeros_do_texto(texto))
+
+
+def _texto_dos_blocos(blocos) -> str:
+    return "\n".join(b.get("texto") or "" for b in blocos if b.get("tipo") == "texto")
+
+
+def _colunas_da_tabela(pedidas, resultado, texto: str = "") -> list:
+    """As colunas que a tabela mostra: as pedidas (ou todas), sem as que só
+    repetem um resumo em todas as linhas.
+
+    Conversa 24 (2026-09-24): a projeção de PX saiu com nove colunas, cinco
+    delas o mesmo valor repetido nas doze linhas (a variação da reta, o
+    último mês realizado, o realizado no ano, o projetado restante e o total).
+    A consulta as repete para a redação citar; na tabela são ruído, e o valor
+    já está no texto. A planilha continua com todas."""
+    colunas = [c for c in pedidas or [] if c in resultado.columns] or list(resultado.columns)
+    linhas = resultado.rows
+    if len(linhas) < LINHAS_PARA_PODAR_CONSTANTE:
+        return colunas
+    indice = {c: i for i, c in enumerate(resultado.columns)}
+    ficam = []
+    for c in colunas:
+        valores = {repr(linha[indice[c]]) for linha in linhas}
+        if len(valores) == 1 and _resumo_repetido(linhas[0][indice[c]], texto):
+            continue
+        ficam.append(c)
+    # Tudo resumo é um resultado estranho, mas não uma tabela vazia.
+    return ficam or colunas
 
 
 def _dados_da_consulta(resultado, inteiro: bool = False) -> dict:
@@ -1522,6 +1572,7 @@ def _validar_blocos(blocos, fontes, message, motivos=None) -> tuple:
     ou série que não é número caem — melhor um bloco a menos do que um
     errado. Devolve (blocos, dados das consultas que eles usam)."""
     validos, dados = [], {}
+    texto_da_resposta = _texto_dos_blocos(blocos or ())
     for bloco in blocos or ():
         tipo = bloco.get("tipo")
         if tipo == "texto":
@@ -1534,7 +1585,7 @@ def _validar_blocos(blocos, fontes, message, motivos=None) -> tuple:
         if tipo == "tabela":
             if resultado.row_count < 1:
                 continue
-            colunas = [c for c in bloco.get("colunas") or [] if c in resultado.columns] or list(resultado.columns)
+            colunas = _colunas_da_tabela(bloco.get("colunas"), resultado, texto_da_resposta)
             validos.append({"tipo": "tabela", "consulta": indice, "colunas": colunas})
         elif tipo == "grafico":
             grafico = _grafico(bloco.get("grafico"), resultado, message, SimpleNamespace(sql=sql), motivos)
