@@ -137,3 +137,21 @@ def test_404_fora_das_rotas_da_instancia_nao_diz_que_ela_nao_existe():
     with pytest.raises(WhatsAppIndisponivel) as erro:
         cliente.participantes("1203@g.us")
     assert not isinstance(erro.value, InstanciaInexistente)
+
+
+def test_digitando_nao_espera_a_evolution():
+    """Produção, 2026-09-24: a Evolution só responde ao sendPresence depois
+    do delay de 20 s, e cada etapa da resposta ficava presa 15 s no timeout."""
+    class _Lenta(_Sessao):
+        def post(self, url, headers, json, timeout):
+            self.pedidos.append(("POST", url, headers, json, timeout))
+            raise requests.ReadTimeout("a Evolution segura até o delay")
+
+    sessao = _Lenta()
+    cliente = EvolutionCliente(base_url="http://127.0.0.1:8080/", api_key="chave", instancia="jarvis", sessao=sessao)
+
+    cliente.digitando("5511@s.whatsapp.net")          # não levanta
+
+    *_, corpo, timeout = sessao.pedidos[0]
+    assert corpo["presence"] == "composing"
+    assert timeout[1] <= 1                              # leitura curta: não espera o delay

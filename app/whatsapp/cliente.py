@@ -33,6 +33,8 @@ logger = logging.getLogger(__name__)
 TIMEOUT = 15
 # Imagem e planilha sobem em base64 no corpo e demoram mais que texto.
 TIMEOUT_DE_ARQUIVO = 60
+# (conexão, leitura): o "digitando" não espera a resposta, ver `digitando`.
+TIMEOUT_DO_DIGITANDO = (3, 0.5)
 
 
 class WhatsAppIndisponivel(Exception):
@@ -144,11 +146,22 @@ class EvolutionCliente(ClienteWhatsApp):
         return self._id(self._post(f"/message/sendMedia/{self._instancia}", corpo, timeout=TIMEOUT_DE_ARQUIVO))
 
     def digitando(self, jid) -> None:
+        """A Evolution só responde ao sendPresence DEPOIS do `delay` (20 s),
+        mas o "digitando…" já aparece quando ela recebe o pedido. Esperar a
+        resposta prendia o atendimento 15 s por etapa, até o timeout, e
+        enchia o log de traceback (produção, 2026-09-24). Então: manda e não
+        espera — o timeout de leitura curto é o caminho normal."""
         try:
-            self._post(f"/chat/sendPresence/{self._instancia}",
-                       {"number": jid, "presence": "composing", "delay": 20000})
-        except WhatsAppIndisponivel:
-            logger.info("Não consegui mostrar \"digitando\"", exc_info=True)
+            self._http.post(
+                f"{self._base}/chat/sendPresence/{self._instancia}",
+                headers={"apikey": self._chave, "Content-Type": "application/json"},
+                json={"number": jid, "presence": "composing", "delay": 20000},
+                timeout=TIMEOUT_DO_DIGITANDO,
+            )
+        except requests.ReadTimeout:
+            pass
+        except requests.RequestException as exc:
+            logger.info("Não consegui mostrar \"digitando\": %s", exc)
 
     def baixar_midia(self, mensagem) -> bytes:
         corpo = self._post(
