@@ -50,6 +50,24 @@ _LIMITE = re.compile(r"\b(?:top\s*(\d{1,3})|(\d{1,3})\s*(?:primeir|maior|melhor|
 _TODOS = re.compile(r"\b(?:todos|todas|tudo|completo|inteiro)\b")
 
 
+# Pedido só visual (conversa 18, 2026-09-24): "Separar as especialidades em
+# gráficos (generalista e Neurologia)" voltou com texto, tabela e gráfico, e
+# a pessoa só pediu o gráfico. Visual pedido sem nenhum pedido de dado ao
+# lado: "qual a evolução de PX em gráfico?" pergunta um dado, e continua com
+# a tabela.
+_PEDE_VISUAL = re.compile(r"\b(?:graficos?|visual|visualizacao|visao grafica|plot(?:e|ar|a)?|desenh[ae]r?|chart)\b")
+_PEDE_DADO = re.compile(
+    r"\b(?:tabelas?|listas?|list[ae]r?|numeros?|valores?|planilha|excel|detalh\w*|quant[oa]s?|qua(?:l|is)"
+    r"|ranking|total|soma|compar\w*|por que|porque|explique|analise)\b"
+)
+
+
+def pedido_so_visual(mensagem: str) -> bool:
+    """A pessoa pediu explicitamente um gráfico, e só ele."""
+    texto = _normalizar(mensagem)
+    return bool(_PEDE_VISUAL.search(texto)) and not _PEDE_DADO.search(texto)
+
+
 def _normalizar(texto: str) -> str:
     sem_acento = unicodedata.normalize("NFD", (texto or "").strip().lower())
     return "".join(c for c in sem_acento if unicodedata.category(c) != "Mn")

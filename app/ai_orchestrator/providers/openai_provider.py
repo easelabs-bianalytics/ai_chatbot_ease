@@ -715,7 +715,22 @@ class OpenAIProvider(AIProvider):
                 "Não apresente esses números como se fossem a resposta da pergunta."
             )
         total = request.total_rows or len(linhas)
-        if request.tabela_em_bloco:
+        if request.so_visual:
+            entrada += (
+                "\n\n# Pedido só visual\n\nO usuário pediu explicitamente o gráfico, e só ele. "
+                "Entregue o que foi pedido: um bloco `texto` com uma ou duas frases (o que o "
+                "gráfico mostra e o destaque principal) e o(s) bloco(s) `grafico` da consulta 0. "
+                "**Sem bloco `tabela`, sem tabela Markdown e sem mencionar tabela** — nem "
+                "\"a tabela abaixo\". Se couber, diga que os dados completos estão no botão "
+                "\"Baixar Excel\"."
+            )
+            if total > len(linhas):
+                entrada += (
+                    f" Você recebeu {len(linhas)} de {total} linhas, só para escrever a frase; "
+                    "o gráfico é desenhado com o resultado inteiro. Não descreva a amostra como "
+                    "se fosse o todo."
+                )
+        elif request.tabela_em_bloco:
             entrada += (
                 f"\n\n# Lista longa\n\nO resultado tem {total} linhas e a tela desenha a tabela "
                 f"inteira a partir do banco. Você recebeu {len(linhas)} linhas de amostra, só "
@@ -746,7 +761,7 @@ class OpenAIProvider(AIProvider):
                 "não conte quantas linhas ficaram de fora e não peça desculpa. Nada se perdeu — "
                 "só a sua amostra é menor que a lista."
             )
-        else:
+        elif not request.so_visual:
             entrada += (
                 "\n\n# Lista\n\nVocê recebeu o resultado inteiro: a tabela leva todas as "
                 f"{total} linhas, sem cortar."

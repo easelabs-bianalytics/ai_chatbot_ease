@@ -916,7 +916,9 @@
   const gravarChave = (k, v) => { try { localStorage.setItem(k, v); } catch { /* navegação privada */ } };
   const convitesFeitos = () => Number(lerChave(CHAVE_CONVITES) || 0);
   const deveConvidar = () => !lerChave(CHAVE_PASSEIO) && convitesFeitos() < MAX_CONVITES;
-  const convidarParaPasseio = () => { $('#marcaConvite').hidden = !deveConvidar(); };
+  // O ponto verde na lateral saiu em 2026-09-24: parecia "online". O convite
+  // fica só no aceno do mascote das boas-vindas.
+  const convidarParaPasseio = () => {};
 
   const renderBoasVindas = () => {
     const convite = CONVITES[Math.floor(Math.random() * CONVITES.length)];
@@ -1297,7 +1299,7 @@
         <div class="grafico">
           ${fonte.grafico.titulo ? `<div class="grafico-titulo">${esc(fonte.grafico.titulo)}</div>` : ''}
           <div class="grafico-multiplos${multiplos.length > 4 ? ' grafico-multiplos-muitos' : ''}">${paineis}</div>
-          ${multiplos.ocultas > 0 ? `<div class="grafico-nota">Mostrando as ${multiplos.length} maiores de ${multiplos.length + multiplos.ocultas} (${esc(multiplos.rotulo)}); as demais estão na tabela e na planilha.</div>` : ''}
+          ${multiplos.ocultas > 0 ? `<div class="grafico-nota">Mostrando as ${multiplos.length} maiores de ${multiplos.length + multiplos.ocultas} (${esc(multiplos.rotulo)}); as demais estão na planilha.</div>` : ''}
         </div>`;
     }
     const area = fonte.grafico.tipo === 'vega'
@@ -1555,7 +1557,7 @@
           nome: 'Outras', outras: true,
           dados: valoresX.map((v) => resto.reduce((s, nome) => s + (porX.get(String(v)).get(nome) || 0), 0)),
         });
-        notas.push(`${resto.length === 1 ? '1 categoria menor está somada' : `${resto.length} categorias menores estão somadas`} em "Outras"; a lista inteira está na tabela e na planilha.`);
+        notas.push(`${resto.length === 1 ? '1 categoria menor está somada' : `${resto.length} categorias menores estão somadas`} em "Outras"; a lista inteira está na planilha.`);
       }
     } else if (pizza) {
       // A mesma categoria em várias linhas (um mês por linha) é uma fatia
@@ -1587,7 +1589,7 @@
     const area = canvas.parentElement;
     if (horizontal) area.style.height = `${valoresX.length * ALTURA_POR_BARRA + 24}px`;
     if (deFora > 0) {
-      notas.push(`Mostrando ${linhas.length} de ${fmtNum(total)} — a lista inteira está na tabela acima e na planilha.`);
+      notas.push(`Mostrando ${linhas.length} de ${fmtNum(total)} — a lista inteira está na planilha.`);
     }
     if (notas.length && !area.nextElementSibling?.classList.contains('grafico-nota')) {
       const nota = document.createElement('div');

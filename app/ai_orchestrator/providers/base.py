@@ -197,6 +197,9 @@ class AnswerRequest:
     # mudança que não aconteceu.
     entendimento: str = ""
     pedido_nao_atendido: str = ""
+    # A pessoa pediu só o gráfico ("separe em gráficos", "crie um visual"):
+    # a resposta é o gráfico e uma frase, sem tabela (conversa 18).
+    so_visual: bool = False
 
 
 @dataclass(frozen=True)

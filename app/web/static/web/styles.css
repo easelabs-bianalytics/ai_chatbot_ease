@@ -258,7 +258,6 @@ body.bg-gradiente {
 .sidebar-marca .marca-jarvis { display: block; width: 38px; height: 38px; flex-shrink: 0; }
 .sidebar-marca:hover .marca-jarvis,
 .sidebar-marca.acenando .marca-jarvis { animation: jarvisAcena 0.75s ease-in-out; }
-.sidebar-marca:hover .j-olho { animation: jarvisPiscaCurta 0.75s ease-in-out; }
 @keyframes jarvisAcena {
   0%, 100% { transform: rotate(0deg) translateY(0); }
   28%      { transform: rotate(-8deg) translateY(-2.5px); }
@@ -284,8 +283,15 @@ body.bg-gradiente {
 .sidebar-recolher svg { width: 17px; height: 17px; }
 .topbar-produto { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
 .produto-nome { font-size: 14px; font-weight: 600; color: var(--gray-900); letter-spacing: -0.1px; white-space: nowrap; }
-/* A versão ao lado do nome, como "Claude Opus 5": mesma linha, peso menor. */
-.produto-versao { font-weight: 500; color: var(--gray-600); }
+/* A versão faz parte do nome, como "Claude Opus 5": mesma fonte e mesmo peso,
+   só a cor da marca. O índigo clareia sozinho no tema escuro. */
+.produto-versao {
+  font-weight: 600;
+  font-variant-numeric: lining-nums;
+  background: linear-gradient(120deg, var(--primary-500), var(--primary-700));
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+}
 .produto-area { font-size: 12px; font-weight: 500; color: var(--gray-600); letter-spacing: 0.1px; white-space: nowrap; }
 /* As duas linhas ocupam o mesmo lugar: no hover a descrição dá vez ao que
    o clique faz, sem a lateral mudar de altura. */
@@ -2161,15 +2167,6 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
 }
 
 /* -- convites para o passeio (só para quem ainda não fez) -- */
-.sidebar-marca .marca-jarvis { position: relative; }
-.marca-convite {
-  position: absolute; top: 1px; right: 0;
-  width: 10px; height: 10px; border-radius: 50%;
-  background: var(--brand-green);
-  box-shadow: 0 0 0 2px var(--bg-lateral);
-}
-.marca-convite[hidden] { display: none; }
-.marca-convite::after,
 .convite-passeio-ponto::after {
   content: ''; position: absolute; inset: 0; border-radius: 50%;
   background: var(--brand-green);

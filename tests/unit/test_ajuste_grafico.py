@@ -7,7 +7,7 @@ Metade dos testes aqui é sobre o que ela NÃO pode capturar.
 
 import pytest
 
-from ai_orchestrator.ajuste_grafico import aplicar, descrever, ler_ajuste
+from ai_orchestrator.ajuste_grafico import aplicar, descrever, ler_ajuste, pedido_so_visual
 
 
 @pytest.mark.parametrize(
@@ -116,3 +116,32 @@ def test_separar_tira_o_empilhado():
 
 def test_texto_do_separar_diz_por_qual_coluna():
     assert "um gráfico por categoria" in descrever({"separar": True}, total=16, grupo="categoria")
+
+
+@pytest.mark.parametrize(
+    "mensagem",
+    [
+        # conversa 18 (2026-09-24)
+        "Separar as especialidades em gráficos (generalista e Neurologia)",
+        "Crie um gráfico de PX por mês em 2026",
+        "crie um visual da evolução de sell out em 2026",
+        "plote a evolução do share por canal",
+    ],
+)
+def test_pedido_so_visual(mensagem):
+    assert pedido_so_visual(mensagem)
+
+
+@pytest.mark.parametrize(
+    "mensagem",
+    [
+        # pedido padrão: continua com a tabela
+        "Qual a evolução de PX em 2026? Mostre em gráfico",
+        "Quantas unidades vendemos por mês em 2026, com gráfico?",
+        "faz um gráfico e uma tabela de PX por especialidade",
+        "PX por especialidade por mês em 2026",
+        "me manda o gráfico e a planilha em excel",
+    ],
+)
+def test_pedido_com_dado_nao_e_so_visual(mensagem):
+    assert not pedido_so_visual(mensagem)

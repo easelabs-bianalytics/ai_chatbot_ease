@@ -635,6 +635,7 @@ def _redigir(plano, resultado, message, provider, catalog, auditoria, historico,
     lista_longa = not verificacao and resultado.row_count > MAX_LINHAS_NO_TEXTO
     progresso.definir(message.pk, "Escrevendo a resposta", etapa="escrevendo", entendimento=plano.entendimento)
     linhas = resultado.rows[: AMOSTRA_DA_LISTA_LONGA if lista_longa else catalog.rows_to_model]
+    so_visual = not (verificacao or plano.excel) and ajuste_grafico.pedido_so_visual(message.content)
     pedido = AnswerRequest(
         question=message.content,
         sql=plano.sql,
@@ -649,6 +650,7 @@ def _redigir(plano, resultado, message, provider, catalog, auditoria, historico,
         tabela_em_bloco=lista_longa,
         entendimento=plano.entendimento,
         pedido_nao_atendido=plano.pedido_nao_atendido,
+        so_visual=so_visual,
     )
     try:
         resposta = provider.answer(pedido)
@@ -682,7 +684,15 @@ def _redigir(plano, resultado, message, provider, catalog, auditoria, historico,
         blocos, dados = _validar_blocos(
             resposta.blocos, [(resultado, plano.sql)], message, motivos
         )
-        blocos, dados = _garantir_a_tabela(blocos, dados, resultado, lista_longa, resposta.reply)
+        if so_visual and blocos and grafico and not any(b["tipo"] == "grafico" for b in blocos):
+            # O gráfico veio no formato simples, fora dos blocos: entra
+            # neles, senão sairia só a tabela que ninguém pediu.
+            blocos = [*blocos, {"tipo": "grafico", "consulta": 0, "grafico": grafico}]
+            dados = {**dados, "0": _dados_da_consulta(resultado, inteiro=True)}
+        if so_visual and any(b["tipo"] == "grafico" for b in blocos):
+            blocos = _so_o_visual(blocos)
+        else:
+            blocos, dados = _garantir_a_tabela(blocos, dados, resultado, lista_longa, resposta.reply)
         if blocos:
             extras.pop("grafico", None)
             extras["blocos"] = blocos
@@ -1189,6 +1199,8 @@ def _redigir_analise(com_dado, message, provider, auditoria, historico, plano=No
             blocos, dados = _validar_blocos(resposta.blocos, fontes, message, motivos_do_grafico)
             if entregas:
                 blocos, dados = _garantir_as_entregas(blocos, dados, com_dado, resposta.reply)
+            if ajuste_grafico.pedido_so_visual(message.content):
+                blocos = _so_o_visual(blocos)
             extras = {"caveats": list(resposta.caveats)}
             sugestoes = _sugestoes(resposta.followups, message)
             if sugestoes:
@@ -1456,6 +1468,14 @@ def _so_as_linhas_da_planilha(resultado, plano, message):
     if not escolhidas:
         return resultado
     return replace(resultado, rows=tuple(escolhidas), truncated=False)
+
+
+def _so_o_visual(blocos) -> list:
+    """Pedido só visual com o gráfico desenhado: sai a tabela da mesma
+    consulta (conversa 18). Se o gráfico tivesse caído, a tabela ficaria —
+    melhor os dados sem desenho do que resposta nenhuma."""
+    desenhadas = {b.get("consulta") for b in blocos if b["tipo"] == "grafico"}
+    return [b for b in blocos if not (b["tipo"] == "tabela" and b.get("consulta") in desenhadas)]
 
 
 def _garantir_a_tabela(blocos, dados, resultado, lista_longa: bool, texto: str) -> tuple:

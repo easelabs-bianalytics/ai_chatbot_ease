@@ -1181,3 +1181,52 @@ def test_sem_pedido_de_grafico_nao_ha_aviso(conversa, catalogo):
     reply = _grafico_da_conversa_18(conversa, catalogo, {"tipo": "nenhum", "x": "", "series": []})
 
     assert "aviso_de_grafico" not in reply.raw_response
+
+
+# --- conversa 18 (2026-09-24): pedido só visual ------------------------------
+
+def _blocos_da_conversa_18(pergunta, conversa, catalogo, grafico=None):
+    """A redação da conversa 18: texto, tabela e o gráfico separado."""
+    provider = ScriptedAIProvider(
+        [plano()],
+        [resposta("CAT 1 teve 617 PX em fev/2026.", blocos=(
+            {"tipo": "texto", "texto": "CAT 1 teve 617 PX em fev/2026."},
+            {"tipo": "tabela", "consulta": 0, "colunas": ["competencia", "categoria", "px"]},
+            {"tipo": "grafico", "consulta": 0, "grafico": grafico or {
+                "tipo": "linha", "x": "competencia", "series": ["px"], "grupo": "categoria",
+                "separar": True, "titulo": ""}},
+        ))],
+    )
+    reply = _responder(_pergunta(conversa, pergunta), catalogo,
+                       provider=provider, executor=FakeQueryExecutor([PX_POR_CATEGORIA]))
+    return reply, provider
+
+
+def test_pedido_so_visual_sai_sem_a_tabela(conversa, catalogo):
+    """"Separar as especialidades em gráficos (generalista e Neurologia)"
+    voltou com texto, tabela e gráfico. A pessoa pediu só o gráfico."""
+    reply, provider = _blocos_da_conversa_18(
+        "Separar as categorias em gráficos (CAT 1 e CAT 3)", conversa, catalogo)
+
+    tipos = [b["tipo"] for b in reply.raw_response["blocos"]]
+    assert tipos == ["texto", "grafico"]
+    assert provider.answer_requests[0].so_visual is True
+
+
+def test_pedido_padrao_continua_com_a_tabela(conversa, catalogo):
+    reply, provider = _blocos_da_conversa_18(
+        "Qual o PX de CAT 1 e CAT 3 por mês em 2026? Mostre em gráfico", conversa, catalogo)
+
+    tipos = [b["tipo"] for b in reply.raw_response["blocos"]]
+    assert tipos == ["texto", "tabela", "grafico"]
+    assert provider.answer_requests[0].so_visual is False
+
+
+def test_pedido_so_visual_com_grafico_que_caiu_mantem_a_tabela(conversa, catalogo):
+    """Sem gráfico desenhado, tirar a tabela deixaria a pessoa sem nada."""
+    reply, _ = _blocos_da_conversa_18(
+        "Separar as categorias em gráficos", conversa, catalogo,
+        grafico={"tipo": "linha", "x": "nao_existe", "series": ["px"], "titulo": ""})
+
+    tipos = [b["tipo"] for b in reply.raw_response["blocos"]]
+    assert "tabela" in tipos and "grafico" not in tipos
