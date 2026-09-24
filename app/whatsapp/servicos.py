@@ -85,7 +85,7 @@ def _dono(recebida):
             return None, "grupo_nao_liberado"
         return grupo.usuario, grupo
     contato = (
-        ContatoWhatsApp.objects.filter(numero=recebida.numero, ativo=True, user__is_active=True)
+        ContatoWhatsApp.objects.filter(numero__in=entrada.formas_do_numero(recebida.numero), ativo=True, user__is_active=True)
         .select_related("user").first()
         if recebida.numero else None
     )

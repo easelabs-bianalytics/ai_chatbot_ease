@@ -155,3 +155,13 @@ def test_muitas_categorias_no_png_viram_as_maiores_e_outras():
     assert len(categorias) == 7 and "Outras" in categorias
     assert "somadas em Outras" in agrupado["title"]["subtitle"]
     assert len({r["especialidade"] for r in separado["data"]["values"]}) == 9
+
+
+def test_formas_do_numero_com_e_sem_o_nono_digito():
+    from whatsapp.entrada import formas_do_numero
+
+    assert formas_do_numero("+55 (31) 99005-4127") == {"5531990054127", "553190054127"}
+    assert formas_do_numero("553190054127") == {"553190054127", "5531990054127"}
+    # fixo (começa com 2 a 5) e número de fora não ganham o 9
+    assert formas_do_numero("553132221234") == {"553132221234"}
+    assert formas_do_numero("14155550123") == {"14155550123"}

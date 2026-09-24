@@ -360,3 +360,13 @@ def test_com_o_lid_configurado_a_mesma_mencao_chama(grupo, cliente, monkeypatch)
 
     assert resultado == "respondida"
     assert provider.plan_requests[0].question == "vendas por mês"
+
+
+def test_contato_cadastrado_com_o_nono_digito_fala_mesmo_se_o_whatsapp_manda_sem(paulo, cliente):
+    """2026-09-24: o WhatsApp identificou o próprio Jarvis como 553190054127,
+    sem o 9. O Paulo está cadastrado com o 9 (5511977776666); a mensagem dele
+    chegando como 551177776666 não pode ser ignorada."""
+    resultado, _ = _receber(_evento("vendas por mês", jid="551177776666@s.whatsapp.net"), cliente,
+                            [plano(entendimento="Unidades por mês")], [resposta("Foram 777 unidades em ago/2026.")])
+
+    assert resultado == "respondida"

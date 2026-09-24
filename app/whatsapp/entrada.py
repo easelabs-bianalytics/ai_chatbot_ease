@@ -47,6 +47,23 @@ class Recebida:
     bruto: dict = field(default_factory=dict, repr=False)
 
 
+def formas_do_numero(numero: str) -> set:
+    """O mesmo celular brasileiro com e sem o nono dígito.
+
+    O WhatsApp identifica muitos celulares do Brasil SEM o 9 da frente: em
+    2026-09-24 o próprio número do Jarvis veio como 553190054127, e não
+    5531990054127. Quem cadastra um contato digita o número como conhece,
+    com o 9; comparar só a forma exata ignoraria a pessoa em silêncio."""
+    numero = re.sub(r"\D", "", str(numero or ""))
+    formas = {numero} if numero else set()
+    if numero.startswith("55") and len(numero) == 13 and numero[4] == "9":
+        formas.add(numero[:4] + numero[5:])
+    elif numero.startswith("55") and len(numero) == 12 and numero[4] in "6789":
+        formas.add(numero[:4] + "9" + numero[4:])
+    return formas
+
+
+
 def _digitos(jid: str) -> str:
     if not jid or jid.endswith("@lid") or jid.endswith("@g.us"):
         return ""
@@ -143,7 +160,7 @@ def marcou_o_jarvis(recebida: Recebida, numero_do_jarvis: str, lid_do_jarvis: st
     """O Jarvis foi marcado: pelo número, pelo identificador escondido (@lid)
     ou pelo "@jarvis" escrito à mão."""
     for jid in recebida.mencionados:
-        if numero_do_jarvis and _digitos(jid) == numero_do_jarvis:
+        if numero_do_jarvis and _digitos(jid) in formas_do_numero(numero_do_jarvis):
             return True
         if lid_do_jarvis and jid.split("@")[0] == lid_do_jarvis.split("@")[0]:
             return True
