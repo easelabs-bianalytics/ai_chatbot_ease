@@ -242,6 +242,13 @@ terraform plan \
 
 Com o diff certo, rode o `apply` com os mesmos `-target`.
 
+**✅ Passos 5 e 6 feitos em 2026-09-24.** A parte do Jarvis subiu antes, no
+deploy da `77a9fa4` (task com 2 GB, secrets e variáveis do WhatsApp, DNS
+interno); as migrações já tinham rodado no da `89ee6b0`. O `apply` do passo 6
+deu `5 added, 2 changed, 0 destroyed`: o `rds-sg` só ganhou a regra da
+Evolution (in-place) e a permissão do Jarvis, os dois secrets novos. A
+Evolution subiu com 1 task e conectou no banco (`Repository:Prisma - ON`).
+
 Depois, confira:
 - **No ECS:** `cockpit-prod-jarvis-evolution-service` com 1 task rodando.
 - **No Admin do Jarvis** → **Conexão do WhatsApp**: o estado deve aparecer.
@@ -297,6 +304,62 @@ Preencha no Terraform, faça `plan` e `apply` da task do Jarvis e commite
 ---
 
 ## 4. Operação do dia a dia
+
+### A visão de admin
+
+**Quem tem:** só o Rubens (`rubens.filho@easelabs.com.br`) e o Paulo
+(`paulo.lima@easelabs.com.br`), decidido pelo Rubens em 2026-09-24. Os dois
+são `is_staff` e `is_superuser` no `auth_user` de produção; os demais
+usuários, inclusive os que vieram como admin no `usuarios_iniciais.csv`,
+tiveram o acesso retirado.
+
+⚠️ O `sincronizar_usuarios` marca como `is_staff` todo mundo que vem com
+papel `admin` na origem. Rodado de novo, ele devolveria o acesso à Natália e
+ao Fernando: depois dele, repita a retirada (tarefa avulsa com
+`manage.py shell`, deixando `is_staff`/`is_superuser` só nos dois e-mails).
+
+**Como entrar:**
+1. Abra https://jarvis.easelabs.app.br/admin/.
+2. O Admin manda para o login por código: digite o e-mail e o código que
+   chega nele. Depois do código, o Admin abre.
+
+**Conectar o WhatsApp** (com o chip no celular do Jarvis):
+1. Admin → **Conexão do WhatsApp**
+   (https://jarvis.easelabs.app.br/admin/whatsapp/conexao/).
+2. **Configurar a instância**, uma vez: cria a instância `jarvis` na
+   Evolution, liga os grupos, recusa chamadas e aponta o webhook para o
+   Jarvis. Pode ser repetido sem estragar nada.
+3. **Mostrar o QR para parear**. No celular: WhatsApp → **Aparelhos
+   conectados** → **Conectar aparelho**, e leia o QR. Ele expira em poucos
+   segundos; se expirar, recarregue a página.
+4. O estado muda para **open — conectado**, com o número em "Conectado como".
+   Siga para o passo 8 da seção 3.
+
+**O que a página de conexão mostra e faz:**
+
+| Parte | Para quê |
+|---|---|
+| Estado da conexão | `open` = conectado; outro estado = precisa do QR. "A Evolution não respondeu" = o service da Evolution está fora (log `jarvis-evolution`) |
+| Configurar a instância | cria ou reconfigura a instância e o webhook |
+| Mostrar o QR para parear | o QR para ligar o número ao Jarvis |
+| Grupos de que o Jarvis participa | nome e identificador (`...@g.us`) de cada grupo, para copiar no cadastro |
+| Menções que o Jarvis não reconheceu | o `@lid` que as pessoas marcaram e o Jarvis não reconheceu, para pôr em `jarvis_whatsapp_lid` |
+
+**O que o Admin tem além da página de conexão:**
+
+| Tela | O que se faz nela |
+|---|---|
+| Contatos do WhatsApp | liberar uma pessoa (número com DDI e DDD → usuário do Jarvis), desativar, anotar |
+| Grupos do WhatsApp | liberar um grupo (identificador `...@g.us`), o usuário técnico dele e a cota diária e semanal |
+| Envios do WhatsApp | o id de cada mensagem que o Jarvis mandou, para ligar reação e citação à resposta |
+| Conversas e Mensagens | todas as conversas, do chat web e do WhatsApp; a mensagem que falhou aparece com o status e o detalhe |
+| Avaliações de resposta | os 👍/👎 com o comentário, que viram casos de teste (`casos_do_uso`) |
+| Usuários | ativar, desativar e dar ou tirar o acesso de admin |
+
+No chat, quem é admin também vê o custo e os tokens de cada resposta, em
+"Fonte".
+
+### Situações comuns
 
 | Situação | O que fazer |
 |---|---|
