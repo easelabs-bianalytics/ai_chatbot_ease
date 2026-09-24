@@ -45,7 +45,9 @@ class WebhookView(APIView):
         payload = request.data if isinstance(request.data, dict) else {}
         if servicos.parar_se_pedido(payload):
             return Response({"ok": True})
-        tasks.receber.delay(payload)
+        # Espera sorteada antes de atender (config.atraso_da_resposta); o
+        # "parar" acima continua imediato.
+        tasks.receber.apply_async(args=[payload], countdown=config.atraso_da_resposta())
         return Response({"ok": True})
 
 

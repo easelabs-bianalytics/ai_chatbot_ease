@@ -10,9 +10,12 @@
   recusando tudo.
 - `EVOLUTION_API_BASE_URL`, `EVOLUTION_API_KEY`, `EVOLUTION_INSTANCE_NAME`: a
   Evolution; sem chave, o cliente é o fake (nada sai).
+- `WHATSAPP_ATRASO_MIN_S`, `WHATSAPP_ATRASO_MAX_S`: a espera sorteada antes
+  de o Jarvis começar a atender (padrão 3 a 30 s).
 """
 
 import os
+import random
 
 from whatsapp.models import so_digitos
 
@@ -42,3 +45,21 @@ def url_interna_do_webhook() -> str:
     trava."""
     base = os.environ.get("WHATSAPP_WEBHOOK_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
     return f"{base}/api/whatsapp/webhook/{token_do_webhook()}/"
+
+
+def atraso_da_resposta() -> float:
+    """Segundos de espera, sorteados, antes de o Jarvis começar a atender.
+
+    Pedido do Rubens em 2026-09-24, contra o risco de banimento: resposta que
+    sempre começa no mesmo instante é o padrão de robô que o WhatsApp
+    procura. A espera vem antes de tudo, inclusive do "Entendi…" e do
+    "digitando"."""
+    def _segundos(nome, padrao):
+        try:
+            return max(0.0, float(os.environ.get(nome, padrao)))
+        except ValueError:
+            return float(padrao)
+
+    minimo = _segundos("WHATSAPP_ATRASO_MIN_S", 3)
+    maximo = max(minimo, _segundos("WHATSAPP_ATRASO_MAX_S", 30))
+    return random.uniform(minimo, maximo)

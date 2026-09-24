@@ -271,16 +271,15 @@ def test_reacao_vira_avaliacao_e_sem_reacao_desfaz(paulo, cliente):
     assert not Avaliacao.objects.exists()
 
 
-def test_aviso_de_entendimento_sai_uma_vez(paulo, cliente, monkeypatch):
-    """O "Entendi: …" do chat web, no WhatsApp: uma mensagem curta enquanto
-    o Jarvis consulta — a hora de a pessoa perceber um pedido mal lido."""
+def test_no_whatsapp_a_resposta_vem_direto_sem_o_entendi(paulo, cliente, monkeypatch):
+    """2026-09-24: o "Entendi: … Já volto com os números" saiu do WhatsApp a
+    pedido do Rubens. Só a resposta é enviada; o "digitando…" continua."""
     monkeypatch.setattr(aviso, "cliente_configurado", lambda: cliente)
 
     _pergunta_respondida(cliente)
 
-    avisos = [e for e in cliente.enviados if e["tipo"] == "texto" and e["texto"].startswith("_Entendi:_")]
-    assert len(avisos) == 1
-    assert "Unidades Ease por mês em 2026" in avisos[0]["texto"]
+    textos = [e["texto"] for e in cliente.enviados if e["tipo"] == "texto"]
+    assert textos == ["Foram 777 unidades em ago/2026."]
 
 
 def test_aviso_nao_sai_para_pergunta_do_chat_web(cliente, monkeypatch):
@@ -297,7 +296,8 @@ def test_aviso_nao_sai_para_pergunta_do_chat_web(cliente, monkeypatch):
 def test_webhook_confere_o_segredo_e_a_origem(monkeypatch):
     monkeypatch.setenv("WHATSAPP_WEBHOOK_TOKEN", "segredo")
     enfileirados = []
-    monkeypatch.setattr("whatsapp.views.tasks.receber.delay", enfileirados.append)
+    monkeypatch.setattr("whatsapp.views.tasks.receber.apply_async",
+                        lambda args, countdown: enfileirados.append((args, countdown)))
     http = APIClient()
 
     assert http.post("/api/whatsapp/webhook/errado/", {}, format="json").status_code == 404
@@ -305,6 +305,8 @@ def test_webhook_confere_o_segredo_e_a_origem(monkeypatch):
                      HTTP_X_FORWARDED_FOR="1.2.3.4").status_code == 404
     assert http.post("/api/whatsapp/webhook/segredo/", _evento("oi"), format="json").status_code == 200
     assert len(enfileirados) == 1
+    # Espera sorteada antes de atender, contra o padrão de robô (2026-09-24).
+    assert 3 <= enfileirados[0][1] <= 30
 
 
 def test_webhook_sem_segredo_configurado_recusa_tudo():
@@ -370,3 +372,38 @@ def test_contato_cadastrado_com_o_nono_digito_fala_mesmo_se_o_whatsapp_manda_sem
                             [plano(entendimento="Unidades por mês")], [resposta("Foram 777 unidades em ago/2026.")])
 
     assert resultado == "respondida"
+
+
+def test_atraso_da_resposta_respeita_os_limites(monkeypatch):
+    from whatsapp import config
+
+    sorteios = [config.atraso_da_resposta() for _ in range(200)]
+    assert min(sorteios) >= 3 and max(sorteios) <= 30
+    assert len({round(s, 3) for s in sorteios}) > 50      # sorteado, não fixo
+
+    monkeypatch.setenv("WHATSAPP_ATRASO_MIN_S", "0")
+    monkeypatch.setenv("WHATSAPP_ATRASO_MAX_S", "0")
+    assert config.atraso_da_resposta() == 0
+
+
+def test_contato_sem_usuario_ganha_um_usuario_tecnico_e_fala(cliente):
+    """2026-09-24: liberar pelo número, sem a pessoa ter entrado no chat web."""
+    contato = ContatoWhatsApp.objects.create(numero="5531988887777", nome="Ana Souza")
+
+    assert contato.user.username == "whatsapp-5531988887777"
+    assert (contato.user.first_name, contato.user.last_name) == ("Ana", "Souza")
+    assert not contato.user.has_usable_password() and not contato.user.email
+
+    resultado, _ = _receber(_evento("vendas por mês", jid="553188887777@s.whatsapp.net"), cliente,
+                            [plano(entendimento="Unidades por mês")], [resposta("Foram 777 unidades em ago/2026.")])
+    assert resultado == "respondida"
+    assert Conversation.objects.get().user == contato.user
+
+
+def test_admin_cadastra_contato_so_com_o_numero(admin_client):
+    resposta_http = admin_client.post("/admin/whatsapp/contatowhatsapp/add/", {
+        "numero": "+55 (31) 98888-7777", "nome": "Ana Souza", "user": "", "ativo": "on", "observacao": "",
+    })
+
+    assert resposta_http.status_code == 302, resposta_http.content.decode()[:500]
+    assert ContatoWhatsApp.objects.get().user.username == "whatsapp-5531988887777"

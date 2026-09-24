@@ -10,9 +10,9 @@ class ContatoWhatsAppAdmin(admin.ModelAdmin):
     """Quem pode falar com o Jarvis no individual. Número fora daqui é
     ignorado em silêncio."""
 
-    list_display = ("numero", "user", "ativo", "observacao", "created_at")
+    list_display = ("numero", "nome", "user", "ativo", "observacao", "created_at")
     list_filter = ("ativo",)
-    search_fields = ("numero", "user__username", "user__email", "observacao")
+    search_fields = ("numero", "nome", "user__username", "user__email", "observacao")
     autocomplete_fields = ("user",)
 
     def changelist_view(self, request, extra_context=None):

@@ -21,17 +21,21 @@ def so_digitos(numero: str) -> str:
 class ContatoWhatsApp(models.Model):
     """Um número liberado para conversar com o Jarvis no individual.
 
-    O número é de uma pessoa que já tem usuário no Jarvis: a conversa do
-    WhatsApp aparece na lista dela no chat web, com a mesma cota e a mesma
-    auditoria."""
+    Com usuário, a conversa do WhatsApp aparece na lista dele no chat web,
+    com a mesma cota e a mesma auditoria. Sem usuário (a pessoa não usa o
+    chat web), o Jarvis cria um usuário técnico para o número, sem login,
+    como faz com os grupos — decisão do Rubens em 2026-09-24."""
 
     numero = models.CharField(
         max_length=20, unique=True,
         help_text="Com DDI e DDD, só dígitos: 5511999998888.",
     )
+    nome = models.CharField(max_length=120, blank=True, default="", db_default="",
+                            help_text="Como a pessoa aparece no Admin e no usuário técnico.")
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="contatos_whatsapp",
-        verbose_name="usuário",
+        verbose_name="usuário", blank=True,
+        help_text="Opcional. Vazio: o Jarvis cria um usuário técnico para este número.",
     )
     ativo = models.BooleanField(default=True)
     observacao = models.CharField(max_length=200, blank=True)
@@ -44,7 +48,17 @@ class ContatoWhatsApp(models.Model):
 
     def save(self, *args, **kwargs):
         self.numero = so_digitos(self.numero)
-        super().save(*args, **kwargs)
+        with transaction.atomic():
+            if self.user_id is None:
+                User = get_user_model()
+                primeiro, _, sobrenome = (self.nome or "").strip().partition(" ")
+                tecnico = User(username=f"whatsapp-{self.numero[:40] or 'novo'}", is_active=True,
+                               first_name=primeiro[:150], last_name=sobrenome[:150])
+                # Sem senha e sem e-mail: ninguém entra com ele no chat web.
+                tecnico.set_unusable_password()
+                tecnico.save()
+                self.user = tecnico
+            super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.numero} ({self.user})"
