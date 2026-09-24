@@ -16,7 +16,7 @@
     <tr><th>Estado</th><td>{% if estado == "sem_instancia" %}instância não criada{% else %}{{ estado|default:"desconhecido" }}{% endif %}{% if estado == "open" %} — conectado{% endif %}</td></tr>
     <tr><th>Conectado como</th><td>{{ conectado_como|default:"—" }}{% if nome_do_perfil %} ({{ nome_do_perfil }}){% endif %}</td></tr>
     <tr><th>Número do Jarvis</th><td>{{ numero|default:"(WHATSAPP_NUMERO_JARVIS vazio: só “@jarvis” escrito chama no grupo)" }}</td></tr>
-    <tr><th>Identificador @lid</th><td>{{ lid|default:"(WHATSAPP_LID_JARVIS vazio)" }}</td></tr>
+    <tr><th>Identificador @lid</th><td>{{ lid|default:"(ainda não aprendido: o Jarvis aprende sozinho na primeira marcação por @lid num grupo liberado)" }}</td></tr>
     <tr><th>Webhook</th><td>{% if webhook %}com segredo{% else %}<strong>sem WHATSAPP_WEBHOOK_TOKEN: recusando tudo</strong>{% endif %}</td></tr>
     <tr><th>Liberados</th><td>{{ contatos }} contato(s), {{ grupos }} grupo(s)</td></tr>
   </table>
@@ -45,9 +45,8 @@
 
   {% if mencoes %}
     <h2>Menções que o Jarvis não reconheceu</h2>
-    <p class="help">Marcações feitas em grupos liberados que não chamaram o Jarvis. Se você marcou o Jarvis
-    e ele não respondeu, o identificador dele está na coluna “Marcados” (termina em <code>@lid</code>):
-    ponha em <code>WHATSAPP_LID_JARVIS</code>.</p>
+    <p class="help">Marcações feitas em grupos liberados que não chamaram o Jarvis: normalmente, alguém
+    marcou outra pessoa. O @lid do próprio Jarvis ele aprende sozinho, pela lista de participantes do grupo.</p>
     <table>
       <tr><th>Grupo</th><th>Mensagem</th><th>Marcados</th></tr>
       {% for m in mencoes %}

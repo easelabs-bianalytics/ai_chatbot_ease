@@ -252,7 +252,8 @@ Preencha no Terraform, faça `plan` e `apply` da task do Jarvis e commite
 (`deploy: ...`):
 - `jarvis_whatsapp_numero`: o número de "Conectado como", só dígitos
   (`5511...`). É o que faz a marcação `@Jarvis` funcionar nos grupos.
-- `jarvis_whatsapp_lid`: deixe vazio por enquanto (ver o passo 9).
+- `jarvis_whatsapp_lid`: deixe vazio. O Jarvis aprende o próprio @lid
+  sozinho (passo 9).
 
 **✅ Feito em 2026-09-24.** `jarvis_whatsapp_numero = "553190054127"`,
 exatamente como o WhatsApp o identifica (commit `50aa7ce` na
@@ -281,11 +282,13 @@ a variável; `apply` `1 added, 1 changed, 1 destroyed`.
    - uma mensagem sem marcar o Jarvis: ele fica calado;
    - `@Jarvis vendas de agosto`: ele responde citando a pergunta;
    - uma resposta citando a mensagem dele: ele responde.
-5. **Se a marcação não chamar o Jarvis**, o grupo esconde os números (@lid).
-   Na página de conexão, em **Menções que o Jarvis não reconheceu**, aparece
-   o identificador marcado (`...@lid`). Ponha-o em `jarvis_whatsapp_lid`,
-   `plan`/`apply` da task do Jarvis. Enquanto isso, escrever `@jarvis` à mão
-   funciona sempre.
+5. **Grupo que esconde os números (@lid):** a marcação chega com o
+   identificador escondido (`...@lid`), e não com o número. Desde
+   2026-09-24 o Jarvis **aprende o próprio @lid sozinho**: na primeira
+   marcação por @lid num grupo liberado, ele lê a lista de participantes, que
+   liga cada @lid ao número, e guarda o dele. Não é preciso configurar
+   `jarvis_whatsapp_lid` (ele continua valendo, se preenchido). Escrever
+   `@jarvis` à mão funciona sempre.
 
 ---
 
@@ -329,7 +332,7 @@ ao Fernando: depois dele, repita a retirada (tarefa avulsa com
 | Configurar a instância | cria ou reconfigura a instância e o webhook |
 | Mostrar o QR para parear | o QR para ligar o número ao Jarvis |
 | Grupos de que o Jarvis participa | nome e identificador (`...@g.us`) de cada grupo, para copiar no cadastro |
-| Menções que o Jarvis não reconheceu | o `@lid` que as pessoas marcaram e o Jarvis não reconheceu, para pôr em `jarvis_whatsapp_lid` |
+| Menções que o Jarvis não reconheceu | marcações de outras pessoas em grupos liberados; o @lid do Jarvis ele aprende sozinho |
 
 **O que o Admin tem além da página de conexão:**
 

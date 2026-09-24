@@ -24,8 +24,21 @@ def numero_do_jarvis() -> str:
     return so_digitos(os.environ.get("WHATSAPP_NUMERO_JARVIS", ""))
 
 
+CHAVE_DO_LID = "whatsapp:lid_do_jarvis"
+
+
 def lid_do_jarvis() -> str:
-    return os.environ.get("WHATSAPP_LID_JARVIS", "").strip()
+    """O @lid do Jarvis: o configurado, ou o que ele aprendeu sozinho na
+    primeira marcação por @lid num grupo liberado (servicos._chamou_o_jarvis)."""
+    from django.core.cache import cache
+
+    return os.environ.get("WHATSAPP_LID_JARVIS", "").strip() or (cache.get(CHAVE_DO_LID) or "")
+
+
+def aprender_lid(lid: str) -> None:
+    from django.core.cache import cache
+
+    cache.set(CHAVE_DO_LID, lid, timeout=None)
 
 
 def token_do_webhook() -> str:

@@ -20,8 +20,10 @@ Formatos confirmados na referência (Evolution v2.3.7):
 import base64
 import logging
 import os
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from urllib.parse import quote
 from uuid import uuid4
 
 import requests
@@ -86,6 +88,11 @@ class ClienteWhatsApp(ABC):
         """Grupos de que o número participa: [{"jid", "nome"}]."""
         return []
 
+    def participantes(self, grupo_jid: str) -> list:
+        """Membros do grupo: [{"id", "numero"}]. `id` pode ser o @lid, e
+        `numero` são os dígitos do número por trás dele."""
+        return []
+
 
 class EvolutionCliente(ClienteWhatsApp):
     def __init__(self, base_url=None, api_key=None, instancia=None, sessao=None):
@@ -109,7 +116,7 @@ class EvolutionCliente(ClienteWhatsApp):
     def _get(self, caminho) -> dict:
         try:
             resposta = self._http.get(f"{self._base}{caminho}", headers={"apikey": self._chave}, timeout=TIMEOUT)
-            if resposta.status_code == 404 and f"/{self._instancia}" in caminho:
+            if resposta.status_code == 404 and caminho.startswith("/instance/"):
                 raise InstanciaInexistente(f"{caminho}: a instância {self._instancia} não existe")
             resposta.raise_for_status()
             return resposta.json() if resposta.content else {}
@@ -183,6 +190,14 @@ class EvolutionCliente(ClienteWhatsApp):
             key=lambda g: g["nome"].lower(),
         )
 
+    def participantes(self, grupo_jid: str) -> list:
+        corpo = self._get(f"/group/participants/{self._instancia}?groupJid={quote(grupo_jid)}")
+        itens = corpo.get("participants") if isinstance(corpo, dict) else corpo
+        return [
+            {"id": str(p.get("id") or ""), "numero": re.sub(r"\D", "", str(p.get("phoneNumber") or "").split("@")[0])}
+            for p in itens or () if isinstance(p, dict)
+        ]
+
     def configurar(self, url_do_webhook: str) -> None:
         """Instância com grupos LIGADOS (a trava é o nosso cadastro, ADR-0028),
         chamada recusada, nada marcado como lido e o webhook só com mensagens."""
@@ -214,7 +229,11 @@ class ClienteFake(ClienteWhatsApp):
 
     enviados: list = field(default_factory=list)
     midias: dict = field(default_factory=dict)
+    membros: dict = field(default_factory=dict)
     falhar: bool = False
+
+    def participantes(self, grupo_jid) -> list:
+        return list(self.membros.get(grupo_jid, []))
 
     def _registrar(self, **envio) -> str:
         if self.falhar:

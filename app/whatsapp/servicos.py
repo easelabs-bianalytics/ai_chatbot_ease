@@ -96,11 +96,39 @@ def _dono(recebida):
     return contato.user, None
 
 
-def _chamou_o_jarvis(recebida) -> bool:
+def _chamou_o_jarvis(recebida, cliente=None) -> bool:
     if entrada.marcou_o_jarvis(recebida, config.numero_do_jarvis(), config.lid_do_jarvis()):
+        return True
+    if _aprendeu_o_lid(recebida, cliente):
         return True
     # Responder (citando) uma mensagem do Jarvis também é chamá-lo.
     return bool(recebida.citada_id) and EnvioWhatsApp.objects.filter(externo_id=recebida.citada_id).exists()
+
+
+def _aprendeu_o_lid(recebida, cliente=None) -> bool:
+    """A marcação veio por @lid e o Jarvis ainda não conhece o dele.
+
+    2026-09-24: no primeiro grupo de teste, "@Jarvis, quem é você?" chegou
+    como 22777050443952@lid e o Jarvis ficou calado — só o número estava
+    configurado. A lista de participantes do grupo liga cada @lid ao número;
+    se o @lid marcado é o do número do Jarvis, ele o guarda e responde. Só
+    consulta enquanto não conhece o próprio @lid."""
+    lids = [j for j in recebida.mencionados if j.endswith("@lid")]
+    numero = config.numero_do_jarvis()
+    if not (recebida.grupo and lids and numero) or config.lid_do_jarvis():
+        return False
+    try:
+        membros = (cliente or cliente_configurado()).participantes(recebida.jid)
+    except WhatsAppIndisponivel:
+        logger.warning("WhatsApp: não consegui ler os participantes de %s", recebida.jid, exc_info=True)
+        return False
+    formas = entrada.formas_do_numero(numero)
+    for membro in membros:
+        if membro["numero"] in formas and membro["id"].endswith("@lid"):
+            config.aprender_lid(membro["id"])
+            logger.info("WhatsApp: @lid do Jarvis aprendido: %s", membro["id"])
+            return membro["id"] in lids
+    return False
 
 
 CHAVE_DAS_MENCOES = "whatsapp:mencoes_nao_reconhecidas"
@@ -220,7 +248,7 @@ def parar_se_pedido(payload, cliente=None) -> bool:
         return False
     texto = recebida.texto
     if recebida.grupo:
-        if not _chamou_o_jarvis(recebida):
+        if not _chamou_o_jarvis(recebida, cliente):
             return False
         texto = entrada.sem_mencao(texto, config.numero_do_jarvis(), config.lid_do_jarvis())
     if _normalizar(texto) not in _PARAR:
@@ -257,7 +285,7 @@ def receber(payload, cliente=None, provider=None, executor=None) -> str:
 
     if recebida.tipo == entrada.REACAO:
         return _reacao(recebida)
-    if recebida.grupo and not _chamou_o_jarvis(recebida):
+    if recebida.grupo and not _chamou_o_jarvis(recebida, cliente):
         if recebida.mencionados:
             _guardar_mencao_nao_reconhecida(recebida)
         return "grupo_sem_mencao"

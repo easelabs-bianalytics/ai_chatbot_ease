@@ -117,3 +117,23 @@ def test_evolution_fora_continua_sendo_erro():
 
     with pytest.raises(WhatsAppIndisponivel):
         cliente.estado()
+
+
+def test_participantes_ligam_o_lid_ao_numero():
+    cliente, sessao = _cliente(_Resposta({"participants": [
+        {"id": "22777050443952@lid", "phoneNumber": "553190054127@s.whatsapp.net", "admin": None},
+    ]}))
+
+    assert cliente.participantes("120363410540006151@g.us") == [{"id": "22777050443952@lid", "numero": "553190054127"}]
+    # o @ do grupo vai codificado: sem isso a Evolution respondia 404
+    assert sessao.pedidos[0][1].endswith("/group/participants/jarvis?groupJid=120363410540006151%40g.us")
+
+
+def test_404_fora_das_rotas_da_instancia_nao_diz_que_ela_nao_existe():
+    from whatsapp.cliente import InstanciaInexistente
+
+    cliente, _ = _cliente(_Resposta({}, status=404))
+
+    with pytest.raises(WhatsAppIndisponivel) as erro:
+        cliente.participantes("1203@g.us")
+    assert not isinstance(erro.value, InstanciaInexistente)

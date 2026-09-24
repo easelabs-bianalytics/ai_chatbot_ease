@@ -24,7 +24,7 @@ from conversations.models import Conversation
 from datasource.executors.fake import FakeQueryExecutor, make_result
 from messaging.models import Avaliacao, Message
 from tests.fakes.providers import ScriptedAIProvider, plano, resposta
-from whatsapp import aviso, servicos
+from whatsapp import aviso, config, servicos
 from whatsapp.cliente import ClienteFake
 from whatsapp.models import ContatoWhatsApp, EnvioWhatsApp, GrupoWhatsApp
 
@@ -407,3 +407,47 @@ def test_admin_cadastra_contato_so_com_o_numero(admin_client):
 
     assert resposta_http.status_code == 302, resposta_http.content.decode()[:500]
     assert ContatoWhatsApp.objects.get().user.username == "whatsapp-5531988887777"
+
+
+# ------------------------------------------------------------ @lid aprendido
+
+
+def _marcado_por_lid(texto, lid, ident="L1"):
+    return _evento(jid=GRUPO, ident=ident, participant=f"{PAULO}@s.whatsapp.net",
+                   message={"extendedTextMessage": {"text": texto, "contextInfo": {"mentionedJid": [f"{lid}@lid"]}}})
+
+
+def test_jarvis_marcado_por_lid_aprende_o_proprio_lid_e_responde(grupo, cliente):
+    """2026-09-24, primeiro grupo de teste: "@22777050443952 , quem é você?"
+    chegou só com o @lid e o Jarvis ficou calado. A lista de participantes
+    liga o @lid ao número do Jarvis: ele aprende e responde."""
+    cliente.membros[GRUPO] = [
+        {"id": "22777050443952@lid", "numero": JARVIS},
+        {"id": "99999999999999@lid", "numero": PAULO},
+    ]
+
+    resultado, _ = _receber(_marcado_por_lid("@22777050443952 , quem é você?", "22777050443952"), cliente,
+                            [plano(entendimento="Apresentação")], [resposta("Sou o Jarvis, o assistente de dados.")])
+
+    assert resultado == "respondida"
+    assert config.lid_do_jarvis() == "22777050443952@lid"
+    pergunta = Message.objects.get(direction="in")
+    assert "22777050443952" not in pergunta.content          # a marcação sai da pergunta
+
+    # A segunda marcação já não consulta os participantes.
+    cliente.membros.clear()
+    resultado, _ = _receber(_marcado_por_lid("@22777050443952 e em julho?", "22777050443952", ident="L2"), cliente,
+                            [plano(entendimento="Julho")], [resposta("Foram 761 unidades em jul/2026.")])
+    assert resultado == "respondida"
+
+
+def test_marcar_outra_pessoa_por_lid_nao_chama_o_jarvis(grupo, cliente):
+    cliente.membros[GRUPO] = [
+        {"id": "22777050443952@lid", "numero": JARVIS},
+        {"id": "99999999999999@lid", "numero": PAULO},
+    ]
+
+    resultado, _ = _receber(_marcado_por_lid("@99999999999999 viu isso?", "99999999999999"), cliente)
+
+    assert resultado == "grupo_sem_mencao"
+    assert config.lid_do_jarvis() == "22777050443952@lid"   # aprendeu mesmo assim
