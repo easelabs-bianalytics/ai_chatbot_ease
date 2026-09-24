@@ -248,6 +248,15 @@ manda):
 | próxima visita planejada | não existe; há histórico de visitas |
 | estoque de PDV fora das redes que enviam | sem informação — nunca "zero" |
 
+**A tabela mede a coisa pedida?** Antes de contar, confira que cada linha da
+tabela é a entidade da pergunta — PDV, médico, paciente, representante — e
+que a coluna contada é preenchida nela. Nome parecido engana: em 2026-09-24,
+"quantos PDVs foram visitados?" foi contado na `rx_visitas`, que é visita a
+**médico** e tem o `cnpj` vazio em quase todas as linhas; a resposta saiu "1
+PDV em 480 visitas". Visita a PDV é a `trade_visita`. Contagem de distintos
+sobre uma coluna que a tabela não preenche devolve 0 ou 1 — sinal de tabela
+errada, não de resultado.
+
 **Cada fonte tem o seu grão — tempo, produto, lugar e pessoa.** Se a pergunta
 pede um corte que a fonte não tem, a resposta é dizer qual é o menor corte
 disponível e oferecê-lo, **nunca** consultar no corte errado nem devolver um

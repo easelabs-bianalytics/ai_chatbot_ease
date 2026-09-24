@@ -125,6 +125,10 @@ regras:
   - nome: Visitação Remota é o setor 3000
     referencias: [E21, E22, E26]
     sql_deve_conter: ["3000"]
+  - nome: PDV visitado vem da trade_visita, nunca da rx_visitas (visitas a médicos)
+    referencias: [E28, E29, E30]
+    sql_deve_conter: ["trade_visita"]
+    sql_nao_deve_conter: ["rx_visitas"]
 
 casos:
   # ------------------------------------------------------------------
@@ -1260,6 +1264,30 @@ casos:
     esperado: answer_with_data
     referencia: E22
     parametros: {data_ini: "2026-04-01", data_fim: "2026-07-01"}
+
+  - id: E28-pdvs-semana-passada
+    grupo: referencia
+    pergunta: Quantas farmácias a força de vendas visitou na semana de 7 a 13 de setembro de 2026?
+    esperado: answer_with_data
+    referencia: E28
+    parametros: {data_ini: "2026-09-07", data_fim: "2026-09-14"}
+    nota: >-
+      Conversa de 2026-09-24: o Jarvis contou PDV pela rx_visitas (visitas a médicos, CNPJ
+      vazio) e respondeu "1 PDV em 480 visitas". O certo eram 180 PDVs em 181 visitas.
+
+  - id: E29-pdvs-por-representante-ago26
+    grupo: referencia
+    pergunta: Quantas farmácias cada representante visitou em agosto de 2026?
+    esperado: answer_with_data
+    referencia: E29
+    parametros: {data_ini: "2026-08-01", data_fim: "2026-09-01"}
+
+  - id: E30-visitas-de-um-pdv
+    grupo: referencia
+    pergunta: Quando a farmácia de CNPJ 61.585.865/0404-55 foi visitada e por quem?
+    esperado: answer_with_data
+    referencia: E30
+    parametros: {cnpj: "61585865040455"}
 
   - id: E23-cobertura-ago26
     grupo: referencia

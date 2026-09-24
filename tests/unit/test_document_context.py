@@ -175,7 +175,10 @@ def test_do_terceiro_tema_em_diante_vai_o_resumo(catalogo):
     # consciente de custo; se passar disso, o caminho é a seção própria.
     # 28 mil a partir da A21 (painel e território lado a lado, 2026-09-23).
     # 29 mil com a B17 (mês parcial contra o mesmo período, 2026-09-24).
-    assert contexto.tokens_estimados < 29000
+    # 30 mil com a 5.4, visitas a PDV (trade_visita, E28–E30, 2026-09-24):
+    # ~460 tokens, ~US$ 0,0008 por pergunta que passa pela força de vendas.
+    # Sem ela o Jarvis contou PDV pela tabela de visitas a médicos.
+    assert contexto.tokens_estimados < 30000
 
 
 def test_schema_vai_filtrado_pelas_tabelas_do_tema(catalogo):

@@ -2612,10 +2612,17 @@ ORDER BY 1 DESC, 3 DESC;
 | `cddd.scd_ct_territorio` + `cddd.dim_ct` | CT (representante) do território, com e-mail | `cod_territorio`, `cod_setor`, `cod_ct`, `nome_abreviado_ct`, `email_ct`, `data_saida_territorio` |
 | `audit.rx_cadastro_mais_recente` | **Painel atual**: médicos atribuídos a cada setor | `crm_link`, `nome`, `setor` (4 dígitos), `setor_cliente` (território), `categoria`, `classificacao`, `potencial`, `frequencia`, `dias_sem_visita`, contatos |
 | `audit.trade_cadastro_estabelecimento` | **PDVs visitados** pela força de vendas | `cnpj` (14 dígitos), `setor`, `nome_setor`, `nome_rede`, `nome_loja`, `cidade`, `uf`, `frequencia` |
-| `audit.rx_visitas` | **Histórico de visitas** | `crm_norm`, `nome`, `setor`, `setor_cliente`, `setor_ims` (nome curto do representante), `data_da_visita`, `visita_efetiva`, `tipo_visita`, `lista_de_motivo_de_nao_visita`, `comentarios` |
+| `audit.rx_visitas` | **Histórico de visitas a MÉDICOS** | `crm_norm`, `nome`, `setor`, `setor_cliente`, `setor_ims` (nome curto do representante), `data_da_visita`, `visita_efetiva`, `tipo_visita`, `lista_de_motivo_de_nao_visita`, `comentarios` |
+| `audit.trade_visita` | **Histórico de visitas a PDVs** (farmácias), desde mai/2023 | `cnpj` (14 dígitos, texto), `data_da_visita` (date), `visita_efetiva` (**boolean**), `lista_de_motivo_de_nao_visita`, `setor`, `setor_cliente` (território, liga à `cddd.forca_vendas`), `setor_ims` (nome curto do representante), `nome_do_setor` (praça), `bandeira` |
 
 - **Visitado = `visita_efetiva = 'S'`.** `'N'` é tentativa sem contato: não conta como visita
   (o motivo está em `lista_de_motivo_de_nao_visita`).
+- **Visita a PDV ≠ visita a médico.** "PDVs visitados", "farmácias visitadas", "visitas a lojas"
+  vêm da `audit.trade_visita` (seção 5.4). Médico visitado vem da `audit.rx_visitas`. **Nunca conte
+  PDV pela `rx_visitas`:** o `cnpj` dela vem vazio em quase todas as linhas, e a contagem dá 1
+  (conversa de 2026-09-24: "1 PDV em 480 visitas" — eram visitas a médicos).
+- Na `trade_visita`, `visita_efetiva` é **boolean** (`WHERE visita_efetiva`), não `'S'`. Ela é
+  só da força de vendas: não tem o setor `3000` de visitação remota.
 - **Setor `3000` = Visitação Remota; os demais setores = Força de Vendas.** Se o usuário não disser
   qual dos dois quer, pergunte. Um médico pode ter sido visitado pelos dois.
 - **Pergunte o período.** MAT = 12 meses fechados até o mês de referência (MAT 01/07/2026 =
@@ -3025,4 +3032,60 @@ WHERE visita_efetiva = 'S'
   AND data_da_visita >= :data_ini AND data_da_visita < :data_fim
 GROUP BY 1, 2
 ORDER BY 1, visitas DESC;
+```
+
+### 5.4 Visitas a PDV
+
+Rede, loja e cidade do PDV vêm da `audit.trade_cadastro_estabelecimento` pelo `cnpj` (~90% casam;
+nas demais, a `bandeira` da visita). "Semana passada" = segunda a domingo antes da semana da
+última data da base.
+
+*"Quantos PDVs foram visitados semana passada?"*
+
+```sql
+-- E28 · PDVs visitados no período (força de vendas)
+SELECT COUNT(DISTINCT v.cnpj) AS pdvs_visitados,
+       COUNT(*)               AS visitas_efetivas,
+       COUNT(DISTINCT v.setor) AS setores
+FROM audit.trade_visita v
+WHERE v.visita_efetiva
+  AND v.data_da_visita >= :data_ini AND v.data_da_visita < :data_fim;   -- semana: segunda a segunda
+```
+
+*"Quantos PDVs cada representante visitou no mês?"*
+
+```sql
+-- E29 · PDVs visitados por representante no período
+SELECT COALESCE(btrim(fv.desc_territorio), v.setor_ims) AS representante,
+       v.setor,
+       COUNT(DISTINCT v.cnpj) AS pdvs_visitados,
+       COUNT(*)               AS visitas_efetivas
+FROM audit.trade_visita v
+LEFT JOIN (SELECT DISTINCT cod_territorio, desc_territorio FROM cddd.forca_vendas) fv
+       ON fv.cod_territorio = v.setor_cliente
+WHERE v.visita_efetiva
+  AND v.data_da_visita >= :data_ini AND v.data_da_visita < :data_fim
+GROUP BY 1, 2
+ORDER BY pdvs_visitados DESC;
+```
+
+*"Quando a farmácia X foi visitada? Quem visitou?"*
+
+```sql
+-- E30 · Últimas visitas a um PDV
+SELECT v.data_da_visita AS data,
+       CASE WHEN v.visita_efetiva THEN 'efetiva' ELSE 'sem contato' END AS situacao,
+       v.lista_de_motivo_de_nao_visita AS motivo,
+       COALESCE(btrim(fv.desc_territorio), v.setor_ims) AS representante,
+       COALESCE(t.nome_rede, v.bandeira) AS rede,
+       t.nome_loja,
+       t.cidade,
+       t.uf
+FROM audit.trade_visita v
+LEFT JOIN audit.trade_cadastro_estabelecimento t ON t.cnpj = v.cnpj
+LEFT JOIN (SELECT DISTINCT cod_territorio, desc_territorio FROM cddd.forca_vendas) fv
+       ON fv.cod_territorio = v.setor_cliente
+WHERE v.cnpj = lpad(regexp_replace(:cnpj, '\D', '', 'g'), 14, '0')
+ORDER BY v.data_da_visita DESC
+LIMIT 10;
 ```

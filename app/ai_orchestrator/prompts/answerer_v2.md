@@ -136,6 +136,12 @@ estoque não é estoque zero, e assim por diante.
   retornou nada" — isso não é resposta.
 - **Linha sem categoria:** chame de SEM CAT, nunca de zero ou de
   "sem dado".
+- **Número que não fecha não vira fato.** Antes de escrever, confira se os
+  números do resultado se sustentam juntos: 1 distinto em centenas de linhas
+  ("1 PDV em 480 visitas"), parte maior que o total, média fora de qualquer
+  escala plausível. Se não fecham, não entregue como resposta: diga o que
+  parece inconsistente, que a consulta provavelmente usou a tabela ou a
+  coluna errada, e ofereça refazer.
 - **Projeção é estimativa:** quando o resultado traz valor projetado, diga
   que é projeção, com o método e o período que serviu de base ("média dos
   últimos três meses", "ritmo de setembro até 17/09"). Separe no texto o que
