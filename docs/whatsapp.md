@@ -5,20 +5,23 @@ continua como está. Este documento explica o uso e o passo a passo para ligar
 o canal, do chip ao primeiro teste. As decisões e o porquê de cada uma estão
 no [ADR-0028](adr/0028-canal-whatsapp-pela-evolution-api.md).
 
-**Situação em 2026-09-23:** o código e a infra estão prontos e testados sem
-rede. Faltam o chip (D-06), o banco da Evolution (D-07) e o deploy.
+**Situação em 2026-09-24:** no ar. O número `553190054127` está conectado
+(passos 1 a 8 da seção 2); falta o passo 9, os cadastros e os testes.
 
 ---
 
 ## 1. Como funciona para quem usa
 
 ### Conversa individual
-- Só falam com o Jarvis os números **cadastrados no Admin**, cada um ligado a
-  um usuário do Jarvis. Mensagem de qualquer outro número é ignorada em
-  silêncio: o Jarvis não responde nem gasta nada.
-- A conversa do WhatsApp aparece também na lista da pessoa no chat web
-  (marcada **WhatsApp**), com o mesmo histórico. A cota diária e semanal é a
-  mesma nos dois canais.
+- Só falam com o Jarvis os números **cadastrados no Admin**. Mensagem de
+  qualquer outro número é ignorada em silêncio: o Jarvis não responde nem
+  gasta nada.
+- O cadastro pode ligar o número a um usuário do Jarvis: aí a conversa do
+  WhatsApp aparece também na lista da pessoa no chat web (marcada
+  **WhatsApp**), com o mesmo histórico e a mesma cota. Sem usuário, o Jarvis
+  cria um usuário técnico para o número, sem login.
+- A resposta vem **direto**, depois de uma espera sorteada de 3 a 30 segundos
+  (seção 5), com "digitando…" enquanto o Jarvis consulta.
 - Depois de **8 horas** sem mensagem, a próxima pergunta abre uma conversa
   nova, para o Jarvis não misturar o assunto de ontem com o de hoje.
 
@@ -36,17 +39,20 @@ rede. Faltam o chip (D-06), o banco da Evolution (D-07) e o deploy.
   membros.** Liberar um grupo é decidir que aquelas pessoas veem dado de
   negócio (O-18).
 
-### O que chega na resposta
+### Chat web × WhatsApp
 
-| No chat web | No WhatsApp |
-|---|---|
-| Texto formatado | O mesmo texto, com negrito e listas do WhatsApp |
-| Tabela | Até 12 linhas vão no próprio texto; mais que isso vai em planilha `.xlsx`, com as primeiras linhas no texto |
-| Gráfico | Imagem, desenhada com os números do banco |
-| Botão "Baixar Excel" | Arquivo `.xlsx`, quando a pessoa pede planilha ou a lista é longa |
-| Planilha preenchida | O arquivo volta na conversa |
-| Sugestões de continuação | Lista numerada; responda **1**, **2** ou **3** |
-| "Entendi: …" enquanto pensa | "digitando…" e uma mensagem curta **"Entendi: … Já volto com os números."** |
+| | Chat web | WhatsApp |
+|---|---|---|
+| Texto | Markdown formatado | o mesmo texto, com negrito e listas do WhatsApp |
+| Gráfico | interativo (passar o mouse, legenda) | imagem PNG, com os mesmos dados e o mesmo polimento do servidor |
+| Tabela | até 100 linhas na tela | até 12 linhas no texto; mais que isso vai como `.xlsx` |
+| Planilha | botão "Baixar Excel" | arquivo `.xlsx`, quando a pessoa pede planilha ou a lista é longa |
+| Planilha preenchida | download na tela | o arquivo volta na conversa |
+| Enquanto pensa | "Entendi: …" e as etapas ao vivo | só "digitando…"; a resposta vem direto |
+| Fonte e consulta | botão "Ver fonte" | comando `fonte` |
+| 👎 | com o campo "o que estava errado" | reação 👎, sem comentário (escrever a crítica na mensagem seguinte faz o Jarvis refazer) |
+| Continuações | botões | lista numerada: responda 1, 2 ou 3 |
+| Áudio | ditado pelo microfone | ainda não transcrito: ele pede por escrito |
 
 ### Comandos
 
@@ -70,45 +76,7 @@ Nos grupos, os comandos também precisam marcar o Jarvis (`@Jarvis parar`).
 
 ---
 
-## 2. O chip: o que comprar e como preparar
-
-O Jarvis se conecta ao WhatsApp como um "aparelho conectado", igual ao
-WhatsApp Web. Por isso o número precisa de um celular de verdade por trás.
-
-**Na compra:**
-- **Número novo**, de operadora, em nome da empresa. Estar no nome da empresa
-  é o que permite recuperar o número se o chip for perdido.
-- Pré-pago ou pós-pago, tanto faz: o Jarvis não usa o plano de dados do chip.
-
-**No aparelho:**
-1. Use um **celular dedicado**, que fica com o time e não é o de ninguém.
-   Qualquer Android simples serve.
-2. Instale o **WhatsApp Business** e cadastre o número. O perfil comercial
-   deixa claro que é um assistente:
-   - nome: **Jarvis · Ease Labs**;
-   - foto: o logo do Jarvis (`app/web/static/web/`);
-   - descrição: "Assistente de dados da Ease Labs. Responde só a números e
-     grupos liberados."
-3. Ative a **verificação em duas etapas** (PIN) e cadastre um e-mail de
-   recuperação da empresa.
-4. **Aqueça o número por alguns dias** antes de conectar o Jarvis: troque
-   mensagens normais com as pessoas do time e peça que salvem o contato. Um
-   número novo que já nasce respondendo em automação é o padrão que o
-   WhatsApp restringe. Na referência, a restrição veio de muitos contatos
-   novos de uma vez.
-5. **Não entre em grupos** antes do cadastro (lição do incidente da
-   referência). Mesmo que entre, grupo sem cadastro é ignorado.
-
-**Depois de conectado:**
-- **Abra o WhatsApp no aparelho pelo menos a cada 14 dias.** Sem isso, o
-  WhatsApp desconecta os aparelhos vinculados e é preciso ler o QR de novo.
-- Deixe o celular **carregado e com internet**. Não é obrigatório o tempo
-  todo, mas evita desconexão.
-- **Nunca use o número para disparo** nem para adicionar gente em massa.
-
----
-
-## 3. Setup em produção
+## 2. Setup em produção
 
 A infra está no Terraform do `sales_force_crm`, branch `feat/infra-jarvis`,
 e segue as regras de lá:
@@ -269,6 +237,16 @@ Depois, confira:
 Pelo terminal (ECS Exec), o equivalente é
 `python app/manage.py whatsapp_configurar --qr`.
 
+**✅ Feito em 2026-09-24.** Estado `open`, conectado como
+`553190054127@s.whatsapp.net` (perfil "Jarvis 2.0"). Conferido de dentro da
+task do Jarvis: webhook ligado, só `MESSAGES_UPSERT`, apontando para
+`https://jarvis.easelabs.app.br/api/whatsapp/webhook/<segredo>/`; chamadas
+recusadas, grupos ligados, nada marcado como lido, sem histórico.
+
+⚠️ **O WhatsApp registrou o número sem o nono dígito** (`55 31 9005-4127`, e
+não `55 31 99005-4127`). É comum em celulares do Brasil. Desde a `83f2df5`
+o Jarvis compara os celulares com e sem o 9, nos contatos e na marcação.
+
 ### Passo 8: número do Jarvis na configuração
 Preencha no Terraform, faça `plan` e `apply` da task do Jarvis e commite
 (`deploy: ...`):
@@ -276,10 +254,18 @@ Preencha no Terraform, faça `plan` e `apply` da task do Jarvis e commite
   (`5511...`). É o que faz a marcação `@Jarvis` funcionar nos grupos.
 - `jarvis_whatsapp_lid`: deixe vazio por enquanto (ver o passo 9).
 
+**✅ Feito em 2026-09-24.** `jarvis_whatsapp_numero = "553190054127"`,
+exatamente como o WhatsApp o identifica (commit `50aa7ce` na
+`feat/infra-jarvis`), junto com a imagem `83f2df5`. `plan` só com a imagem e
+a variável; `apply` `1 added, 1 changed, 1 destroyed`.
+
 ### Passo 9: cadastros e testes
 1. **Contato de teste:** Admin → **Contatos do WhatsApp** → adicionar. O
-   número vai com DDI e DDD (`5511999998888`) e é ligado ao usuário da
-   pessoa.
+   número vai com DDI e DDD (`5511999998888`), com ou sem o nono dígito
+   (o Jarvis aceita as duas formas). Só o número basta: o @ do WhatsApp não
+   é usado. **Usuário é opcional:** com ele, a conversa aparece no chat web
+   da pessoa; vazio, o Jarvis cria um usuário técnico para o número
+   (`whatsapp-<número>`, sem login), com o nome do cadastro.
 2. **Teste individual**, na ordem:
    - uma pergunta com número;
    - um pedido de gráfico;
@@ -303,7 +289,7 @@ Preencha no Terraform, faça `plan` e `apply` da task do Jarvis e commite
 
 ---
 
-## 4. Operação do dia a dia
+## 3. Operação do dia a dia
 
 ### A visão de admin
 
@@ -333,7 +319,7 @@ ao Fernando: depois dele, repita a retirada (tarefa avulsa com
    conectados** → **Conectar aparelho**, e leia o QR. Ele expira em poucos
    segundos; se expirar, recarregue a página.
 4. O estado muda para **open — conectado**, com o número em "Conectado como".
-   Siga para o passo 8 da seção 3.
+   Siga para o passo 8 da seção 2.
 
 **O que a página de conexão mostra e faz:**
 
@@ -380,7 +366,7 @@ No chat, quem é admin também vê o custo e os tokens de cada resposta, em
 
 ---
 
-## 5. Desenvolvimento local
+## 4. Desenvolvimento local
 
 ```bash
 docker compose exec db psql -U bi_chatbot -d bi_chatbot -c "CREATE SCHEMA IF NOT EXISTS evolution;"
@@ -407,7 +393,13 @@ Depois, com o servidor e o worker de sempre rodando:
 
 ---
 
-## 6. Limites e riscos
+## 5. Limites e riscos
+
+**Espera sorteada antes de responder (2026-09-24).** Toda mensagem espera
+de 3 a 30 segundos, sorteados, antes de o Jarvis começar a atender (e antes
+do "digitando"): resposta que sempre começa no mesmo instante
+é padrão de robô. O `parar` continua imediato. Os limites são
+`WHATSAPP_ATRASO_MIN_S` e `WHATSAPP_ATRASO_MAX_S` (padrão 3 e 30).
 
 - **Protocolo não oficial:** a Evolution viola os termos do WhatsApp. O
   número pode ser restringido, e a sessão pode cair. O risco aqui é menor que
@@ -423,13 +415,13 @@ Depois, com o servidor e o worker de sempre rodando:
 
 ---
 
-## 7. Onde está cada peça (inventário)
+## 6. Onde está cada peça (inventário)
 
 Tudo o que foi construído **só para o WhatsApp**, em 2026-09-23. Nada disso
 foi commitado nem aplicado na AWS até o momento em que este inventário foi
 escrito.
 
-### 7.1 Infra na AWS (a criar; nomes finais)
+### 6.1 Infra na AWS (a criar; nomes finais)
 
 | Recurso | Nome | Onde está declarado |
 |---|---|---|
@@ -445,7 +437,7 @@ escrito.
 | Task do Jarvis | 2 GB de memória e as variáveis `EVOLUTION_*` e `WHATSAPP_*` | `modules/compute/jarvis.tf` e `infra/variables.tf` |
 | Logs | CloudWatch, prefixos `jarvis-evolution` (a Evolution) e `jarvis-worker` (o canal) | log group do cluster |
 
-### 7.2 Arquivos no `sales_force_crm` (branch `feat/infra-jarvis`)
+### 6.2 Arquivos no `sales_force_crm` (branch `feat/infra-jarvis`)
 
 | Arquivo | O que tem |
 |---|---|
@@ -458,7 +450,7 @@ escrito.
 | `infra/variables.tf` | imagem e tamanho da Evolution, número, @lid; Jarvis com 2 GB |
 | `infra/ecr.tf` | repositório `cockpit-prod-jarvis-evolution` |
 
-### 7.3 Arquivos no `bi/`: novos
+### 6.3 Arquivos no `bi/`: novos
 
 | Arquivo | O que faz |
 |---|---|
@@ -469,7 +461,7 @@ escrito.
 | `app/whatsapp/formato.py` | Markdown → marcação do WhatsApp; tabela legível no celular; divisão em partes |
 | `app/whatsapp/graficos.py` | gráfico em PNG com o `vl-convert` (Vega-Lite) |
 | `app/whatsapp/cliente.py` | cliente da Evolution: o real (HTTP) e o fake (testes) |
-| `app/whatsapp/aviso.py` | "Entendi: …" enquanto o Jarvis consulta |
+| `app/whatsapp/aviso.py` | "digitando…" enquanto o Jarvis consulta (o "Entendi: …" saiu em 2026-09-24) |
 | `app/whatsapp/config.py` | leitura das variáveis `EVOLUTION_*` e `WHATSAPP_*` |
 | `app/whatsapp/views.py`, `urls.py` | webhook `/api/whatsapp/webhook/<segredo>/` e página de conexão do Admin |
 | `app/whatsapp/templates/whatsapp/conexao.html` | a página de conexão (estado, QR, grupos, menções) |
@@ -489,7 +481,7 @@ escrito.
 | `tests/unit/test_whatsapp_entrada.py` | leitura do evento, formato e gráfico |
 | `tests/unit/test_whatsapp_cliente.py` | contrato HTTP com a Evolution |
 
-### 7.4 Arquivos no `bi/`: alterados
+### 6.4 Arquivos no `bi/`: alterados
 
 | Arquivo | O que mudou |
 |---|---|
@@ -507,6 +499,6 @@ escrito.
 | `tests/integration/test_exportacao_excel.py` | segue a planilha para o módulo novo |
 | `CLAUDE.md`, `docs/plan.md` (Fase 13 e pré-requisitos da Fase 9), `docs/open-decisions.md` (D-06, D-07, O-18) | documentação |
 
-### 7.5 Na máquina local
+### 6.5 Na máquina local
 - **Evolution local:** container `bi-evolution-1` (perfil `whatsapp`), parado.
 - **Schema `evolution`** no Postgres de desenvolvimento (`bi_chatbot`).
