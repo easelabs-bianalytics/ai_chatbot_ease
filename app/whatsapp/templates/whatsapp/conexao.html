@@ -6,10 +6,14 @@
     As mensagens não saem: o canal usa o cliente de teste.</p>
   {% endif %}
   {% if erro %}<p style="color:#E5484D">{{ erro }}</p>{% endif %}
+  {% if estado == "sem_instancia" %}
+    <p>A Evolution está no ar, mas a instância <code>jarvis</code> ainda não foi criada.
+    Clique em <strong>Configurar a instância</strong> (ou direto em <strong>Mostrar o QR</strong>, que cria antes).</p>
+  {% endif %}
   {% if mensagem %}<p style="color:#3FB868">{{ mensagem }}</p>{% endif %}
 
   <table>
-    <tr><th>Estado</th><td>{{ estado|default:"desconhecido" }}{% if estado == "open" %} — conectado{% endif %}</td></tr>
+    <tr><th>Estado</th><td>{% if estado == "sem_instancia" %}instância não criada{% else %}{{ estado|default:"desconhecido" }}{% endif %}{% if estado == "open" %} — conectado{% endif %}</td></tr>
     <tr><th>Conectado como</th><td>{{ conectado_como|default:"—" }}{% if nome_do_perfil %} ({{ nome_do_perfil }}){% endif %}</td></tr>
     <tr><th>Número do Jarvis</th><td>{{ numero|default:"(WHATSAPP_NUMERO_JARVIS vazio: só “@jarvis” escrito chama no grupo)" }}</td></tr>
     <tr><th>Identificador @lid</th><td>{{ lid|default:"(WHATSAPP_LID_JARVIS vazio)" }}</td></tr>

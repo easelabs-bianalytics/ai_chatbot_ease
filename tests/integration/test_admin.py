@@ -18,3 +18,12 @@ def test_listagem_do_admin_abre(admin_client, app_label, model_name):
     url = reverse(f"admin:{app_label}_{model_name}_changelist")
 
     assert admin_client.get(url).status_code == 200
+
+
+def test_secao_whatsapp_do_admin_tem_a_conexao(admin_client):
+    """2026-09-24: a página de conexão não aparecia na seção WhatsApp do
+    Admin; só se chegava pelo link."""
+    for url in ("/admin/", "/admin/whatsapp/"):
+        pagina = admin_client.get(url).content.decode()
+        assert "Conexão do WhatsApp" in pagina
+        assert "/admin/whatsapp/conexao/" in pagina

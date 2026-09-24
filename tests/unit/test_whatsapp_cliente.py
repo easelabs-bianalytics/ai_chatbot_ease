@@ -102,3 +102,18 @@ def test_lista_os_grupos_do_numero_para_o_cadastro():
 
     assert cliente.grupos() == [{"jid": "1@g.us", "nome": "BI"}, {"jid": "2@g.us", "nome": "Vendas NE"}]
     assert sessao.pedidos[0][1].endswith("/group/fetchAllGroups/jarvis?getParticipants=false")
+
+
+def test_instancia_que_nao_existe_nao_e_evolution_fora():
+    """2026-09-24, primeira abertura em produção: o 404 da instância ainda
+    não criada aparecia como "A Evolution não respondeu"."""
+    cliente, _ = _cliente(_Resposta({"message": "not found"}, status=404))
+
+    assert cliente.estado() == {"estado": "sem_instancia"}
+
+
+def test_evolution_fora_continua_sendo_erro():
+    cliente, _ = _cliente(_Resposta({}, status=500))
+
+    with pytest.raises(WhatsAppIndisponivel):
+        cliente.estado()

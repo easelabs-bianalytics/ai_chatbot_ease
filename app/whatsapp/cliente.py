@@ -38,6 +38,12 @@ class WhatsAppIndisponivel(Exception):
     segue: a resposta fica gravada no banco (e visível no chat web)."""
 
 
+class InstanciaInexistente(WhatsAppIndisponivel):
+    """A Evolution respondeu, mas a instância ainda não foi criada (404).
+    Em 2026-09-24, na primeira abertura da página de conexão em produção,
+    isso aparecia como "A Evolution não respondeu"."""
+
+
 @dataclass(frozen=True)
 class Citacao:
     """A mensagem que a resposta cita — num grupo, a pergunta de quem chamou."""
@@ -103,6 +109,8 @@ class EvolutionCliente(ClienteWhatsApp):
     def _get(self, caminho) -> dict:
         try:
             resposta = self._http.get(f"{self._base}{caminho}", headers={"apikey": self._chave}, timeout=TIMEOUT)
+            if resposta.status_code == 404 and f"/{self._instancia}" in caminho:
+                raise InstanciaInexistente(f"{caminho}: a instância {self._instancia} não existe")
             resposta.raise_for_status()
             return resposta.json() if resposta.content else {}
         except (requests.RequestException, ValueError) as exc:
@@ -148,7 +156,10 @@ class EvolutionCliente(ClienteWhatsApp):
             raise WhatsAppIndisponivel(f"arquivo em base64 inválido: {exc}") from exc
 
     def estado(self) -> dict:
-        corpo = self._get(f"/instance/connectionState/{self._instancia}")
+        try:
+            corpo = self._get(f"/instance/connectionState/{self._instancia}")
+        except InstanciaInexistente:
+            return {"estado": "sem_instancia"}
         estado = {"estado": (corpo.get("instance") or {}).get("state") or corpo.get("state") or "desconhecido"}
         try:
             instancias = self._get(f"/instance/fetchInstances?instanceName={self._instancia}")

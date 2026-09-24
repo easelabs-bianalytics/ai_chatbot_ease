@@ -78,6 +78,11 @@ def conexao(request):
                 # A lista é ajuda para o cadastro: sem ela, o resto da página vale.
                 contexto["grupos_do_numero"] = []
         if contexto.get("estado") not in ("open",) and request.GET.get("qr"):
+            if contexto.get("estado") == "sem_instancia":
+                # Pedir o QR sem a instância dava 404: ela é criada aqui,
+                # do mesmo jeito que o botão de configurar.
+                cliente.configurar(config.url_interna_do_webhook())
+                contexto.update(cliente.estado())
             contexto.update(cliente.conectar())
     except WhatsAppIndisponivel as exc:
         contexto["erro"] = f"A Evolution não respondeu: {exc}"

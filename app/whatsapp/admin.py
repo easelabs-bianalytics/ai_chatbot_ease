@@ -37,3 +37,24 @@ class EnvioWhatsAppAdmin(admin.ModelAdmin):
     list_filter = ("tipo",)
     search_fields = ("externo_id", "jid")
     readonly_fields = ("message", "externo_id", "jid", "tipo", "created_at")
+
+
+# A página de conexão é uma view solta (whatsapp.views.conexao), e o Admin só
+# lista modelos. Em 2026-09-24 ela não aparecia na seção WhatsApp e só se
+# chegava pelo link: esta linha a põe lá, no topo da seção.
+_lista_original = admin.site.get_app_list
+
+
+def _lista_com_conexao(request, app_label=None):
+    lista = _lista_original(request, app_label)
+    for app in lista:
+        if app.get("app_label") == "whatsapp":
+            app["models"].insert(0, {
+                "name": "Conexão do WhatsApp", "object_name": "Conexao",
+                "admin_url": reverse("whatsapp-conexao"), "add_url": None,
+                "view_only": True, "perms": {"view": True},
+            })
+    return lista
+
+
+admin.site.get_app_list = _lista_com_conexao
