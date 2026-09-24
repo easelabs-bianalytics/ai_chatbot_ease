@@ -133,8 +133,30 @@ aws rds wait db-snapshot-available --region sa-east-1 \
 ```
 
 Depois, rode `infra/rds/04_criar_schema_evolution.sql` com o master, pelo
-túnel. Troque o marcador da senha por uma gerada na hora
-(`openssl rand -hex 24`). A última consulta do script confere o resultado.
+túnel. A senha entra como variável do psql (`-v senha_evolution=...`),
+gerada na hora (`openssl rand -hex 24`), e vai direto para o secret
+`cockpit-prod-jarvis-evolution-db-uri` do passo 2. A última consulta do
+script confere o resultado.
+
+**✅ Feito em 2026-09-24.** Snapshot
+`cockpit-prod-db-antes-jarvis-evolution-20260924`; o secret
+`cockpit-prod-jarvis-evolution-db-uri` foi criado junto, com a senha gerada
+no mesmo comando (nunca impressa). O script precisou da mesma linha do schema
+`jarvis` (Fase 9, passo 1): `GRANT jarvis_evolution TO CURRENT_USER WITH SET
+TRUE, INHERIT FALSE`, sem a qual o `CREATE SCHEMA ... AUTHORIZATION` para em
+`must be able to SET ROLE`. Os avisos do `GRANT CONNECT` e do `REVOKE CREATE
+ON SCHEMA public` são esperados: o `CONNECT` já vem do `PUBLIC`, e o `public`
+já não aceita `CREATE` de ninguém.
+
+Prova, conectando como `jarvis_evolution` com a senha do secret:
+
+| Tentativa | O banco respondeu |
+|---|---|
+| `search_path` | `evolution` |
+| `CREATE TABLE` no `evolution` | funcionou |
+| `CREATE TABLE public.…` | `permission denied for schema public` |
+| `SELECT … FROM cddd.fato_cdd` | `permission denied for schema cddd` |
+| `SELECT … FROM jarvis.messaging_message` | `permission denied for schema jarvis` |
 
 ### Passo 2: três secrets
 São criados à mão, como os outros do Jarvis. Rode no WSL (bash):
@@ -148,10 +170,14 @@ aws secretsmanager create-secret --region sa-east-1 \
   --name cockpit-prod-jarvis-whatsapp-webhook-token \
   --secret-string "$(openssl rand -hex 32)"
 
+# ✅ já criado no passo 1 (2026-09-24), junto com a senha
 aws secretsmanager create-secret --region sa-east-1 \
   --name cockpit-prod-jarvis-evolution-db-uri \
   --secret-string 'postgresql://jarvis_evolution:<senha-do-passo-1>@<host-do-rds>:5432/easelabs?schema=evolution&sslmode=require'
 ```
+
+**✅ Os três existem desde 2026-09-24** (o `db-uri` saiu no passo 1). Valores
+gerados no próprio comando, nunca impressos.
 
 ⚠️ Os secrets precisam existir **antes** do passo 6. A task nova do Jarvis
 pede dois deles e, sem eles, fica presa em `ResourceInitializationError`.
@@ -166,6 +192,10 @@ terraform apply -target=aws_ecr_repository.jarvis_evolution \
                 -target=aws_ecr_lifecycle_policy.jarvis_evolution
 ```
 
+**✅ Feito em 2026-09-24.** `.tf` do WhatsApp commitados na
+`feat/infra-jarvis` (`0b975cb`, depois de trazer a `main`); `plan` com alvo:
+2 a criar, 0 a mudar, 0 a destruir; `apply` igual.
+
 ### Passo 4: espelhar a imagem
 A imagem vai para o ECR porque o Docker Hub tem limite de download por IP,
 que derruba o start da task. A versão é fixa (v2.3.7, a validada).
@@ -178,6 +208,10 @@ docker tag evoapicloud/evolution-api:v2.3.7 \
   595324409476.dkr.ecr.sa-east-1.amazonaws.com/cockpit-prod-jarvis-evolution:v2.3.7
 docker push 595324409476.dkr.ecr.sa-east-1.amazonaws.com/cockpit-prod-jarvis-evolution:v2.3.7
 ```
+
+**✅ Feito em 2026-09-24.** `cockpit-prod-jarvis-evolution:v2.3.7` no ECR,
+`linux/amd64`, 388 MB. O aviso do `push` ("Not all multiplatform-content is
+present") é esperado: só a plataforma do Fargate foi baixada.
 
 ### Passo 5: imagem do Jarvis e migrações
 É o deploy de sempre (Fase 9, passos 8 a 10):

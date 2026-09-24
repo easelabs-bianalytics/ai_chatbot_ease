@@ -234,9 +234,10 @@ na `main` do `sales_force_crm`
 **Pré-requisitos dos próximos deploys** (entram aqui assim que surgem):
 
 - [ ] **WhatsApp (Fase 13, ADR-0028):**
-  - snapshot, depois a role e o schema `evolution` (script 04, D-07);
-  - três secrets novos;
-  - repositório ECR e espelho da imagem da Evolution;
+  - [x] snapshot, depois a role e o schema `evolution` (script 04, D-07) — 2026-09-24;
+  - [x] três secrets novos — 2026-09-24;
+  - [x] repositório ECR e espelho da imagem da Evolution — 2026-09-24
+    (`.tf` em `0b975cb` na `feat/infra-jarvis`);
   - `migrate` de `conversations.0004`, `messaging.0007` e `whatsapp.0001`;
   - `apply` com alvo nos recursos da Evolution e na task do Jarvis (que
     sobe para 2 GB).
