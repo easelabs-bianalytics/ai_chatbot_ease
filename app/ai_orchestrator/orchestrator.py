@@ -743,7 +743,7 @@ def _redigir(plano, resultado, message, provider, catalog, auditoria, historico,
 
 
 
-def _ler_imagem(message, provider, auditoria, historico) -> _Decisao | None:
+def _ler_imagem(message, provider, auditoria, historico, critica: bool = False) -> _Decisao | None:
     """Caminho da imagem anexada (ADR-0024).
 
     Dois desfechos:
@@ -790,6 +790,15 @@ def _ler_imagem(message, provider, auditoria, historico) -> _Decisao | None:
         return None
 
     texto = (leitura.resposta or "").strip()
+    if critica and texto and not _vazou_instrucoes(texto):
+        # Print da resposta anterior com uma crítica: a leitura diz o que
+        # está errado, e o caminho normal refaz (conversa 22). Em memória,
+        # como em `_imagem_vira_pedido`: no banco fica o que a pessoa
+        # escreveu, com a imagem.
+        message.content = f"{message.content}\n\nO que o print da sua resposta anterior mostra: {texto}"
+        message.anexo_tipo = ""
+        auditoria.extras["imagem"] = {"leitura": leitura.leitura, "virou": "correcao"}
+        return None
     if _vazou_instrucoes(texto):
         logger.warning("A leitura da imagem repetiu o prompt; usando o texto de recusa")
         return _Decisao(
@@ -1828,11 +1837,18 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
 
     historico = _historico(message)
 
+    # Crítica à resposta anterior ("que coisa feia!!", com ou sem print): a
+    # versão corrigida sai agora, sem a pessoa pedir de novo (conversa 22).
+    critica = autocritica.e_critica(message.content) and _consulta_anterior(message) is not None
+    nota_da_critica = autocritica.NOTA_DA_CRITICA if critica else ""
+    if critica:
+        auditoria.extras["critica_da_resposta_anterior"] = True
+
     if message.anexo_tipo == Message.Anexo.IMAGEM:
         # Imagem é outro caminho, com um décimo do custo (ADR-0024) — a menos
         # que o pedido precise do banco; aí ela vira pergunta ou planilha e
         # o caminho normal segue daqui.
-        decisao = _ler_imagem(message, provider, auditoria, historico)
+        decisao = _ler_imagem(message, provider, auditoria, historico, critica=critica)
         if decisao is not None:
             return decisao
     elif not message.anexo_tipo:
@@ -1844,6 +1860,7 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
             history=historico,
             # Só a FORMA da planilha sobe ao modelo; o conteúdo fica aqui.
             planilha=_planilha(message),
+            autocritica_note=nota_da_critica,
         )
     )
     for tentativa in plano.tentativas:
@@ -1857,10 +1874,25 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
         plano = provider.plan(
             PlanRequest(
                 question=message.content, history=historico, full_context=True,
-                planilha=_planilha(message),
+                planilha=_planilha(message), autocritica_note=nota_da_critica,
             )
         )
         auditoria.chamada(AICall.Stage.FIX, plano.usage)
+
+    if critica and plano.intent == Plan.Intent.CONVERSATION:
+        # Mesmo avisado, o planejador só reconheceu o erro. Uma segunda
+        # chance, dizendo isso; é o que "Faça então amigo!!" fez na mão.
+        logger.info("Crítica à resposta anterior respondida com conversa; replanejando")
+        plano = provider.plan(
+            PlanRequest(
+                question=message.content, history=historico, planilha=_planilha(message),
+                autocritica_note=nota_da_critica + (
+                    "\n\nVocê já respondeu a esta crítica só com conversa, e isso deixa a "
+                    "pessoa sem a correção. Refaça a consulta e o gráfico agora."
+                ),
+            )
+        )
+        auditoria.chamada(AICall.Stage.SELF_CHECK, plano.usage)
 
     # O plano já foi pago quando voltou; o que a parada evita daqui para a
     # frente é a consulta ao banco e a redação (~US$ 0,015), e numa

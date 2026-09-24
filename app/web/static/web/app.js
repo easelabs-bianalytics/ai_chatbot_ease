@@ -1369,6 +1369,8 @@
     title: { color: token('--gray-900'), fontSize: 13, anchor: 'start' },
     view: { stroke: null },
     mark: { color: CORES[0] },
+    // Rótulo de pizza e de barra: sem isto saía escuro no tema escuro.
+    text: { color: token('--gray-700'), fontSize: 11 },
   });
 
   const VEGAS = new Map();   // div -> view, para refazer ao trocar de tema

@@ -1646,6 +1646,42 @@ para os exemplos das conversas 14 e 15:
 - [x] `uv run pytest`: 821 passaram
 - [ ] Ir ao ar
 
+### Tendência plana, gráfico feio e crítica sem correção (2026-09-24, conversa 22)
+
+- [x] **O incidente:**
+  - "barras com uma linha de tendência" das unidades da Marta Eloisa: linha
+    quase horizontal e barras finas;
+  - o print com "que coisa feia!!" voltou só com o Jarvis concordando, e o
+    gráfico corrigido só saiu com "Faça então amigo!! por favor". Nele, a
+    primeira barra invadia o eixo Y;
+  - pizza e rosca de agosto com os rótulos das fatias zeradas empilhados no
+    topo
+- [x] **Causas:**
+  - a regressão (`REGR_SLOPE`) incluiu setembro, parcial (150 contra 343–366
+    dos meses cheios): +0,85/mês no lugar de uma alta clara;
+  - barra em eixo `temporal` tem a largura de um dia; com `size` fixo, a de
+    janeiro sai antes do começo do eixo;
+  - mensagem com imagem ia para a leitura de imagem, que só descreve;
+  - rótulo em toda fatia, inclusive as zeradas, e sem `stack` (o rótulo caía
+    no começo da fatia)
+- [x] **Correção:**
+  - crítica à resposta anterior (`autocritica.e_critica`), com ou sem print,
+    refaz: o planejador recebe o aviso e, se mesmo assim responder com
+    conversa, ganha uma segunda chance; o print vira contexto da correção;
+  - polimento determinístico no `vega.py`: barra mensal vira faixa do mês
+    (`ordinal` + `yearmonth`, sem `size`); linha sobre barras em laranja,
+    tracejada quando é tendência, projeção ou meta; pizza sem fatia zerada,
+    com `stack` e sem rótulo abaixo de 3%;
+  - planejador (12.1): tendência e projeção só com meses fechados, a reta
+    pelos mínimos quadrados sobre o índice do mês, e o racional à escolha da
+    IA (reta, média móvel, crescimento médio, sazonalidade);
+  - tela: rótulo de texto do Vega com a cor do tema
+- [x] Conferido com as especificações e os dados reais da conversa 22,
+      desenhados na tela (temas claro e escuro) e no PNG do WhatsApp
+- [x] `uv run pytest`: 850 passaram
+- [ ] `run_synthetic_cases` (os prompts mudaram)
+- [ ] Ir ao ar
+
 ## Fase 13 — Jarvis no WhatsApp (ADR-0028)
 **Status: 🟡 código e infra prontos, sem deploy e sem número conectado (2026-09-23)**
 

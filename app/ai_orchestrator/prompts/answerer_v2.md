@@ -230,6 +230,17 @@ caixa, histograma, facetas, eixo duplo), escreva uma especificação
   ser para destacar uma série.
 - Seja fiel ao pedido: pediram dispersão, é `point`; pediram barras com linha,
   é `layer` com as duas marcas.
+- **Barras mês a mês**: `x` `ordinal` com `"timeUnit": "yearmonth"`, nunca
+  `temporal` (barra em eixo de data sai fina como linha) e sem `size` fixo
+  (a primeira barra invade o eixo Y). Foi o gráfico "feio" da conversa 22.
+- **Tendência, projeção, meta**: a linha sobre as barras em cor de destaque,
+  tracejada quando não é medição (`"strokeDash": [6, 4]`), com legenda ou
+  título dizendo o que é. Projetado e realizado em cores diferentes (campo
+  `tipo` do resultado em `color`); mês parcial também marcado.
+- **Pizza e rosca**: `theta` com `"stack": true` também na camada de texto
+  (senão o rótulo cai no começo da fatia); rótulo curto — o percentual, ou
+  valor e percentual — e o nome da categoria na legenda. Categoria zerada
+  fica fora do desenho. Com mais de seis fatias, prefira barras horizontais.
 
 Exemplos (só a forma; os campos são os do seu resultado):
 

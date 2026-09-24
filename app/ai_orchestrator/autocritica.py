@@ -12,6 +12,8 @@ Nome de coluna não conta — trocar `vendas` por `vendas_total` e devolver os
 mesmos valores é exatamente o erro que se quer pegar.
 """
 
+import re
+import unicodedata
 from dataclasses import dataclass
 
 # O que o planejador diz do seguimento (campo `seguimento` do plano).
@@ -72,3 +74,44 @@ NAO_MUDOU = (
     "a consulta refeita devolveu os mesmos números da resposta anterior; diga isso logo no "
     "começo e explique por que o pedido não mudou o resultado"
 )
+
+
+# --------------------------------------------------- crítica da resposta
+
+# Na conversa 22 (2026-09-24), "Veja o visual que criou, que coisa feia!!",
+# com o print, voltou com o Jarvis concordando e descrevendo o que refaria, e
+# só "Faça então amigo!! por favor" trouxe o gráfico corrigido. Crítica à
+# resposta anterior é pedido de correção: a versão corrigida sai na hora.
+# Mensagem longa é pergunta nova, mesmo com uma dessas palavras no meio.
+MAX_LETRAS_DA_CRITICA = 240
+
+_CRITICA = re.compile(
+    r"\b(?:feio|feia|horrivel|pessim[oa]|ruim|mal feito|poluid[oa]|ilegive(?:l|is)|sobrepost\w*"
+    r"|errad[oa]s?|incorret[oa]s?|nao (?:ficou|gostei|e isso|era isso|esta certo|bate|funcionou"
+    r"|apareceu|veio|fez|faz sentido|ta bom|esta bom)|faltou|esqueceu"
+    r"|corrij\w*|corrig\w*|consert\w*|arrum\w*|refa(?:ca|z|zer)|melhore|melhora (?:isso|o|a|esse|essa))\b"
+)
+
+
+def _normalizar(texto: str) -> str:
+    sem_acento = unicodedata.normalize("NFD", (texto or "").lower())
+    return " ".join("".join(c for c in sem_acento if unicodedata.category(c) != "Mn").split())
+
+
+def e_critica(mensagem: str) -> bool:
+    """A mensagem reclama da resposta anterior ou pede que ela seja corrigida."""
+    texto = _normalizar(mensagem)
+    return bool(texto) and len(texto) <= MAX_LETRAS_DA_CRITICA and bool(_CRITICA.search(texto))
+
+
+NOTA_DA_CRITICA = (
+    "A pessoa criticou a sua resposta anterior (o número, a tabela, o gráfico ou o texto). "
+    "Releia o histórico e a consulta que a sustentou, descubra o que ficou errado — "
+    "confira a consulta, o período (mês parcial entrou onde não devia?), o formato do "
+    "resultado e o desenho do gráfico — e **entregue agora a versão corrigida**: "
+    "`answer_with_data`, com a consulta e o gráfico refeitos. Não responda só "
+    "reconhecendo o erro nem dizendo o que vai fazer: a pessoa não deveria precisar pedir "
+    "de novo. Se a mensagem não for uma crítica à resposta anterior, e sim uma pergunta "
+    "nova, ignore este aviso."
+)
+

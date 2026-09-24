@@ -114,6 +114,143 @@ def _textos_sem_fonte(spec, columns, rows, question, sql):
     return limpar(spec)
 
 
+# ------------------------------------------------ polimento do desenho
+#
+# Padrões que o modelo escreve e que o Vega desenha mal. Corrigidos aqui, sem
+# chamada de modelo, porque são sempre o mesmo erro (conversa 22, 2026-09-24).
+
+
+def _tipo_da_marca(unidade) -> str:
+    marca = unidade.get("mark")
+    return marca.get("type", "") if isinstance(marca, dict) else (marca or "")
+
+
+def _unidades(spec) -> list:
+    """A especificação e as camadas dela: onde marcas e eixos moram."""
+    camadas = [c for c in spec.get("layer") or () if isinstance(c, dict)]
+    return [spec, *camadas]
+
+
+def _canal(unidade, spec, nome) -> dict:
+    """O canal (x, theta, text...) da camada, ou o herdado da especificação."""
+    for dono in (unidade, spec):
+        canal = (dono.get("encoding") or {}).get(nome)
+        if isinstance(canal, dict):
+            return canal
+    return {}
+
+
+def _e_mensal(valor) -> bool:
+    texto = str(valor or "")
+    return len(texto) >= 10 and texto[4] == "-" and texto[8:10] == "01"
+
+
+def _barras_mensais(spec, columns, rows) -> dict:
+    """Barra em eixo de data sai com a largura de um dia, fina como linha; e
+    com largura fixa (`size`), a primeira barra invade o eixo Y. Mês a mês é
+    categoria ordenada: cada mês ganha a sua faixa, e a linha (de tendência,
+    de meta) cai no meio dela."""
+    unidades = _unidades(spec)
+    campos = {
+        _canal(u, spec, "x").get("field")
+        for u in unidades
+        if _tipo_da_marca(u) == "bar" and _canal(u, spec, "x").get("type") == "temporal"
+    } - {None}
+    campos = {
+        c for c in campos
+        if c in columns and rows and all(_e_mensal(linha[columns.index(c)]) for linha in rows)
+    }
+    if not campos:
+        return spec
+    for dono in unidades:
+        x = (dono.get("encoding") or {}).get("x")
+        if isinstance(x, dict) and x.get("field") in campos and x.get("type") == "temporal":
+            x["type"] = "ordinal"
+            x.setdefault("timeUnit", "yearmonth")
+            if isinstance(x.get("axis"), dict) or "axis" not in x:
+                eixo = x.setdefault("axis", {})
+                if isinstance(eixo, dict):
+                    eixo.setdefault("labelAngle", 0)
+        marca = dono.get("mark")
+        if isinstance(marca, dict) and marca.get("type") == "bar":
+            marca.pop("size", None)
+            marca.pop("width", None)
+    return spec
+
+
+# A linha sobre as barras, numa cor que se destaca delas nos dois temas.
+COR_DA_LINHA_SOBRE_BARRAS = "#F97316"
+_TRACEJADA = ("tendencia", "tendência", "projec", "projeç", "previs", "meta")
+
+
+def _linha_sobre_barras(spec) -> dict:
+    """Linha (tendência, projeção, meta) sobre barras, sem cor própria, saía
+    da mesma cor das barras e sumia atrás delas. Ganha cor de destaque, e a
+    de tendência ou projeção sai tracejada: não é medição."""
+    unidades = _unidades(spec)
+    if not any(_tipo_da_marca(u) == "bar" for u in unidades):
+        return spec
+    for unidade in unidades:
+        if _tipo_da_marca(unidade) != "line" or "color" in (unidade.get("encoding") or {}):
+            continue
+        marca = unidade["mark"] if isinstance(unidade.get("mark"), dict) else {"type": "line"}
+        unidade["mark"] = marca
+        marca.setdefault("color", COR_DA_LINHA_SOBRE_BARRAS)
+        if marca.get("point") is True:
+            marca["point"] = {"color": marca["color"]}
+        elif isinstance(marca.get("point"), dict):
+            marca["point"].setdefault("color", marca["color"])
+        campo = str(_canal(unidade, spec, "y").get("field") or "").lower()
+        if any(p in campo for p in _TRACEJADA):
+            marca.setdefault("strokeDash", [6, 4])
+    return spec
+
+
+# Fatia menor que isto não ganha rótulo: o nome dela fica na legenda.
+MENOR_FATIA_COM_ROTULO = 0.03
+
+
+def _rotulos_da_pizza(spec, columns) -> dict:
+    """Pizza e rosca com rótulo em cada fatia: as fatias zeradas e as
+    pequenas empilhavam os rótulos no topo, ilegíveis. Fatia zerada sai do
+    desenho; fatia pequena fica sem rótulo."""
+    unidades = _unidades(spec)
+    arcos = [u for u in unidades if _tipo_da_marca(u) == "arc"]
+    if not arcos:
+        return spec
+    angulo = _canal(arcos[0], spec, "theta").get("field")
+    if angulo not in columns:
+        return spec
+    filtro = {"filter": f"datum[{json.dumps(angulo)}] > 0"}
+    spec["transform"] = [*(spec.get("transform") or []), filtro]
+    for unidade in unidades:
+        if _tipo_da_marca(unidade) != "text":
+            continue
+        texto = ((unidade.get("encoding") or {}).get("text") or {})
+        campo = texto.get("field") if isinstance(texto, dict) else None
+        if not campo or _canal(unidade, spec, "theta").get("field") != angulo:
+            continue
+        # Sem `stack`, o rótulo cai no começo da fatia, em cima da vizinha. E
+        # texto em preto fixo some no tema escuro: a cor fica com o tema.
+        for dono in (unidade, *arcos):
+            theta = (dono.get("encoding") or {}).get("theta")
+            if isinstance(theta, dict):
+                theta.setdefault("stack", True)
+        (unidade.get("encoding") or {}).pop("color", None)
+        unidade["transform"] = [
+            *(unidade.get("transform") or []),
+            {"joinaggregate": [{"op": "sum", "field": angulo, "as": "__total_das_fatias"}]},
+            {"calculate": (
+                f"datum[{json.dumps(angulo)}] / datum.__total_das_fatias < {MENOR_FATIA_COM_ROTULO}"
+                f" ? '' : datum[{json.dumps(campo)}]"
+            ), "as": campo},
+        ]
+        marca = unidade.get("mark")
+        if isinstance(marca, dict):
+            marca.setdefault("fontSize", 11)
+    return spec
+
+
 def validar(bruto, columns, rows, question: str, sql: str) -> dict | None:
     """A especificação pronta para a tela, ou None se não der para confiar nela."""
     if isinstance(bruto, str):
@@ -137,4 +274,8 @@ def validar(bruto, columns, rows, question: str, sql: str) -> dict | None:
         # Campo que o resultado não tem desenharia um gráfico vazio, ou
         # pior, um gráfico de outra coisa.
         return None
-    return _textos_sem_fonte(spec, columns, rows, question, sql)
+    spec = _textos_sem_fonte(spec, columns, rows, question, sql)
+    columns = list(columns)
+    spec = _barras_mensais(spec, columns, rows)
+    spec = _linha_sobre_barras(spec)
+    return _rotulos_da_pizza(spec, columns)

@@ -489,6 +489,15 @@ consulta nem desenha nada, então a promessa fica no ar — e foi isso que, em
 gráfico. Se a pessoa pediu algo que exige dado ou gráfico, a intenção é
 `answer_with_data`, e você faz agora.
 
+**Crítica à sua resposta é pedido de correção.** "Que coisa feia", "está
+errado", "não ficou bom", "não era isso", com ou sem print: descubra o que
+ficou errado (a consulta, o período, o formato do resultado, o desenho do
+gráfico) e entregue a versão corrigida **nesta** resposta, com
+`answer_with_data`. Em 2026-09-24 (conversa 22), o Jarvis concordou com a
+crítica, descreveu o que faria e só entregou quando a pessoa pediu "Faça
+então amigo!! por favor". Reconhecer o erro sem corrigir é o mesmo que não
+responder.
+
 **"?", "e aí?", "cadê?" depois de uma resposta sua** quase sempre cobram o que
 ficou faltando nela. Leia o histórico e entregue o que faltou; não peça para a
 pessoa reescrever a pergunta.
@@ -579,6 +588,25 @@ série quantitativa. Não recuse nem mande a pessoa para outro app.
 - **Projeção não é medição.** O resultado tem de deixar claro o que é
   histórico e o que é projetado (uma coluna `tipo` com "realizado" e
   "projetado", por exemplo).
+- **Tendência e projeção só com meses fechados.** O mês corrente, parcial,
+  fica fora do cálculo — ou entra projetado pelo ritmo dos dias com carga,
+  nunca como mês cheio. Em 2026-09-24 (conversa 22), a reta de tendência de
+  jan–set incluiu setembro com 150 unidades contra 343–366 dos meses cheios e
+  saiu quase horizontal, escondendo uma alta clara. O mês parcial pode
+  aparecer no resultado, marcado (`tipo` = "parcial"), mas não entra na conta.
+- **Linha de tendência** é a reta dos mínimos quadrados sobre os meses
+  fechados: `REGR_SLOPE(valor, indice)` e `REGR_INTERCEPT(valor, indice)`,
+  com `indice` = número do mês na série (1, 2, 3…), e a coluna
+  `tendencia` = intercepto + inclinação × índice, em cada mês. Traga também a
+  inclinação (a variação por mês), que é o que a redação vai citar.
+- **Estender a tendência** para os meses seguintes é projeção: gere os meses
+  com `generate_series` e calcule a mesma reta neles, com `tipo` =
+  "projetado".
+- **Você escolhe o racional** e diz qual usou em `entendimento`: reta de
+  tendência, média móvel de 3 meses, crescimento médio mês a mês, mesmo mês
+  do ano anterior mais o crescimento do ano (sazonalidade), ritmo do mês
+  corrente. Pedido de "tendência", "projeção", "previsão", "para onde vai",
+  "linha de evolução" são todos isso: escolha o que o dado sustenta.
 - **`ressalva_forecast`: marque `true` quando a projeção for de Sell Out ou de
   Sell In da Ease** — e só nesses dois casos. O sistema acrescenta à resposta
   a orientação de conferir o dashboard de Forecast de Reposição, que é a
