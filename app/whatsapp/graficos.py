@@ -83,8 +83,16 @@ def de_simples(grafico: dict, dados: dict) -> dict | None:
     temporal = _temporal([r.get(x) for r in linhas])
     transformacoes = []
 
+    avisos = []
     if not temporal and not grupo and tipo != "pizza":
-        linhas = linhas[: grafico.get("limite") or MAX_CATEGORIAS]
+        corte = grafico.get("limite") or MAX_CATEGORIAS
+        if len(linhas) > corte:
+            # Cortava sem dizer (2026-09-25); a tela avisa "Mostrando 14 de N".
+            avisos.append(f"Mostrando {corte} de {len(linhas)}; a lista inteira está na planilha.")
+        linhas = linhas[:corte]
+    if grafico.get("series_de_fora"):
+        avisos.append(f"{min(len(series), 3)} de {min(len(series), 3) + len(grafico['series_de_fora'])} séries; "
+                      "as demais estão na planilha.")
 
     medida, cor = series[0], None
     subtitulo, ordem = "", []
@@ -105,15 +113,28 @@ def de_simples(grafico: dict, dados: dict) -> dict | None:
         medida, cor = "_valor", "_serie"
 
     if tipo == "pizza":
-        linhas = sorted(linhas, key=lambda r: -(r.get(medida) or 0))[:MAX_FATIAS]
+        # A mesma categoria em várias linhas é uma fatia só; e o que passa das
+        # 8 maiores vira "Outras", como na tela. Antes o resto era descartado
+        # e as proporções da pizza ficavam erradas (2026-09-25).
+        totais = {}
+        for r in linhas:
+            chave = str(r.get(x) if r.get(x) is not None else "Sem categoria")
+            totais[chave] = totais.get(chave, 0) + (r.get(medida) or 0)
+        ordenadas = sorted(totais.items(), key=lambda par: -par[1])
+        fatias = [{x: nome, medida: valor} for nome, valor in ordenadas[:MAX_FATIAS]]
+        resto = ordenadas[MAX_FATIAS:]
+        if resto:
+            fatias.append({x: "Outras", medida: sum(valor for _, valor in resto)})
+            avisos.append(f"{len(resto)} {'fatia menor está somada' if len(resto) == 1 else 'fatias menores estão somadas'} em \"Outras\".")
+        titulo = grafico.get("titulo") or ""
         return {
-            "data": {"values": linhas},
+            "data": {"values": fatias},
             "mark": {"type": "arc", "innerRadius": 60},
             "encoding": {
                 "theta": {"field": medida, "type": "quantitative"},
                 "color": {"field": x, "type": "nominal", "title": None, "sort": None},
             },
-            "title": grafico.get("titulo") or "",
+            "title": {"text": titulo, "subtitle": " ".join(avisos)} if avisos else titulo,
         }
 
     eixo_x = {"field": x, "type": "temporal" if temporal else "nominal", "title": None}
@@ -166,6 +187,7 @@ def de_simples(grafico: dict, dados: dict) -> dict | None:
         spec = {"data": spec["data"], "transform": transformacoes,
                 "facet": faceta, "columns": colunas_do_grid,
                 "spec": interno, "resolve": {"scale": {"y": "shared"}}}
+    subtitulo = " ".join(filter(None, [subtitulo, *avisos]))
     spec["title"] = {"text": grafico.get("titulo") or "", "subtitle": subtitulo} if subtitulo else (grafico.get("titulo") or "")
     return spec
 

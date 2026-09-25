@@ -50,10 +50,19 @@ class Pagina:
     nome: str
     colunas: tuple
     linhas: int
+    # Colunas além de MAX_COLUNAS: não são lidas. Antes sumiam sem aviso
+    # (2026-09-25); agora o resumo manda dizer quais ficaram de fora.
+    colunas_de_fora: int = 0
 
     def descrever(self, teto: int) -> str:
         cobertura = " (a amostra abaixo traz todas elas)" if self.linhas <= LINHAS_DE_AMOSTRA else ""
         partes = [f"Linhas de dados: {self.linhas}{cobertura}", "Colunas (nome · tipo · exemplos):"]
+        if self.colunas_de_fora:
+            partes.insert(0, (
+                f"ATENÇÃO: a aba tem {len(self.colunas) + self.colunas_de_fora} colunas e só as primeiras "
+                f"{len(self.colunas)} foram lidas; as outras {self.colunas_de_fora} não entram na resposta "
+                "nem no preenchimento. Diga isso na resposta."
+            ))
         for coluna in self.colunas:
             # Coluna de texto costuma ser a chave (rede, representante,
             # produto): vão as oito linhas de amostra, e numa planilha
@@ -203,6 +212,13 @@ def validar_nome(nome: str) -> None:
         )
 
 
+class _Linhas(list):
+    """As linhas lidas, lembrando a largura original (antes do corte de
+    MAX_COLUNAS)."""
+
+    largura = 0
+
+
 def _linhas_do_csv(dados: bytes) -> list:
     try:
         texto = dados.decode("utf-8-sig")
@@ -217,8 +233,9 @@ def _linhas_do_csv(dados: bytes) -> list:
     except csv.Error:
         delimitador = ";" if amostra.count(";") > amostra.count(",") else ","
     leitor = csv.reader(io.StringIO(texto), delimiter=delimitador)
-    linhas = []
+    linhas = _Linhas()
     for linha in leitor:
+        linhas.largura = max(linhas.largura, len(linha))
         linhas.append(linha[:MAX_COLUNAS])
         if len(linhas) > MAX_LINHAS + 1:  # +1 pelo cabeçalho
             raise AnexoRecusado(
@@ -242,8 +259,13 @@ def _linhas_do_xlsx(dados: bytes) -> tuple:
         total = 0
         abas = []
         for aba in livro.worksheets:
-            linhas = []
+            linhas = _Linhas()
             for linha in aba.iter_rows(values_only=True):
+                # Só conta a largura até a última célula preenchida: o Excel
+                # costuma devolver colunas vazias à direita.
+                preenchidas = [i for i, v in enumerate(linha) if v not in (None, "")]
+                if preenchidas:
+                    linhas.largura = max(linhas.largura, preenchidas[-1] + 1)
                 linhas.append(tuple(linha[:MAX_COLUNAS]))
                 total += 1
                 # O limite é da pasta de trabalho inteira, não de cada aba:
@@ -272,7 +294,8 @@ def _pagina(nome_da_aba: str, linhas) -> Pagina | None:
         valores = [linha[indice] if indice < len(linha) else None for linha in corpo]
         amostra = [v for v in valores[:LINHAS_DE_AMOSTRA] if v not in (None, "")]
         colunas.append(Coluna(nome=rotulo, tipo=_tipo(valores), exemplos=tuple(amostra)))
-    return Pagina(nome=nome_da_aba, colunas=tuple(colunas), linhas=len(corpo))
+    de_fora = max(0, getattr(linhas, "largura", 0) - MAX_COLUNAS)
+    return Pagina(nome=nome_da_aba, colunas=tuple(colunas), linhas=len(corpo), colunas_de_fora=de_fora)
 
 
 def ler_estrutura(nome: str, dados: bytes) -> Estrutura:

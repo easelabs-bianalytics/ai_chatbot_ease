@@ -30,21 +30,60 @@ class Planilha:
     linhas: int = 0
     erro: str = ""
     status: int = 200
+    # Passou até das 50.000 linhas: o arquivo avisa dentro, e quem o manda
+    # (WhatsApp) avisa na legenda.
+    cortada: bool = False
 
 
-def gerar(resposta, user, executor) -> Planilha:
+def consulta_principal(reply):
+    """A consulta que responde a pergunta: a última bem-sucedida que NÃO é a
+    do preenchimento da planilha anexada.
+
+    O preenchimento roda depois, com outra forma, e era ele que o gráfico e a
+    planilha liam — o gráfico saía com as 5 linhas da amostra dele
+    (2026-09-25)."""
+    if reply is None:
+        return None
+    sucesso = list(reply.query_runs.filter(status=QueryRun.Status.SUCCESS).order_by("-attempt"))
+    for consulta in sucesso:
+        if "preenchimento" not in (consulta.result_sample or {}):
+            return consulta
+    return sucesso[0] if sucesso else None
+
+
+def _consulta_da_tabela(reply, indice):
+    """(sql, referência) da tabela `indice` de uma resposta em blocos.
+
+    Cada tabela guarda a sua consulta desde 2026-09-25. Resposta antiga, sem
+    ela: só a de uma consulta dá para refazer com segurança."""
+    raw = reply.raw_response or {}
+    dados = (raw.get("dados_blocos") or {}).get(str(indice)) or {}
+    if dados.get("sql"):
+        return dados["sql"], raw.get("reference_query_id", "")
+    if len(raw.get("dados_blocos") or {}) <= 1 and not raw.get("entregas") and not raw.get("investigacao"):
+        principal = consulta_principal(reply)
+        if principal is not None:
+            return principal.sql, principal.reference_query_id
+    return None, None
+
+
+def gerar(resposta, user, executor, consulta=None) -> Planilha:
+    """`consulta`: o índice da tabela da resposta em blocos. Sem ele, a
+    consulta principal da resposta."""
     pergunta = resposta.in_reply_to
     reply = getattr(pergunta, "ai_reply", None) if pergunta is not None else None
-    consulta = (
-        reply.query_runs.filter(status=QueryRun.Status.SUCCESS).order_by("-attempt").first()
-        if reply is not None
-        else None
-    )
-    if consulta is None:
+    if reply is None:
+        return Planilha(erro="esta resposta não tem dados para exportar", status=404)
+    if consulta is not None:
+        sql, referencia = _consulta_da_tabela(reply, consulta)
+    else:
+        principal = consulta_principal(reply)
+        sql, referencia = (principal.sql, principal.reference_query_id) if principal else (None, None)
+    if not sql:
         return Planilha(erro="esta resposta não tem dados para exportar", status=404)
 
-    registro = DataExport(user=user, message=resposta, sql=consulta.sql)
-    guard = validate_sql(consulta.sql, get_catalog(), max_rows=EXPORT_MAX_ROWS)
+    registro = DataExport(user=user, message=resposta, sql=sql)
+    guard = validate_sql(sql, get_catalog(), max_rows=EXPORT_MAX_ROWS)
     if not guard.approved:
         registro.status, registro.error = DataExport.Status.ERROR, guard.reason
         registro.save()
@@ -71,8 +110,8 @@ def gerar(resposta, user, executor) -> Planilha:
             "gerada_em": agora.strftime("%d/%m/%Y %H:%M"),
             "linhas": resultado.row_count,
             "observacao": observacao,
-            "referencia": consulta.reference_query_id,
-            "sql": consulta.sql,
+            "referencia": referencia,
+            "sql": sql,
         },
     )
 
@@ -83,4 +122,5 @@ def gerar(resposta, user, executor) -> Planilha:
     registro.save()
 
     nome = slugify(resposta.conversation.title or pergunta.content)[:50] or "consulta"
-    return Planilha(conteudo=conteudo, nome=f"jarvis_{nome}_{agora:%Y%m%d-%H%M}.xlsx", linhas=resultado.row_count)
+    return Planilha(conteudo=conteudo, nome=f"jarvis_{nome}_{agora:%Y%m%d-%H%M}.xlsx", linhas=resultado.row_count,
+                    cortada=bool(resultado.truncated))

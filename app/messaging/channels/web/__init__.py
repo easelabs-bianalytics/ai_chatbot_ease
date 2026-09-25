@@ -4,7 +4,9 @@ from messaging.channels.base import Channel, DeliveryResult, InboundMessage
 
 # Acima disto não é pergunta: é texto colado por engano, ou tentativa de
 # encher o contexto do modelo. O limite protege o custo da chamada de IA.
-MAX_QUESTION_CHARS = 2000
+# 8.000: um áudio de 3 minutos transcrito passa de 2.000, e pergunta longa
+# (colar uma lista, um e-mail) não pode ser recusada por isso (2026-09-25).
+MAX_QUESTION_CHARS = 8000
 MAX_CLIENT_MESSAGE_ID_CHARS = 100
 
 

@@ -21,9 +21,13 @@ def montar(resposta, mostrar_custo: bool = False):
         return None
 
     consultas = sorted(reply.query_runs.all(), key=lambda q: q.attempt)
+    # A consulta que responde a pergunta, não a do preenchimento da planilha,
+    # que roda depois (ver `planilha_da_resposta.consulta_principal`).
     executada = next(
-        (q for q in reversed(consultas) if q.status == QueryRun.Status.SUCCESS), None
-    )
+        (q for q in reversed(consultas)
+         if q.status == QueryRun.Status.SUCCESS and "preenchimento" not in (q.result_sample or {})),
+        None,
+    ) or next((q for q in reversed(consultas) if q.status == QueryRun.Status.SUCCESS), None)
     fonte = {
         "decisao": reply.decision,
         "regra": reply.rule,

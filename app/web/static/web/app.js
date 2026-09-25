@@ -1268,7 +1268,7 @@
     return String(v);
   };
 
-  const blocoTabela = (bloco, dados) => {
+  const blocoTabela = (bloco, dados, id) => {
     if (!dados) return '';
     const indices = (bloco.colunas?.length ? bloco.colunas : dados.columns)
       .map((c) => dados.columns.indexOf(c)).filter((i) => i >= 0);
@@ -1277,8 +1277,15 @@
       .map((linha) => indices.map((i) => fmtCelula(linha[i], dados.columns[i])));
     const titulo = bloco.titulo ? `<div class="bloco-titulo">${esc(bloco.titulo)}</div>` : '';
     const total = dados.total || dados.rows.length;
-    const nota = total > linhas.length
-      ? `<div class="grafico-nota">Mostrando ${fmtNum(linhas.length)} de ${fmtNum(total)} linhas; a lista completa está no botão Baixar Excel.</div>`
+    // A planilha DESTA tabela: refaz a consulta dela no servidor. Existe
+    // também nas respostas com várias consultas, onde a nota antes apontava
+    // para um botão que não aparecia (2026-09-25).
+    const cortada = total > linhas.length || dados.truncado;
+    const botao = cortada && id
+      ? ` <button class="fonte-excel" type="button" data-excel="${id}" data-consulta="${Number(bloco.consulta) || 0}">${ICONES.planilha}<span>Baixar Excel desta tabela</span></button>`
+      : '';
+    const nota = cortada
+      ? `<div class="grafico-nota">Mostrando ${fmtNum(linhas.length)} de ${fmtNum(total)} linhas${dados.truncado ? ' (a consulta parou no limite: o total é maior)' : ''}; a lista inteira está na planilha.${botao}</div>`
       : '';
     return `<div class="md bloco bloco-tabela">${titulo}${tabelaHtml(cabecalho, linhas)}${nota}</div>`;
   };
@@ -1286,7 +1293,7 @@
   const corpoEmBlocos = (fonte, id) => fonte.blocos.map((bloco, k) => {
     const dados = fonte.dados_blocos?.[String(bloco.consulta)];
     if (bloco.tipo === 'texto') return `<div class="md bloco">${markdown(bloco.texto)}</div>`;
-    if (bloco.tipo === 'tabela') return blocoTabela(bloco, dados);
+    if (bloco.tipo === 'tabela') return blocoTabela(bloco, dados, id);
     if (bloco.tipo === 'grafico' && dados) {
       const chave = `${id}-b${k}`;
       GRAFICOS.set(chave, { grafico: bloco.grafico, dados });
@@ -1592,6 +1599,9 @@
     const horizontal = grafico.tipo === 'barras_horizontais';
     const valorDe = (l, nome) => l[colunas.indexOf(nome)];
     const notas = [];
+    if (grafico.series_de_fora?.length) {
+      notas.push(`${series.length} de ${series.length + grafico.series_de_fora.length} séries no gráfico; as demais estão na tabela e na planilha.`);
+    }
 
     // Zeros no começo de uma linha do tempo quase sempre são o programa
     // ainda começando, não um resultado. Medido em 2026-09-21: a retenção de
@@ -1639,7 +1649,14 @@
         porX.get(chave).set(nome, (porX.get(chave).get(nome) || 0) + numero(valorDe(l, medida)));
         totais.set(nome, (totais.get(nome) || 0) + numero(valorDe(l, medida)));
       });
-      if (!temporal) valoresX = valoresX.slice(0, grafico.limite || MAX_CATEGORIAS);
+      if (!temporal) {
+        // Cortava sem avisar (2026-09-25).
+        const todas = valoresX.length;
+        valoresX = valoresX.slice(0, grafico.limite || MAX_CATEGORIAS);
+        if (todas > valoresX.length) {
+          notas.push(`Mostrando ${valoresX.length} de ${fmtNum(todas)} categorias; a lista inteira está na planilha.`);
+        }
+      }
       const ordem = [...totais.entries()].sort((a, b) => b[1] - a[1]).map(([nome]) => nome);
       const principais = ordem.slice(0, MAX_GRUPOS);
       const resto = ordem.slice(MAX_GRUPOS);
@@ -2071,7 +2088,8 @@
     botao.disabled = true;
     rotulo.textContent = 'Gerando planilha…';
     try {
-      const r = await fetch(`/api/conversations/${state.conversaId}/messages/${botao.dataset.excel}/excel/`, {
+      const tabela = botao.dataset.consulta !== undefined ? `?consulta=${encodeURIComponent(botao.dataset.consulta)}` : '';
+      const r = await fetch(`/api/conversations/${state.conversaId}/messages/${botao.dataset.excel}/excel/${tabela}`, {
         credentials: 'same-origin',
       });
       if (!r.ok) {

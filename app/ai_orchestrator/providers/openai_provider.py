@@ -303,7 +303,16 @@ def _saida_cortada(exc) -> bool:
     """JSON que não fecha: o modelo bateu no limite de tokens no meio da
     resposta. É o que o SDK devolve ao validar a saída estruturada."""
     texto = str(exc)
-    return "json_invalid" in texto or "EOF while parsing" in texto
+    return "json_invalid" in texto or "EOF while parsing" in texto or "max_output_tokens" in texto
+
+
+def _resposta_incompleta(resposta) -> bool:
+    """A API também pode devolver a resposta sem erro, marcada incompleta
+    por limite de tokens e sem a saída estruturada. Antes isso virava "falha
+    da IA", e a segunda tentativa mais curta nem era feita (2026-09-25)."""
+    detalhes = getattr(resposta, "incomplete_details", None)
+    motivo = getattr(detalhes, "reason", None) or (detalhes.get("reason") if isinstance(detalhes, dict) else None)
+    return getattr(resposta, "status", None) == "incomplete" and motivo == "max_output_tokens"
 
 
 def _creditos_esgotados(exc) -> bool:
@@ -403,7 +412,9 @@ def _consultas(conteudo, planilha: bool = False) -> tuple:
             if preenchimento:
                 entrega["preenchimento"] = preenchimento
             entregas.append(entrega)
-    return tuple(entregas[:MAX_ENTREGAS])
+    # Todas: o orquestrador responde as MAX_ENTREGAS primeiras e diz quais
+    # ficaram de fora. Cortar aqui fazia a 5ª sumir sem aviso (2026-09-25).
+    return tuple(entregas)
 
 
 def _seguimento(conteudo) -> str:
@@ -420,6 +431,11 @@ def _achado_em_texto(indice: int, consulta: dict) -> str:
         f"Colunas: {', '.join(consulta['columns'])}",
         f"Linhas ({len(linhas)} de {total}): {json.dumps(linhas, ensure_ascii=False, default=str)}",
     ]
+    if consulta.get("truncated"):
+        partes.append(
+            f"Esta consulta parou no limite de {total} linhas: o total real é maior. Não chame "
+            f"{total} de total; diga que a tabela traz as primeiras e que a planilha dela tem a lista inteira."
+        )
     return "\n".join(partes)
 
 
@@ -531,6 +547,8 @@ class OpenAIProvider(AIProvider):
 
         latencia = int((time.monotonic() - inicio) * 1000)
         conteudo = getattr(resposta, "output_parsed", None)
+        if conteudo is None and _resposta_incompleta(resposta):
+            raise AIOutputTruncated("a saída do modelo veio cortada no limite de tokens")
         if conteudo is None:
             raise AIProviderError("o modelo não devolveu a saída estruturada esperada")
 

@@ -62,6 +62,10 @@ TEXTO_AUDIO_LONGO = (
 )
 TEXTO_AUDIO_NAO_ENTENDIDO = "Não consegui entender o áudio. Pode repetir ou mandar por escrito?"
 TEXTO_NOVA_CONVERSA = "Pronto: comecei uma conversa nova. Pode perguntar."
+TEXTO_MENSAGEM_LONGA = (
+    "Sua mensagem passou de {limite} caracteres, o máximo que eu leio de uma vez. "
+    "Pode mandar em partes menores, ou anexar o conteúdo como arquivo?"
+)
 TEXTO_SEM_FONTE = "A última resposta desta conversa não consultou o banco, então não há consulta para mostrar."
 TEXTO_PAROU = "Parei. Quando quiser, é só perguntar de novo."
 TEXTO_NADA_A_PARAR = "Não há nenhuma pergunta sendo respondida agora."
@@ -159,7 +163,7 @@ def _ouvir(recebida, cliente, transcritor):
     logger.info("WhatsApp: áudio de %ss transcrito (~US$ %.4f)", recebida.segundos, audio.custo(recebida.segundos))
     if not responde and not audio.chamou_o_jarvis(texto):
         return None, "audio_sem_jarvis"
-    return replace(recebida, tipo=entrada.TEXTO, texto=texto[:entrada.MAX_CARACTERES]), ""
+    return replace(recebida, tipo=entrada.TEXTO, texto=texto), ""
 
 
 def _aprendeu_o_lid(recebida, cliente=None) -> bool:
@@ -361,6 +365,11 @@ def receber(payload, cliente=None, provider=None, executor=None, transcritor=Non
     cliente = cliente or cliente_configurado()
     citar = _citacao(recebida) if recebida.grupo else None
     texto = entrada.sem_mencao(recebida.texto, config.numero_do_jarvis(), config.lid_do_jarvis())
+    if len(texto) > entrada.MAX_CARACTERES:
+        # Como o chat web: recusa dizendo o porquê, em vez de cortar calado.
+        enviar_texto(cliente, recebida.jid,
+                     TEXTO_MENSAGEM_LONGA.format(limite=f"{entrada.MAX_CARACTERES:,}".replace(",", ".")), citar=citar)
+        return "mensagem_longa"
     comando = _normalizar(texto)
 
     if comando in _NOVA:

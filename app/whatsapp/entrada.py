@@ -25,7 +25,12 @@ from dataclasses import dataclass, field
 TEXTO, IMAGEM, DOCUMENTO, AUDIO, REACAO = "texto", "imagem", "documento", "audio", "reacao"
 
 # Acima disto não é pergunta: é texto colado por engano (o mesmo limite do chat web).
-MAX_CARACTERES = 2000
+# O mesmo teto do chat web. Acima dele a mensagem não é cortada em silêncio:
+# o Jarvis pede para dividir (servicos.TEXTO_MENSAGEM_LONGA). Até 2026-09-25
+# ela era cortada em 2.000 sem aviso — e um áudio de 3 minutos passa disso.
+MAX_CARACTERES = 8000
+# Só para ler o evento sem guardar um texto sem fim.
+_LIMITE_DE_LEITURA = 50_000
 
 
 @dataclass(frozen=True)
@@ -149,7 +154,7 @@ def ler(payload: dict) -> Recebida | None:
 
 
 def _limpo(texto) -> str:
-    return str(texto or "").strip()[:MAX_CARACTERES]
+    return str(texto or "").strip()[:_LIMITE_DE_LEITURA]
 
 
 def sem_mencao(texto: str, numero_do_jarvis: str, lid_do_jarvis: str = "") -> str:

@@ -432,7 +432,11 @@ class MessageExcelView(APIView):
             conversation=conversation,
             direction=Message.Direction.OUTBOUND,
         )
-        planilha = planilha_da_resposta.gerar(resposta, request.user, get_configured_executor())
+        # `?consulta=N`: a planilha de uma tabela da resposta em blocos, com a
+        # consulta DELA (resposta com várias consultas, 2026-09-25).
+        indice = request.query_params.get("consulta")
+        indice = int(indice) if indice not in (None, "") and str(indice).isdigit() else None
+        planilha = planilha_da_resposta.gerar(resposta, request.user, get_configured_executor(), consulta=indice)
         if planilha.erro:
             return Response({"error": planilha.erro}, status=planilha.status)
         http = HttpResponse(planilha.conteudo, content_type=XLSX)

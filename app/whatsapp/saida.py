@@ -46,17 +46,13 @@ def montar(resposta, executor=None) -> list:
 
     if fonte.get("blocos"):
         dados_blocos = fonte.get("dados_blocos") or {}
-        # Com uma consulta só, ela é a última que rodou: dá para refazê-la
-        # inteira para a planilha. Com várias, cada bloco tem a sua.
-        uma_consulta = len(dados_blocos) <= 1
         for bloco in fonte["blocos"]:
             dados = dados_blocos.get(str(bloco.get("consulta"))) or {}
             if bloco["tipo"] == "texto":
                 textos.append(formato.de_markdown(bloco.get("texto", "")))
             elif bloco["tipo"] == "tabela" and dados.get("rows"):
                 tabela_enviada = True
-                textos.append(_tabela(bloco, dados, arquivos, resposta,
-                                      executor=executor if uma_consulta else None))
+                textos.append(_tabela(bloco, dados, arquivos, resposta, executor=executor))
             elif bloco["tipo"] == "grafico":
                 _grafico(bloco.get("grafico"), dados, imagens)
     else:
@@ -71,7 +67,10 @@ def montar(resposta, executor=None) -> list:
     if executor is not None and fonte.get("excel") and not tabela_enviada and (fonte.get("excel_pedido") or lista_longa):
         planilha = planilha_da_resposta.gerar(resposta, resposta.conversation.user, executor)
         if not planilha.erro:
-            arquivos.append(Envio("documento", f"{planilha.linhas} linhas", planilha.conteudo, planilha.nome, XLSX))
+            arquivos.append(Envio("documento", _legenda(planilha.linhas, planilha.cortada),
+                                  planilha.conteudo, planilha.nome, XLSX))
+        else:
+            logger.warning("WhatsApp: planilha da resposta não saiu: %s", planilha.erro)
 
     pergunta = resposta.in_reply_to
     if pergunta is not None and pergunta.anexo_resposta_token:
@@ -85,7 +84,8 @@ def montar(resposta, executor=None) -> list:
         textos.append("*Para continuar, responda com o número:*\n"
                       + "\n".join(f"{i}. {s}" for i, s in enumerate(sugestoes, 1)))
 
-    texto = _sem_o_botao_da_tela("\n\n".join(t for t in textos if t).strip())
+    texto = _sem_o_botao_da_tela("\n\n".join(t for t in textos if t).strip(),
+                                 tem_planilha=any(a.tipo == "documento" for a in arquivos))
     envios = [Envio("texto", parte) for parte in formato.dividir(texto)]
     return envios + imagens + arquivos
 
@@ -98,8 +98,21 @@ _BOTAO_DA_TELA = re.compile(
 )
 
 
-def _sem_o_botao_da_tela(texto: str) -> str:
-    return _BOTAO_DA_TELA.sub("na planilha anexada", texto)
+def _sem_o_botao_da_tela(texto: str, tem_planilha: bool = True) -> str:
+    """Troca o botão da tela pela planilha anexada — só quando ela foi mesmo
+    anexada. Se a planilha falhou, o texto não pode prometer um arquivo que
+    não vai (2026-09-25)."""
+    if tem_planilha:
+        return _BOTAO_DA_TELA.sub("na planilha anexada", texto)
+    if not _BOTAO_DA_TELA.search(texto):
+        return texto
+    return (_BOTAO_DA_TELA.sub("na planilha", texto)
+            + "\n\n_Não consegui gerar a planilha agora. Peça de novo em instantes._")
+
+
+def _legenda(linhas: int, cortada: bool = False) -> str:
+    texto = f"{linhas:,} linhas".replace(",", ".")
+    return texto + " (a lista passou do limite da planilha; filtre para ter o resto)" if cortada else texto
 
 
 def _tabela(bloco, dados, arquivos, resposta, executor=None) -> str:
@@ -115,27 +128,37 @@ def _tabela(bloco, dados, arquivos, resposta, executor=None) -> str:
     linhas = [[linha[i] for i in indices] for linha in dados["rows"]]
     titulo = f"*{bloco['titulo']}*\n" if bloco.get("titulo") else ""
     total = max(int(dados.get("total") or 0), len(linhas))
-    if total <= LINHAS_NA_CONVERSA:
+    if total <= LINHAS_NA_CONVERSA and not dados.get("truncado"):
         return titulo + formato.tabela(colunas, linhas)
     nome = f"jarvis_tabela_{len(arquivos) + 1}.xlsx"
     inteira = None
-    if total > len(linhas) and executor is not None:
-        inteira = planilha_da_resposta.gerar(resposta, resposta.conversation.user, executor)
+    if (total > len(linhas) or dados.get("truncado")) and executor is not None:
+        # A consulta DESTA tabela, pelo índice dela — não a última que rodou,
+        # que numa resposta com várias consultas é de outra tabela.
+        inteira = planilha_da_resposta.gerar(resposta, resposta.conversation.user, executor,
+                                             consulta=bloco.get("consulta"))
         if inteira.erro:
             logger.warning("WhatsApp: não consegui refazer a consulta para a planilha: %s", inteira.erro)
             inteira = None
     if inteira is not None:
-        conteudo, total = inteira.conteudo, inteira.linhas
+        conteudo, total_do_arquivo = inteira.conteudo, inteira.linhas
+        legenda = bloco.get("titulo") or _legenda(total_do_arquivo, inteira.cortada)
+        rodape = f"\n_…e mais {total_do_arquivo - 5:,} linhas na planilha {nome}._".replace(",", ".")
     else:
-        total = len(linhas)
+        # Sem a lista inteira, a legenda e o texto dizem o total real: "100
+        # de 340", nunca "100 linhas" como se fosse tudo (2026-09-25).
         conteudo = montar_planilha(colunas, linhas, {
             "pergunta": resposta.in_reply_to.content if resposta.in_reply_to else "",
-            "linhas": total,
-            "observacao": "Tabela da resposta do Jarvis no WhatsApp.",
+            "linhas": len(linhas),
+            "observacao": f"Tabela da resposta do Jarvis no WhatsApp: as primeiras {len(linhas)} de {total} linhas.",
         })
-    arquivos.append(Envio("documento", bloco.get("titulo") or f"{total} linhas", conteudo, nome, XLSX))
-    return (titulo + formato.tabela(colunas, linhas[:5])
-            + f"\n_…e mais {total - 5} linhas na planilha {nome}._")
+        parcial = total > len(linhas) or dados.get("truncado")
+        legenda = bloco.get("titulo") or (f"{len(linhas)} de {total} linhas" if parcial else f"{len(linhas)} linhas")
+        rodape = (f"\n_…a planilha {nome} traz as primeiras {len(linhas)} de {total} linhas; "
+                  "não consegui buscar a lista inteira agora. Peça de novo em instantes._"
+                  if parcial else f"\n_…e mais {len(linhas) - 5} linhas na planilha {nome}._")
+    arquivos.append(Envio("documento", legenda, conteudo, nome, XLSX))
+    return titulo + formato.tabela(colunas, linhas[:5]) + rodape
 
 
 def _grafico(grafico, dados, imagens) -> None:

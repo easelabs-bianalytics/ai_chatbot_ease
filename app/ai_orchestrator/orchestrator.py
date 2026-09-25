@@ -207,7 +207,16 @@ def _tabela(resultado) -> str:
         " | ".join(formatar_valor(v, c) for v, c in zip(linha, resultado.columns))
         for linha in resultado.rows[:MAX_LINHAS_NA_TABELA]
     ]
-    return "\n".join([cabecalho, *linhas])
+    texto = "\n".join([cabecalho, *linhas])
+    total = resultado.row_count or len(resultado.rows)
+    if total > len(linhas) or resultado.truncated:
+        # Sem esta linha a lista parava na 20ª sem ninguém saber (2026-09-25).
+        texto += (
+            f"\n\n(Mostrando as {len(linhas)} primeiras de {total:,} linhas".replace(",", ".")
+            + ("; a consulta ainda parou no limite, o total é maior" if resultado.truncated else "")
+            + ". A lista inteira está no botão “Baixar Excel”.)"
+        )
+    return texto
 
 
 def formatar_valor(valor, coluna=None) -> str:
@@ -541,6 +550,9 @@ def _grafico(sugestao, resultado, message, plano, motivos=None) -> dict | None:
     if titulo and not check_grounding(titulo, resultado.columns, resultado.rows, message.content, plano.sql).ok:
         titulo = ""
     grafico = {"tipo": tipo, "x": x, "series": series[:MAX_SERIES], "titulo": titulo}
+    if len(series) > MAX_SERIES:
+        # A tela e a imagem do WhatsApp avisam: "3 de 5 séries" (2026-09-25).
+        grafico["series_de_fora"] = series[MAX_SERIES:]
     if grupo:
         grafico["grupo"] = grupo
     if sugestao.get("empilhado") and tipo in EMPILHAVEIS and (grupo or len(series) > 1):
@@ -711,11 +723,11 @@ def _redigir(plano, resultado, message, provider, catalog, auditoria, historico,
             # O gráfico veio no formato simples, fora dos blocos: entra
             # neles, senão sairia só a tabela que ninguém pediu.
             blocos = [*blocos, {"tipo": "grafico", "consulta": 0, "grafico": grafico}]
-            dados = {**dados, "0": _dados_da_consulta(resultado, inteiro=True)}
+            dados = {**dados, "0": _dados_da_consulta(resultado, inteiro=True, sql=plano.sql)}
         if so_visual and any(b["tipo"] == "grafico" for b in blocos):
             blocos = _so_o_visual(blocos)
         else:
-            blocos, dados = _garantir_a_tabela(blocos, dados, resultado, lista_longa, resposta.reply)
+            blocos, dados = _garantir_a_tabela(blocos, dados, resultado, lista_longa, resposta.reply, plano.sql)
         if blocos:
             extras.pop("grafico", None)
             extras["blocos"] = blocos
@@ -1036,7 +1048,7 @@ def _preencher_abas(message, itens, executor, catalog, auditoria) -> str:
     if dados is None:
         return "\n\n---\n\n" + canned.ANEXO_VENCIDO
 
-    feitas, recusas = [], []
+    feitas, recusas, cortadas = [], [], []
     for sql, referencia, bruto in itens:
         pedido = planilha_anexada.PedidoDePreenchimento.do_plano(bruto)
         guard = validate_sql(sql, catalog, max_rows=LINHAS_DO_PREENCHIMENTO)
@@ -1076,6 +1088,8 @@ def _preencher_abas(message, itens, executor, catalog, auditoria) -> str:
             continue
         dados = preenchida.dados
         feitas.append((pedido.aba, preenchida))
+        if resultado.truncated:
+            cortadas.append(pedido.aba or "")
     deposito.descartar(message.anexo_token)
 
     if not feitas:
@@ -1090,6 +1104,14 @@ def _preencher_abas(message, itens, executor, catalog, auditoria) -> str:
         texto = _nota_do_preenchimento(feitas[0][1], nome)
     else:
         texto = _nota_das_abas(feitas, nome)
+    if cortadas:
+        # O que ficou em branco pode existir no banco: a consulta é que parou
+        # no limite (2026-09-25). Dizer "sem correspondência" seria mentir.
+        texto += (
+            f"\n\n**Atenção:** a consulta do preenchimento passou de {LINHAS_DO_PREENCHIMENTO:,} linhas e foi "
+            "cortada; o que ficou em branco pode existir no banco. Peça de novo com um filtro "
+            "(UF, rede, período) para completar."
+        ).replace(",", ".")
     if recusas:
         texto += "\n\nNão consegui preencher tudo: " + "; ".join(recusas)
     return texto
@@ -1287,6 +1309,7 @@ def _redigir_analise(com_dado, message, provider, auditoria, historico, plano=No
             "columns": p["resultado"].columns,
             "rows": p["resultado"].rows[:LINHAS_DOS_ACHADOS],
             "total_rows": p["resultado"].row_count,
+            "truncated": bool(p["resultado"].truncated),
         }
         for p in com_dado
     )
@@ -1340,7 +1363,7 @@ def _redigir_analise(com_dado, message, provider, auditoria, historico, plano=No
         if titulo and not check_grounding(titulo, (), (), message.content, "").ok:
             titulo = ""
         blocos.append({"tipo": "tabela", "consulta": i, "colunas": _colunas_da_tabela(None, p["resultado"]), "titulo": titulo})
-        dados[str(i)] = _dados_da_consulta(p["resultado"])
+        dados[str(i)] = _dados_da_consulta(p["resultado"], sql=p["sql"])
     texto = (
         "Não consegui escrever o texto com segurança; estes são os resultados de cada parte do pedido:"
         if entregas else
@@ -1373,7 +1396,7 @@ def _garantir_as_entregas(blocos, dados, com_dado, texto) -> tuple:
         if titulo and check_grounding(titulo, (), (), "", "").ok:
             bloco["titulo"] = titulo
         blocos.append(bloco)
-        dados.setdefault(str(i), _dados_da_consulta(p["resultado"]))
+        dados.setdefault(str(i), _dados_da_consulta(p["resultado"], sql=p["sql"]))
     return blocos, dados
 
 
@@ -1392,6 +1415,12 @@ def _entregar_varias(plano, message, provider, executor, catalog, auditoria, his
     que falha ganha uma correção própria, como a consulta comum (ADR-0014);
     entrega que não sai é dita na resposta, e as outras seguem."""
     passos = []
+    alem = plano.consultas[MAX_ENTREGAS:]
+    if alem:
+        # Da 5ª em diante a entrega sumia sem aviso (2026-09-25).
+        nota = (f"o pedido tinha {len(plano.consultas)} partes e respondi as {MAX_ENTREGAS} primeiras; ficaram de fora: "
+                + "; ".join(f"«{c.get('titulo') or 'uma parte'}»" for c in alem))
+        plano = replace(plano, pedido_nao_atendido="; ".join(filter(None, [plano.pedido_nao_atendido, nota])))
     for indice, consulta in enumerate(plano.consultas[:MAX_ENTREGAS]):
         if foi_interrompida(message):
             return _interrompida()
@@ -1594,7 +1623,9 @@ def _so_as_linhas_da_planilha(resultado, plano, message):
         return resultado
     if not escolhidas:
         return resultado
-    return replace(resultado, rows=tuple(escolhidas), truncated=False)
+    # O aviso de corte continua: chave além do limite de linhas sumiria da
+    # resposta sem ninguém saber (2026-09-25).
+    return replace(resultado, rows=tuple(escolhidas))
 
 
 def _so_o_visual(blocos) -> list:
@@ -1605,7 +1636,7 @@ def _so_o_visual(blocos) -> list:
     return [b for b in blocos if not (b["tipo"] == "tabela" and b.get("consulta") in desenhadas)]
 
 
-def _garantir_a_tabela(blocos, dados, resultado, lista_longa: bool, texto: str) -> tuple:
+def _garantir_a_tabela(blocos, dados, resultado, lista_longa: bool, texto: str, sql: str = "") -> tuple:
     """Lista longa sem bloco de tabela: acrescenta um no fim.
 
     A instrução pede ao modelo que aponte a tabela em vez de copiar as
@@ -1619,7 +1650,7 @@ def _garantir_a_tabela(blocos, dados, resultado, lista_longa: bool, texto: str) 
     if not blocos:
         return [], {}
     blocos = [*blocos, {"tipo": "tabela", "consulta": 0, "colunas": _colunas_da_tabela(None, resultado, _texto_dos_blocos(blocos))}]
-    return blocos, {**dados, "0": _dados_da_consulta(resultado)}
+    return blocos, {**dados, "0": _dados_da_consulta(resultado, sql=sql)}
 
 
 # A partir de quantas linhas uma coluna constante é resumo repetido, e não
@@ -1671,14 +1702,20 @@ def _colunas_da_tabela(pedidas, resultado, texto: str = "") -> list:
     return ficam or colunas
 
 
-def _dados_da_consulta(resultado, inteiro: bool = False) -> dict:
+def _dados_da_consulta(resultado, inteiro: bool = False, sql: str = "") -> dict:
     """As linhas que a tela recebe. Tabela: as primeiras (a lista inteira está
     na planilha). Gráfico: o resultado inteiro — com 237 linhas ordenadas por
     especialidade, as 100 primeiras desenhavam só as especialidades de A a C
-    (conversa 18, 2026-09-23)."""
+    (conversa 18, 2026-09-23).
+
+    `sql` é a consulta DESTA tabela: a planilha dela (Baixar Excel, arquivo
+    do WhatsApp) refaz exatamente essa, e não "a última que rodou" — com
+    várias consultas na resposta, a última era de outra tabela, e a planilha
+    saía com 100 linhas ou com o dado errado (2026-09-25). `truncado` diz que
+    a consulta parou no limite de linhas da conversa."""
     linhas = resultado.rows if inteiro else resultado.rows[:LINHAS_DOS_BLOCOS]
     return {"columns": list(resultado.columns), "rows": [list(linha) for linha in linhas],
-            "total": resultado.row_count}
+            "total": resultado.row_count, "sql": sql, "truncado": bool(resultado.truncated)}
 
 
 def _validar_blocos(blocos, fontes, message, motivos=None) -> tuple:
@@ -1709,11 +1746,11 @@ def _validar_blocos(blocos, fontes, message, motivos=None) -> tuple:
             if not grafico:
                 continue
             validos.append({"tipo": "grafico", "consulta": indice, "grafico": grafico})
-            dados[str(indice)] = _dados_da_consulta(resultado, inteiro=True)
+            dados[str(indice)] = _dados_da_consulta(resultado, inteiro=True, sql=sql)
             continue
         else:
             continue
-        dados.setdefault(str(indice), _dados_da_consulta(resultado))
+        dados.setdefault(str(indice), _dados_da_consulta(resultado, sql=sql))
 
     # Sem texto nenhum não é resposta: a redação comum volta ao formato antigo.
     if not any(b["tipo"] == "texto" for b in validos):
