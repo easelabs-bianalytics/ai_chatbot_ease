@@ -6,7 +6,8 @@ Antes o Jarvis respondia "Ainda não ouço áudio". Agora transcreve:
 - no grupo, o áudio que cita uma mensagem do Jarvis, ou o que diz "Jarvis";
   os demais são descartados sem gravar nada.
 
-A resposta começa com "🎙️ Ouvi: …", para a pessoa ver se foi bem entendida.
+A resposta vem direto. Até 2026-09-25 ela começava com "🎙️ Ouvi: …"; era
+para os testes e saiu. A transcrição fica gravada como a pergunta.
 """
 
 import pytest
@@ -51,7 +52,7 @@ def _receber(payload, cliente, transcritor, planos=(), respostas=()):
     return resultado, provider
 
 
-def test_audio_no_privado_vira_pergunta_e_a_resposta_diz_o_que_ouviu(paulo, cliente):
+def test_audio_no_privado_vira_pergunta_e_a_resposta_vem_direto(paulo, cliente):
     cliente.midias["A1"] = OGG
     transcritor = TranscritorFake(["quantas unidades vendemos em agosto?"])
 
@@ -63,9 +64,7 @@ def test_audio_no_privado_vira_pergunta_e_a_resposta_diz_o_que_ouviu(paulo, clie
     assert provider.plan_requests[0].question == "quantas unidades vendemos em agosto?"
     # A pergunta gravada é a transcrição: é o que aparece no chat web.
     assert Message.objects.get(direction="in").content == "quantas unidades vendemos em agosto?"
-    texto = cliente.enviados[-1]["texto"]
-    assert texto.startswith("🎙️ _Ouvi:_ “quantas unidades vendemos em agosto?”")
-    assert texto.endswith("Foram 777 unidades em ago/2026.")
+    assert [e["texto"] for e in cliente.enviados if e["tipo"] == "texto"] == ["Foram 777 unidades em ago/2026."]
 
 
 def test_audio_longo_demais_nao_e_transcrito(paulo, cliente):
@@ -144,15 +143,16 @@ def test_no_grupo_o_arquivo_logo_depois_de_chamar_o_jarvis_conta_como_chamada(gr
     ("Jarvis, quanto vendemos?", True),
     ("JÁRVIS me diz o sell out", True),
     ("djarvis qual o share", True),
+    # 2026-09-25: o áudio "Jarvis, eu vou te enviar uma planilha" voltou assim
+    ("Javis, eu vou te enviar uma planilha em Excel e eu quero que você preencha ela", True),
+    ("Jarbis, quanto vendemos em agosto?", True),
+    ("Jervis me manda o PX", True),
+    ("Chárvis, e o estoque da Raia?", True),
+    ("jar vis, qual o share?", True),
     ("pessoal, bom dia", False),
     ("o jarvisson chegou", False),
+    ("vou mandar a planilha de vendas por email", False),
+    ("o Davis e o Travis foram na reunião", False),
 ])
 def test_nome_do_jarvis_no_audio(texto, esperado):
     assert audio.chamou_o_jarvis(texto) is esperado
-
-
-def test_ouvi_vai_antes_mesmo_quando_a_resposta_comeca_com_imagem():
-    envios = saida.com_o_que_ouvi([saida.Envio(tipo="imagem", dados=b"png")], "o gráfico de agosto")
-
-    assert envios[0].tipo == "texto" and "o gráfico de agosto" in envios[0].texto
-    assert envios[1].tipo == "imagem"

@@ -264,17 +264,15 @@ def enviar_texto(cliente, jid, texto, message=None, citar=None, tipo=EnvioWhatsA
     return externo
 
 
-def entregar(resposta, cliente, jid, citar=None, executor=None, ouvi: str = "") -> int:
+def entregar(resposta, cliente, jid, citar=None, executor=None) -> int:
     """Manda a resposta (Message de saída) e registra cada envio. Falha da
     Evolution vira status FAILED na mensagem, nunca exceção: a resposta já
     está gravada e visível no chat web.
 
-    `ouvi`: a transcrição do áudio. Vai numa linha antes da resposta, para a
-    pessoa ver na hora se o áudio foi mal entendido (decisão do Rubens,
-    2026-09-25)."""
+    A resposta a um áudio vem direto. Até 2026-09-25 ela começava com
+    "🎙️ Ouvi: …"; era para os testes, e o Rubens pediu para tirar. A
+    transcrição continua gravada como a pergunta, visível no chat web."""
     envios = saida.montar(resposta, executor=executor)
-    if ouvi:
-        envios = saida.com_o_que_ouvi(envios, ouvi)
     enviados = 0
     try:
         for envio in envios:
@@ -414,7 +412,7 @@ def receber(payload, cliente=None, provider=None, executor=None, transcritor=Non
     if not reply.reply_text:
         return "interrompida"
     resposta = mensagem.replies.order_by("-id").first()
-    entregar(resposta, cliente, recebida.jid, citar=citar, executor=executor, ouvi=ouvi)
+    entregar(resposta, cliente, recebida.jid, citar=citar, executor=executor)
     return "respondida"
 
 

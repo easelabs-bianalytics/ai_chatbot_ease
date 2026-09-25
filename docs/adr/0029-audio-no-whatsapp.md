@@ -36,8 +36,10 @@ A pergunta gravada é a transcrição, visível no chat web.
   nem o texto são gravados ou logados.
 - **Grupo não liberado e número não liberado:** nada é baixado nem transcrito.
 
-**O que a pessoa vê:** a resposta começa com `🎙️ Ouvi: "…"` (decisão do
-Rubens), para perceber na hora um áudio mal entendido.
+**O que a pessoa vê:** a resposta, direto. Na primeira versão ela começava
+com `🎙️ Ouvi: "…"`; era para os testes, e o Rubens pediu para tirar em
+2026-09-25. O nome "Jarvis" é reconhecido com até uma letra de diferença
+(a transcrição escreveu "Javis" no primeiro teste real).
 
 **Arquivo depois do áudio.** Arquivo sem legenda vira "Segue o arquivo.", e
 o planejador segue o pedido anterior da conversa quando houver ("preenche com

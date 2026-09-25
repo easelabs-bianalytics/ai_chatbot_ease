@@ -1800,7 +1800,9 @@ Decisões do Rubens em 2026-09-23:
   português, vocabulário da casa) e o `TranscritorFake` dos testes.
 - Privado: todo áudio de contato liberado. Grupo: o que cita uma mensagem do
   Jarvis, ou o que diz "Jarvis"; o resto é descartado sem registro.
-- A resposta começa com `🎙️ Ouvi: "…"`; a pergunta gravada é a transcrição.
+- A resposta vem direto (o `🎙️ Ouvi: "…"` da primeira versão saiu em 2026-09-25);
+  a pergunta gravada é a transcrição. "Jarvis" vale com até uma letra de
+  diferença ("Javis", no primeiro teste real).
 - Teto de 3 minutos; áudio que não vira texto pede para repetir.
 - Arquivo sem legenda vira "Segue o arquivo." e segue o pedido anterior da
   conversa. No grupo, o arquivo sem marcação conta como chamada até 5 minutos

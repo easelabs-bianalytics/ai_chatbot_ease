@@ -30,13 +30,19 @@ DOLARES_POR_MINUTO = 0.003
 # O vocabulário da casa ajuda o modelo a escrever os nomes como o banco os
 # conhece ("sell out", não "celaute"; "PX", não "pé xis").
 VOCABULARIO = (
+    "Conversa com o Jarvis (J-A-R-V-I-S), o assistente de dados da Ease Labs. "
     "Jarvis, Ease Labs, PX, prescrição, sell out, sell in, market share, MAT, YTD, CDD, painel, "
     "território, representante, GR, brick, Raia Drogasil, Pague Menos, Panvel, Indiana, Aché, "
     "planilha, preencher, Extrato, Canabidiol, Neurologia, Psiquiatria."
 )
 
-# "Jarvis" e as grafias que a transcrição costuma produzir para ele.
-_JARVIS = re.compile(r"\b(?:jarvis|jarves|jarviz|djarvis|jarvi)\b")
+# O nome e o quanto a grafia da transcrição pode se afastar dele. Em
+# 2026-09-25 um áudio "Jarvis, vou te enviar uma planilha" voltou como
+# "Javis" — fora da lista fixa de grafias que existia, e no grupo o áudio
+# seria descartado. Uma letra de diferença pega javis, jarbis, jervis,
+# garvis, jarves, járvis; "jarvisson" (três) continua de fora.
+_NOME = "jarvis"
+_MAX_DIFERENCA = 1
 
 
 class TranscricaoFalhou(Exception):
@@ -103,11 +109,37 @@ def transcritor_configurado() -> Transcritor:
     return TranscritorFake()
 
 
+def _diferenca(a: str, b: str) -> int:
+    """Quantas letras separam as duas palavras (distância de edição)."""
+    anterior = list(range(len(b) + 1))
+    for i, letra_a in enumerate(a, 1):
+        atual = [i]
+        for j, letra_b in enumerate(b, 1):
+            atual.append(min(anterior[j] + 1, atual[j - 1] + 1, anterior[j - 1] + (letra_a != letra_b)))
+        anterior = atual
+    return anterior[-1]
+
+
+def _parece_jarvis(palavra: str) -> bool:
+    if palavra.startswith("ch"):          # "Chárvis": o "ch" é o som do "j"
+        palavra = "j" + palavra[2:]
+    return abs(len(palavra) - len(_NOME)) <= _MAX_DIFERENCA and _diferenca(palavra, _NOME) <= _MAX_DIFERENCA
+
+
 def chamou_o_jarvis(texto: str) -> bool:
-    """O nome "Jarvis" foi dito no áudio (sem acento e sem caixa)."""
+    """O nome "Jarvis" foi dito no áudio, mesmo com a grafia que a
+    transcrição inventou para ele: sem acento, sem caixa e com até uma letra
+    de diferença. A transcrição às vezes parte o nome em dois ("jar vis"):
+    duas palavras curtas seguidas também contam."""
     sem_acento = unicodedata.normalize("NFD", (texto or "").lower())
     sem_acento = "".join(c for c in sem_acento if unicodedata.category(c) != "Mn")
-    return bool(_JARVIS.search(sem_acento))
+    palavras = re.findall(r"[a-z]+", sem_acento)
+    if any(_parece_jarvis(p) for p in palavras):
+        return True
+    return any(
+        len(a) <= 4 and len(b) <= 4 and _parece_jarvis(a + b)
+        for a, b in zip(palavras, palavras[1:])
+    )
 
 
 def custo(segundos: int) -> float:

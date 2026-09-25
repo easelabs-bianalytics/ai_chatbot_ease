@@ -62,7 +62,7 @@ do deploy.
 | Fonte e consulta | botão "Ver fonte" | comando `fonte` |
 | 👎 | com o campo "o que estava errado" | reação 👎, sem comentário (escrever a crítica na mensagem seguinte faz o Jarvis refazer) |
 | Continuações | botões | lista numerada: responda 1, 2 ou 3 |
-| Áudio | ditado pelo microfone | transcrito; a resposta começa com "🎙️ Ouvi: …" (no grupo, só se citar o Jarvis ou disser "Jarvis") |
+| Áudio | ditado pelo microfone | transcrito e respondido direto (no grupo, só se citar o Jarvis ou disser "Jarvis") |
 
 ### Áudio
 
@@ -78,14 +78,16 @@ mesma consulta ao banco.
 | Grupo liberado | o que **responde (cita) uma mensagem do Jarvis**, mesmo sem dizer o nome; o que **diz "Jarvis"** ("Jarvis, quanto vendemos em agosto?") | todos os outros: descartados na hora, sem gravar nem responder |
 | Número ou grupo não liberado | — | todos, sem baixar nem transcrever |
 
-**O que volta:** a resposta começa dizendo o que ele ouviu, para a pessoa
-perceber na hora um áudio mal entendido:
+**O que volta:** a resposta, direto. Até 2026-09-25 ela começava com
+"🎙️ Ouvi: …"; era para os testes e saiu. A pergunta gravada é a
+transcrição: ela aparece assim no chat web e no Admin.
 
-> 🎙️ _Ouvi:_ "Jarvis, quanto vendemos em agosto?"
->
-> Foram 777 unidades em ago/2026…
-
-A pergunta gravada é a transcrição: ela aparece assim no chat web e no Admin.
+**"Jarvis" com a grafia errada também chama.** A transcrição às vezes
+escreve o nome errado ("Javis", em 2026-09-25). O Jarvis reconhece qualquer
+palavra a até uma letra de "jarvis" (javis, jarbis, jervis, garvis, járvis,
+chárvis) e o nome partido em dois ("jar vis"); "jarvisson" e "Davis" não
+chamam. O vocabulário da transcrição também diz que o assistente se chama
+Jarvis, para ela acertar na origem.
 
 **Pedir a planilha antes de mandar:** "Jarvis, vou te mandar uma planilha,
 preenche com o sell out de agosto" (por áudio ou texto) e, em seguida, o
@@ -101,8 +103,8 @@ antes: o Jarvis descreve o que viu e oferece preencher.
   entender o áudio. Pode repetir ou mandar por escrito?".
 - **"Parar" só por texto:** o áudio espera a transcrição, e o "parar" precisa
   agir na hora.
-- Nomes difíceis podem sair trocados na transcrição; o "Ouvi" existe para
-  isso. Termos da casa (PX, sell out, as redes, os representantes mais
+- Nomes difíceis podem sair trocados na transcrição; a pergunta gravada (chat
+  web, Admin) mostra o que ele entendeu. Termos da casa (PX, sell out, as redes, os representantes mais
   comuns) vão como vocabulário para o modelo acertar.
 
 **Privacidade no grupo:** para saber se disseram "Jarvis", **todo áudio do
@@ -140,8 +142,8 @@ Nos grupos, os comandos também precisam marcar o Jarvis (`@Jarvis parar`).
 - **Planilha** (`.xlsx`, `.csv`) ou **imagem** enviadas ao Jarvis passam pela
   mesma validação do chat web. A legenda vira a pergunta ("preencha as
   unidades de agosto").
-- **Áudio** é transcrito e vira a pergunta (ADR-0029). A resposta começa com
-  `🎙️ Ouvi: "…"`, para conferir se ele entendeu. No privado, todo áudio é
+- **Áudio** é transcrito e vira a pergunta (ADR-0029); a resposta vem direto.
+  No privado, todo áudio é
   atendido; no grupo, o que cita uma mensagem do Jarvis ou diz "Jarvis".
   Áudio acima de 3 minutos não é transcrito. "Parar" continua por texto.
 - **Arquivo depois do pedido:** "preenche a planilha que vou te mandar" (por
@@ -361,8 +363,7 @@ a variável; `apply` `1 added, 1 changed, 1 destroyed`.
    - `@Jarvis vendas de agosto`: ele responde citando a pergunta;
    - uma resposta citando a mensagem dele: ele responde.
 5. **Teste de áudio:**
-   - no privado, um áudio com uma pergunta: a resposta começa com
-     "🎙️ Ouvi: …";
+   - no privado, um áudio com uma pergunta: ele responde direto;
    - no grupo, um áudio **sem** dizer "Jarvis": ele fica calado;
    - no grupo, "Jarvis, quanto vendemos em agosto?": ele responde citando;
    - no grupo, um áudio respondendo (citando) uma mensagem dele: ele
@@ -447,7 +448,7 @@ No chat, quem é admin também vê o custo e os tokens de cada resposta, em
 | Número restringido pelo WhatsApp | Aviso no aparelho. Pare o uso por alguns dias; se persistir, troque de chip (passos 7 e 8) e revise o volume |
 | Resposta não chegou no WhatsApp | A resposta fica gravada e visível no chat web. A mensagem sai com status "Falhou" no Admin (Mensagens), com o detalhe |
 | Ver o que aconteceu com um evento | Log `jarvis-worker` no CloudWatch: `WhatsApp: evento respondida`, `contato_nao_liberado`, `grupo_sem_mencao`, `audio_sem_jarvis`… |
-| Áudio mal entendido | O "🎙️ Ouvi" mostra o que ele entendeu: repetir o áudio mais devagar ou mandar por escrito. A transcrição fica na pergunta, no chat web e no Admin |
+| Áudio mal entendido | A transcrição fica na pergunta, no chat web e no Admin: ali se vê o que ele entendeu. Repetir o áudio mais devagar ou mandar por escrito |
 | Atualizar a versão da Evolution | Espelhar a versão nova (passo 4), mudar `jarvis_evolution_container_image`, `plan`/`apply`. O WhatsApp fica fora ~1 min e a sessão volta sem QR |
 
 **Custo:**
