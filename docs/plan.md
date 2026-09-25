@@ -1788,11 +1788,25 @@ Decisões do Rubens em 2026-09-23:
 
 ### Pendências
 
-- [ ] D-06: o chip
-- [ ] D-07: role e schema da Evolution no RDS
-- [ ] Deploy (ordem acima) e teste de ponta a ponta com o número
+- [x] D-06: o chip (553190054127, conectado em 2026-09-24)
+- [x] D-07: role e schema da Evolution no RDS (2026-09-24)
+- [x] Deploy (ordem acima); o número responde no privado e em grupos
 - [ ] Conferir no aparelho a legibilidade do texto, da tabela e do gráfico
-- [ ] Áudio: transcrever em vez de pedir o texto (fora deste escopo)
+- [x] Áudio: transcrever em vez de pedir o texto — ADR-0029, 2026-09-25
+
+### Áudio (ADR-0029, 2026-09-25)
+
+- `whatsapp/audio.py`: transcrição pela OpenAI (`gpt-4o-mini-transcribe`,
+  português, vocabulário da casa) e o `TranscritorFake` dos testes.
+- Privado: todo áudio de contato liberado. Grupo: o que cita uma mensagem do
+  Jarvis, ou o que diz "Jarvis"; o resto é descartado sem registro.
+- A resposta começa com `🎙️ Ouvi: "…"`; a pergunta gravada é a transcrição.
+- Teto de 3 minutos; áudio que não vira texto pede para repetir.
+- Arquivo sem legenda vira "Segue o arquivo." e segue o pedido anterior da
+  conversa. No grupo, o arquivo sem marcação conta como chamada até 5 minutos
+  depois de a mesma pessoa chamar o Jarvis.
+- 13 testes em `tests/integration/test_whatsapp_audio.py`, sem rede.
+- [ ] Testar com áudio de verdade no número, depois do deploy
 
 ---
 

@@ -236,13 +236,6 @@ def test_nova_conversa_e_fonte(paulo, cliente):
     assert Conversation.objects.count() == 2
 
 
-def test_audio_pede_texto(paulo, cliente):
-    resultado, provider = _receber(_evento(message={"audioMessage": {}}), cliente)
-
-    assert resultado == "audio" and provider.plan_requests == []
-    assert "por escrito" in cliente.enviados[-1]["texto"]
-
-
 def test_parar_interrompe_a_pergunta_em_andamento(paulo, cliente):
     conversa = Conversation.objects.create(user=paulo, canal="whatsapp", whatsapp_jid=f"{PAULO}@s.whatsapp.net")
     pendente = Message.objects.create(conversation=conversa, direction="in", content="vendas",

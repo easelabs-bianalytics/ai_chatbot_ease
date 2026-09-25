@@ -24,6 +24,7 @@ ocupado com a resposta, então é tratado na própria requisição do webhook
 import logging
 import re
 import unicodedata
+from dataclasses import replace
 from datetime import timedelta
 
 from django.core.cache import cache
@@ -40,7 +41,7 @@ from messaging.channels.base import InboundMessage
 from messaging.channels.whatsapp import WhatsAppChannel
 from messaging.models import Avaliacao, Message
 from messaging.services import ingest_inbound_message
-from whatsapp import config, entrada, saida
+from whatsapp import audio, config, entrada, saida
 from whatsapp.cliente import Citacao, WhatsAppIndisponivel, cliente_configurado
 from whatsapp.models import ContatoWhatsApp, EnvioWhatsApp, GrupoWhatsApp
 
@@ -55,15 +56,25 @@ SEGUNDOS_DO_PENDENTE = 10 * 60
 UTIL = {"👍", "👍🏻", "👍🏼", "👍🏽", "👍🏾", "👍🏿", "❤️", "🙏", "👏"}
 ERRADA = {"👎", "👎🏻", "👎🏼", "👎🏽", "👎🏾", "👎🏿"}
 
-TEXTO_AUDIO = "Ainda não ouço áudio. Me mande a pergunta por escrito que eu respondo."
+TEXTO_AUDIO_LONGO = (
+    "Esse áudio passa de 3 minutos, e eu só ouço até aí. Me manda a pergunta num áudio mais curto "
+    "ou por escrito?"
+)
+TEXTO_AUDIO_NAO_ENTENDIDO = "Não consegui entender o áudio. Pode repetir ou mandar por escrito?"
 TEXTO_NOVA_CONVERSA = "Pronto: comecei uma conversa nova. Pode perguntar."
 TEXTO_SEM_FONTE = "A última resposta desta conversa não consultou o banco, então não há consulta para mostrar."
 TEXTO_PAROU = "Parei. Quando quiser, é só perguntar de novo."
 TEXTO_NADA_A_PARAR = "Não há nenhuma pergunta sendo respondida agora."
-# Arquivo mandado sem legenda: a pergunta implícita é "o que tem aqui?". Até
-# 2026-09-24 era "Recebi este arquivo.", e o Jarvis respondia perguntando
-# qual aba preencher em vez de dizer o que viu.
-TEXTO_ARQUIVO_SEM_PERGUNTA = "O que tem neste arquivo?"
+# Arquivo mandado sem legenda. Neutro de propósito: se a pessoa já disse o
+# que fazer com ele ("vou te mandar a planilha, preenche com o sell out"),
+# o planejador segue o pedido anterior da conversa; se não disse, descreve o
+# arquivo e oferece preencher. Até 2026-09-24 era "Recebi este arquivo.", e
+# o Jarvis perguntava qual aba preencher em vez de dizer o que viu.
+TEXTO_ARQUIVO_SEM_PERGUNTA = "Segue o arquivo."
+
+# Arquivo no grupo, sem marcação, logo depois de a mesma pessoa chamar o
+# Jarvis ("Jarvis, preenche a planilha que vou mandar"): conta como chamada.
+MINUTOS_DO_ARQUIVO_SEGUINTE = 5
 
 
 def _normalizar(texto: str) -> str:
@@ -104,8 +115,51 @@ def _chamou_o_jarvis(recebida, cliente=None) -> bool:
         return True
     if _aprendeu_o_lid(recebida, cliente):
         return True
+    if _arquivo_logo_depois_de_chamar(recebida):
+        return True
     # Responder (citando) uma mensagem do Jarvis também é chamá-lo.
     return bool(recebida.citada_id) and EnvioWhatsApp.objects.filter(externo_id=recebida.citada_id).exists()
+
+
+def _arquivo_logo_depois_de_chamar(recebida) -> bool:
+    """Arquivo sem marcação, da mesma pessoa que acabou de chamar o Jarvis
+    no grupo. Só as mensagens que chamaram o Jarvis ficam gravadas, então
+    qualquer pergunta dela nos últimos minutos é uma chamada."""
+    if not (recebida.grupo and recebida.numero and recebida.tipo in (entrada.IMAGEM, entrada.DOCUMENTO)):
+        return False
+    return Message.objects.filter(
+        conversation__canal=Conversation.Canal.WHATSAPP, conversation__whatsapp_jid=recebida.jid,
+        direction=Message.Direction.INBOUND, autor_externo__in=entrada.formas_do_numero(recebida.numero),
+        created_at__gte=timezone.now() - timedelta(minutes=MINUTOS_DO_ARQUIVO_SEGUINTE),
+    ).exists()
+
+
+def _ouvir(recebida, cliente, transcritor):
+    """Transcreve o áudio. Devolve (recebida como texto, "") ou (None, o que
+    aconteceu).
+
+    No grupo, o áudio que cita uma mensagem do Jarvis é atendido direto; os
+    outros só seguem se o nome "Jarvis" aparece. O que não segue é
+    descartado aqui: o texto não é gravado nem logado (ADR-0029)."""
+    citou = recebida.grupo and _chamou_o_jarvis(recebida, cliente)
+    responde = not recebida.grupo or citou
+    citar = _citacao(recebida) if recebida.grupo else None
+    if recebida.segundos > audio.MAX_SEGUNDOS:
+        if responde:
+            enviar_texto(cliente, recebida.jid, TEXTO_AUDIO_LONGO, citar=citar)
+        return None, "audio_longo"
+    try:
+        dados = cliente.baixar_midia(recebida.bruto)
+        texto = audio.transcrever_limpo(transcritor, dados, recebida.arquivo_mimetype)
+    except (WhatsAppIndisponivel, audio.TranscricaoFalhou) as exc:
+        logger.warning("WhatsApp: áudio de %ss não transcrito: %s", recebida.segundos, exc)
+        if responde:
+            enviar_texto(cliente, recebida.jid, TEXTO_AUDIO_NAO_ENTENDIDO, citar=citar)
+        return None, "audio_nao_entendido"
+    logger.info("WhatsApp: áudio de %ss transcrito (~US$ %.4f)", recebida.segundos, audio.custo(recebida.segundos))
+    if not responde and not audio.chamou_o_jarvis(texto):
+        return None, "audio_sem_jarvis"
+    return replace(recebida, tipo=entrada.TEXTO, texto=texto[:entrada.MAX_CARACTERES]), ""
 
 
 def _aprendeu_o_lid(recebida, cliente=None) -> bool:
@@ -210,11 +264,17 @@ def enviar_texto(cliente, jid, texto, message=None, citar=None, tipo=EnvioWhatsA
     return externo
 
 
-def entregar(resposta, cliente, jid, citar=None, executor=None) -> int:
+def entregar(resposta, cliente, jid, citar=None, executor=None, ouvi: str = "") -> int:
     """Manda a resposta (Message de saída) e registra cada envio. Falha da
     Evolution vira status FAILED na mensagem, nunca exceção: a resposta já
-    está gravada e visível no chat web."""
+    está gravada e visível no chat web.
+
+    `ouvi`: a transcrição do áudio. Vai numa linha antes da resposta, para a
+    pessoa ver na hora se o áudio foi mal entendido (decisão do Rubens,
+    2026-09-25)."""
     envios = saida.montar(resposta, executor=executor)
+    if ouvi:
+        envios = saida.com_o_que_ouvi(envios, ouvi)
     enviados = 0
     try:
         for envio in envios:
@@ -276,7 +336,7 @@ def parar_se_pedido(payload, cliente=None) -> bool:
 # ------------------------------------------------------------ o caminho todo
 
 
-def receber(payload, cliente=None, provider=None, executor=None) -> str:
+def receber(payload, cliente=None, provider=None, executor=None, transcritor=None) -> str:
     """Processa um evento. Devolve o que aconteceu (para o log e os testes)."""
     recebida = entrada.ler(payload)
     if recebida is None:
@@ -288,7 +348,14 @@ def receber(payload, cliente=None, provider=None, executor=None) -> str:
 
     if recebida.tipo == entrada.REACAO:
         return _reacao(recebida)
-    if recebida.grupo and not _chamou_o_jarvis(recebida, cliente):
+    ouvi = ""
+    if recebida.tipo == entrada.AUDIO:
+        cliente = cliente or cliente_configurado()
+        recebida, motivo = _ouvir(recebida, cliente, transcritor or audio.transcritor_configurado())
+        if recebida is None:
+            return motivo
+        ouvi = recebida.texto
+    if recebida.grupo and not ouvi and not _chamou_o_jarvis(recebida, cliente):
         if recebida.mencionados:
             _guardar_mencao_nao_reconhecida(recebida)
         return "grupo_sem_mencao"
@@ -307,10 +374,6 @@ def receber(payload, cliente=None, provider=None, executor=None) -> str:
     if comando in _FONTE:
         enviar_texto(cliente, recebida.jid, _texto_da_fonte(conversa), citar=citar)
         return "fonte"
-    if recebida.tipo == entrada.AUDIO:
-        enviar_texto(cliente, recebida.jid, TEXTO_AUDIO, citar=citar)
-        return "audio"
-
     texto = _escolha_de_sugestao(conversa, texto) or texto
     anexo = {}
     if recebida.tipo in (entrada.IMAGEM, entrada.DOCUMENTO):
@@ -351,7 +414,7 @@ def receber(payload, cliente=None, provider=None, executor=None) -> str:
     if not reply.reply_text:
         return "interrompida"
     resposta = mensagem.replies.order_by("-id").first()
-    entregar(resposta, cliente, recebida.jid, citar=citar, executor=executor)
+    entregar(resposta, cliente, recebida.jid, citar=citar, executor=executor, ouvi=ouvi)
     return "respondida"
 
 

@@ -10,7 +10,7 @@ auditoria. O que muda é a entrega:
 - as continuações numeradas no fim, para responder com "1", "2" ou "3".
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ai_orchestrator.models import AIReply
 from attachments import deposito
@@ -104,3 +104,18 @@ def _grafico(grafico, dados, imagens) -> None:
     imagem = graficos.png(grafico, dados)
     if imagem:
         imagens.append(Envio("imagem", (grafico or {}).get("titulo") or "", imagem, "grafico.png", "image/png"))
+
+
+# Até aqui a transcrição aparece inteira; áudio mais longo vai cortado, e a
+# pergunta completa fica no chat web.
+MAX_DO_OUVI = 300
+
+
+def com_o_que_ouvi(envios: list, ouvi: str) -> list:
+    """A resposta a um áudio começa dizendo o que foi ouvido (ADR-0029): é a
+    hora de a pessoa perceber que o áudio foi mal entendido."""
+    trecho = ouvi if len(ouvi) <= MAX_DO_OUVI else ouvi[:MAX_DO_OUVI].rsplit(" ", 1)[0] + "…"
+    linha = f"🎙️ _Ouvi:_ “{trecho}”\n\n"
+    if envios and envios[0].tipo == "texto":
+        return [replace(envios[0], texto=linha + envios[0].texto), *envios[1:]]
+    return [Envio(tipo="texto", texto=linha.rstrip()), *envios]

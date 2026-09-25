@@ -44,6 +44,7 @@ class Recebida:
     reacao_alvo: str = ""         # id da mensagem que recebeu a reação
     arquivo_nome: str = ""
     arquivo_mimetype: str = ""
+    segundos: int = 0             # duração, em AUDIO
     bruto: dict = field(default_factory=dict, repr=False)
 
 
@@ -133,7 +134,13 @@ def ler(payload: dict) -> Recebida | None:
         return Recebida(tipo=IMAGEM, texto=_limpo(imagem.get("caption")), arquivo_nome="imagem.jpg",
                         arquivo_mimetype=str(imagem.get("mimetype") or "image/jpeg"), **comum)
     if "audioMessage" in corpo or "pttMessage" in corpo:
-        return Recebida(tipo=AUDIO, **comum)
+        audio = corpo.get("audioMessage") or corpo.get("pttMessage") or {}
+        try:
+            segundos = int(audio.get("seconds") or 0)
+        except (TypeError, ValueError):
+            segundos = 0
+        return Recebida(tipo=AUDIO, arquivo_nome="audio.ogg", segundos=segundos,
+                        arquivo_mimetype=str(audio.get("mimetype") or "audio/ogg"), **comum)
 
     texto = corpo.get("conversation") or (corpo.get("extendedTextMessage") or {}).get("text")
     if not texto:

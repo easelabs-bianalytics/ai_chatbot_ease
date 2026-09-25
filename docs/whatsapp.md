@@ -3,10 +3,13 @@
 O Jarvis responde também pelo WhatsApp, com as mesmas funções do chat web, que
 continua como está. Este documento explica o uso e o passo a passo para ligar
 o canal, do chip ao primeiro teste. As decisões e o porquê de cada uma estão
-no [ADR-0028](adr/0028-canal-whatsapp-pela-evolution-api.md).
+no [ADR-0028](adr/0028-canal-whatsapp-pela-evolution-api.md); o áudio, no
+[ADR-0029](adr/0029-audio-no-whatsapp.md).
 
-**Situação em 2026-09-24:** no ar. O número `553190054127` está conectado
-(passos 1 a 8 da seção 2); falta o passo 9, os cadastros e os testes.
+**Situação em 2026-09-25:** no ar, no privado e em grupos. O número
+`553190054127` está conectado (passos 1 a 8 da seção 2). O Jarvis passa a
+entender áudio (seção 1, "Áudio"); falta o teste com áudio de verdade depois
+do deploy.
 
 ---
 
@@ -28,10 +31,17 @@ no [ADR-0028](adr/0028-canal-whatsapp-pela-evolution-api.md).
 ### Grupos
 - O Jarvis só responde em grupos **cadastrados no Admin**. Se alguém o
   colocar num grupo sem cadastro, ele fica calado.
-- No grupo liberado, **qualquer membro** chama o Jarvis de dois jeitos:
+- No grupo liberado, **qualquer membro** chama o Jarvis:
   - **marcando-o**: `@Jarvis quanto vendemos em agosto?`;
-  - **respondendo a uma mensagem dele** (citação): `e em julho?`.
-- Conversa entre as pessoas do grupo **nunca** é lida pelo Jarvis.
+  - **respondendo a uma mensagem dele** (citação): `e em julho?` — por texto
+    ou por áudio;
+  - **dizendo "Jarvis" num áudio**: "Jarvis, quanto vendemos em agosto?";
+  - **mandando um arquivo** logo depois de chamá-lo (até 5 minutos, a mesma
+    pessoa): "Jarvis, preenche a planilha que vou mandar" + o arquivo.
+- Mensagem **de texto** entre as pessoas do grupo **nunca** é lida pelo
+  Jarvis. **Áudio** é diferente: para saber se disseram "Jarvis", todo áudio
+  do grupo liberado é transcrito pela OpenAI, e o que não chama o Jarvis é
+  descartado na hora, sem registro (ADR-0029).
 - A resposta cita a pergunta de quem chamou.
 - A cota é **do grupo** (30 por dia e 150 por semana por padrão, ajustável no
   cadastro).
@@ -52,7 +62,68 @@ no [ADR-0028](adr/0028-canal-whatsapp-pela-evolution-api.md).
 | Fonte e consulta | botão "Ver fonte" | comando `fonte` |
 | 👎 | com o campo "o que estava errado" | reação 👎, sem comentário (escrever a crítica na mensagem seguinte faz o Jarvis refazer) |
 | Continuações | botões | lista numerada: responda 1, 2 ou 3 |
-| Áudio | ditado pelo microfone | ainda não transcrito: ele pede por escrito |
+| Áudio | ditado pelo microfone | transcrito; a resposta começa com "🎙️ Ouvi: …" (no grupo, só se citar o Jarvis ou disser "Jarvis") |
+
+### Áudio
+
+O Jarvis **ouve áudio** (ADR-0029, 2026-09-25). O áudio é transcrito e vira a
+pergunta, exatamente como se tivesse sido escrita: mesmas regras, mesma cota,
+mesma consulta ao banco.
+
+**Quem ele atende:**
+
+| Onde | Áudio atendido | Áudio ignorado |
+|---|---|---|
+| Privado (contato liberado) | todos | — |
+| Grupo liberado | o que **responde (cita) uma mensagem do Jarvis**, mesmo sem dizer o nome; o que **diz "Jarvis"** ("Jarvis, quanto vendemos em agosto?") | todos os outros: descartados na hora, sem gravar nem responder |
+| Número ou grupo não liberado | — | todos, sem baixar nem transcrever |
+
+**O que volta:** a resposta começa dizendo o que ele ouviu, para a pessoa
+perceber na hora um áudio mal entendido:
+
+> 🎙️ _Ouvi:_ "Jarvis, quanto vendemos em agosto?"
+>
+> Foram 777 unidades em ago/2026…
+
+A pergunta gravada é a transcrição: ela aparece assim no chat web e no Admin.
+
+**Pedir a planilha antes de mandar:** "Jarvis, vou te mandar uma planilha,
+preenche com o sell out de agosto" (por áudio ou texto) e, em seguida, o
+arquivo sem legenda. O arquivo continua o pedido anterior da conversa. No
+grupo, ele conta como chamada mesmo sem marcação, se vier da mesma pessoa até
+5 minutos depois de ela chamar o Jarvis. Arquivo sem legenda e sem pedido
+antes: o Jarvis descreve o que viu e oferece preencher.
+
+**Limites:**
+- Áudio acima de **3 minutos** não é transcrito: no privado (ou citando o
+  Jarvis no grupo) ele avisa e pede um áudio mais curto ou por escrito.
+- Áudio que não vira texto (ruído, silêncio, falha do serviço): "Não consegui
+  entender o áudio. Pode repetir ou mandar por escrito?".
+- **"Parar" só por texto:** o áudio espera a transcrição, e o "parar" precisa
+  agir na hora.
+- Nomes difíceis podem sair trocados na transcrição; o "Ouvi" existe para
+  isso. Termos da casa (PX, sell out, as redes, os representantes mais
+  comuns) vão como vocabulário para o modelo acertar.
+
+**Privacidade no grupo:** para saber se disseram "Jarvis", **todo áudio do
+grupo liberado passa pela OpenAI**. O que não chama o Jarvis é descartado na
+hora: nem a mensagem nem o texto ficam gravados ou no log. Mensagem de texto
+entre as pessoas continua nunca sendo lida. Liberar um grupo inclui isso
+(O-18).
+
+**Custo:** a transcrição é cobrada por minuto de áudio (~US$ 0,003 no
+`gpt-4o-mini-transcribe`), não por token, e procurar o nome é uma busca no
+texto, sem chamar a IA. Um grupo com 20 áudios de 30 s por dia custa ~US$ 0,90
+por mês; um muito ativo (100 áudios de 1 min por dia), ~US$ 9. A resposta em
+si custa o mesmo que a de uma pergunta escrita.
+
+**Configuração:** nenhuma infra nova. Usa a mesma chave da IA
+(`AI_PROVIDER_API_KEY`); o modelo pode ser trocado por
+`WHATSAPP_MODELO_TRANSCRICAO` (vazio = `gpt-4o-mini-transcribe`).
+
+**No log** (`jarvis-worker`): `WhatsApp: áudio de 12s transcrito (~US$
+0.0006)` e o resultado do evento — `respondida`, `audio_sem_jarvis`,
+`audio_longo`, `audio_nao_entendido`.
 
 ### Comandos
 
@@ -69,7 +140,14 @@ Nos grupos, os comandos também precisam marcar o Jarvis (`@Jarvis parar`).
 - **Planilha** (`.xlsx`, `.csv`) ou **imagem** enviadas ao Jarvis passam pela
   mesma validação do chat web. A legenda vira a pergunta ("preencha as
   unidades de agosto").
-- **Áudio** ainda não é transcrito: o Jarvis pede a pergunta por escrito.
+- **Áudio** é transcrito e vira a pergunta (ADR-0029). A resposta começa com
+  `🎙️ Ouvi: "…"`, para conferir se ele entendeu. No privado, todo áudio é
+  atendido; no grupo, o que cita uma mensagem do Jarvis ou diz "Jarvis".
+  Áudio acima de 3 minutos não é transcrito. "Parar" continua por texto.
+- **Arquivo depois do pedido:** "preenche a planilha que vou te mandar" (por
+  texto ou áudio) e, em seguida, o arquivo sem legenda: o Jarvis faz o que foi
+  pedido. Arquivo sem legenda e sem pedido antes: ele descreve o que viu e
+  oferece preencher.
 - **👍 ou 👎** como reação numa mensagem do Jarvis vira avaliação da resposta.
   O 👎 entra na fila de casos de teste (`casos_do_uso`), como no chat web.
   Tirar a reação desfaz a avaliação.
@@ -282,7 +360,16 @@ a variável; `apply` `1 added, 1 changed, 1 destroyed`.
    - uma mensagem sem marcar o Jarvis: ele fica calado;
    - `@Jarvis vendas de agosto`: ele responde citando a pergunta;
    - uma resposta citando a mensagem dele: ele responde.
-5. **Grupo que esconde os números (@lid):** a marcação chega com o
+5. **Teste de áudio:**
+   - no privado, um áudio com uma pergunta: a resposta começa com
+     "🎙️ Ouvi: …";
+   - no grupo, um áudio **sem** dizer "Jarvis": ele fica calado;
+   - no grupo, "Jarvis, quanto vendemos em agosto?": ele responde citando;
+   - no grupo, um áudio respondendo (citando) uma mensagem dele: ele
+     responde, mesmo sem dizer o nome;
+   - "Jarvis, vou te mandar uma planilha, preenche com o sell out de agosto" e,
+     logo depois, a planilha sem legenda: ele preenche.
+6. **Grupo que esconde os números (@lid):** a marcação chega com o
    identificador escondido (`...@lid`), e não com o número. Desde
    2026-09-24 o Jarvis **aprende o próprio @lid sozinho**: na primeira
    marcação por @lid num grupo liberado, ele lê a lista de participantes, que
@@ -359,13 +446,15 @@ No chat, quem é admin também vê o custo e os tokens de cada resposta, em
 | Número desconectou (estado ≠ open) | Página de conexão → Mostrar o QR → ler no aparelho. A sessão volta sozinha quando a task reinicia; o QR só é preciso se o WhatsApp desvincular o aparelho |
 | Número restringido pelo WhatsApp | Aviso no aparelho. Pare o uso por alguns dias; se persistir, troque de chip (passos 7 e 8) e revise o volume |
 | Resposta não chegou no WhatsApp | A resposta fica gravada e visível no chat web. A mensagem sai com status "Falhou" no Admin (Mensagens), com o detalhe |
-| Ver o que aconteceu com um evento | Log `jarvis-worker` no CloudWatch: `WhatsApp: evento respondida`, `contato_nao_liberado`, `grupo_sem_mencao`… |
+| Ver o que aconteceu com um evento | Log `jarvis-worker` no CloudWatch: `WhatsApp: evento respondida`, `contato_nao_liberado`, `grupo_sem_mencao`, `audio_sem_jarvis`… |
+| Áudio mal entendido | O "🎙️ Ouvi" mostra o que ele entendeu: repetir o áudio mais devagar ou mandar por escrito. A transcrição fica na pergunta, no chat web e no Admin |
 | Atualizar a versão da Evolution | Espelhar a versão nova (passo 4), mudar `jarvis_evolution_container_image`, `plan`/`apply`. O WhatsApp fica fora ~1 min e a sessão volta sem QR |
 
 **Custo:**
 - Evolution: ~US$ 10/mês (0,25 vCPU, 512 MB).
 - Task do Jarvis de 2 GB: ~US$ 4/mês a mais.
 - Perguntas: o mesmo custo de IA do chat web, dentro do mesmo teto mensal.
+- Áudio: ~US$ 0,003 por minuto transcrito (seção 1, "Áudio").
 
 ---
 
@@ -413,7 +502,10 @@ do "digitando"): resposta que sempre começa no mesmo instante
 - **Uma sessão só:** o serviço da Evolution nunca roda duas cópias, porque o
   WhatsApp derrubaria as duas. Por isso ele é separado do Jarvis, e os
   deploys do Jarvis não tocam no WhatsApp.
-- **Ainda não feito:** transcrição de áudio e botões interativos (o WhatsApp
+- **Áudio (ADR-0029):** ~US$ 0,003 por minuto transcrito. Um grupo com 20
+  áudios de 30 s por dia custa ~US$ 0,90 por mês; muito ativo (100 áudios de
+  1 min por dia), ~US$ 9. Teto de 3 minutos por áudio.
+- **Ainda não feito:** botões interativos (o WhatsApp
   não oferece botões para número comum; as continuações vão numeradas).
 
 ---
@@ -465,6 +557,7 @@ escrito.
 | `app/whatsapp/graficos.py` | gráfico em PNG com o `vl-convert` (Vega-Lite) |
 | `app/whatsapp/cliente.py` | cliente da Evolution: o real (HTTP) e o fake (testes) |
 | `app/whatsapp/aviso.py` | "digitando…" enquanto o Jarvis consulta (o "Entendi: …" saiu em 2026-09-24) |
+| `app/whatsapp/audio.py` | transcrição do áudio (OpenAI e fake), "Jarvis" no áudio, custo (ADR-0029) |
 | `app/whatsapp/config.py` | leitura das variáveis `EVOLUTION_*` e `WHATSAPP_*` |
 | `app/whatsapp/views.py`, `urls.py` | webhook `/api/whatsapp/webhook/<segredo>/` e página de conexão do Admin |
 | `app/whatsapp/templates/whatsapp/conexao.html` | a página de conexão (estado, QR, grupos, menções) |
@@ -483,6 +576,8 @@ escrito.
 | `tests/integration/test_whatsapp.py` | caminho completo, com o cliente fake |
 | `tests/unit/test_whatsapp_entrada.py` | leitura do evento, formato e gráfico |
 | `tests/unit/test_whatsapp_cliente.py` | contrato HTTP com a Evolution |
+| `tests/integration/test_whatsapp_audio.py` | áudio: privado, grupo com e sem "Jarvis", citação, arquivo depois do pedido |
+| `docs/adr/0029-audio-no-whatsapp.md` | a decisão do áudio (custo e privacidade) |
 
 ### 6.4 Arquivos no `bi/`: alterados
 
