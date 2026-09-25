@@ -138,6 +138,10 @@ class ConsultaEstruturada(BaseModel):
     titulo: str = Field(description="a entrega que esta consulta atende, em poucas palavras")
     sql: str = Field(description="a consulta da entrega")
     reference_query_id: str = Field(default="", description="referência usada como base")
+    preenchimento: PreenchimentoEstruturado = Field(
+        default_factory=PreenchimentoEstruturado,
+        description="com planilha de várias abas a preencher: a aba desta consulta e o casamento das colunas",
+    )
 
 
 class PlanoEstruturado(BaseModel):
@@ -381,17 +385,21 @@ MAX_ENTREGAS = 4
 SEGUIMENTOS = frozenset({"muda_o_dado", "so_apresentacao", "repete"})
 
 
-def _consultas(conteudo) -> tuple:
+def _consultas(conteudo, planilha: bool = False) -> tuple:
     """As entregas do pedido, só as que vieram com consulta (ADR-0026)."""
     entregas = []
     for consulta in getattr(conteudo, "consultas", None) or []:
         sql = (consulta.sql or "").strip()
         if sql:
-            entregas.append({
+            entrega = {
                 "titulo": (consulta.titulo or "").strip(),
                 "sql": sql,
                 "reference_query_id": (consulta.reference_query_id or "").strip(),
-            })
+            }
+            preenchimento = _preenchimento(consulta, pedido=planilha)
+            if preenchimento:
+                entrega["preenchimento"] = preenchimento
+            entregas.append(entrega)
     return tuple(entregas[:MAX_ENTREGAS])
 
 
@@ -614,7 +622,14 @@ class OpenAIProvider(AIProvider):
             entrada += (
                 "\n\n# Planilha anexada pelo usuário\n\n"
                 + request.planilha
-                + "\n\nEsta planilha está anexada: é ela que a pessoa quer completada. Escreva "
+                + "\n\n**O que a pessoa quer com o arquivo decide o caminho.** Se ela pergunta "
+                "o que tem nele, pede um resumo, manda o arquivo sem pedido, ou pergunta se você "
+                "conseguiu ver: responda em `conversation`, com segurança, a partir do resumo "
+                "acima — quantas abas, o que cada uma traz (as colunas e as linhas-chave, pelo "
+                "nome), o que está vazio para preencher — e ofereça preencher, dizendo com que "
+                "dado. Nunca diga que não consegue ver a planilha: o resumo é ela. Os números e "
+                "nomes do resumo podem ser citados.\n\n"
+                "Se ela pede para preencher ou completar, é ela que a pessoa quer completada. Escreva "
                 "UMA consulta com uma linha por chave, sem repetir chave: uma coluna que case "
                 "com a coluna-chave da planilha (o nome que identifica cada linha) e uma coluna "
                 "para CADA coluna vazia que a pessoa pediu — use CTEs quando os indicadores "
@@ -630,8 +645,16 @@ class OpenAIProvider(AIProvider):
                 "definição), peça esclarecimento em vez de supor.\n\n"
                 "**Arquivo com mais de uma aba**: o resumo traz todas. Se a pergunta disser qual "
                 "aba é (pelo nome ou pelas colunas que ela descreve), ponha o nome exato em "
-                "`aba` e trabalhe só nela. Se não disser e mais de uma servir, peça "
-                "esclarecimento listando as abas: preencher a errada devolve um arquivo errado."
+                "`aba` e trabalhe só nela. Se ela pedir mais de uma (\"as duas\", \"todas\"), "
+                "ou pedir para preencher sem dizer qual e houver várias com colunas vazias, "
+                "preencha TODAS: uma consulta por aba em `consultas`, cada uma com o seu "
+                "`preenchimento` (com `aba`) — as abas têm chaves diferentes (rede numa, "
+                "representante na outra), e uma consulta só não serve às duas. Nesse caso o `sql` "
+                "e o `preenchimento` do plano (fora de `consultas`) ficam vazios.\n\n"
+                "**Seja assertivo.** Nome completo na planilha (\"ALEXANDRE CIMINI\") se resolve "
+                "direto no banco, filtrando por todas as partes do nome: não pergunte \"qual "
+                "Alexandre\". Pergunte só o que o documento manda perguntar e o que a planilha não "
+                "diz — e, se precisar perguntar, pergunte tudo de uma vez, numa mensagem só."
             )
         entrada += f"\n\n# Pergunta do usuário\n\n{request.question}"
 
@@ -677,7 +700,7 @@ class OpenAIProvider(AIProvider):
             entendimento=(getattr(conteudo, "entendimento", "") or "").strip(),
             pedido_nao_atendido=(getattr(conteudo, "pedido_nao_atendido", "") or "").strip(),
             seguimento=_seguimento(conteudo),
-            consultas=_consultas(conteudo) if intent == Plan.Intent.ANSWER_WITH_DATA else (),
+            consultas=_consultas(conteudo, planilha=bool(request.planilha)) if intent == Plan.Intent.ANSWER_WITH_DATA else (),
             excel=bool(getattr(conteudo, "excel", False)),
             preenchimento=_preenchimento(conteudo, pedido=bool(request.planilha)),
             investigacao=_investigacao(conteudo) if intent == Plan.Intent.INVESTIGATE else (),

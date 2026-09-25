@@ -60,7 +60,10 @@ TEXTO_NOVA_CONVERSA = "Pronto: comecei uma conversa nova. Pode perguntar."
 TEXTO_SEM_FONTE = "A última resposta desta conversa não consultou o banco, então não há consulta para mostrar."
 TEXTO_PAROU = "Parei. Quando quiser, é só perguntar de novo."
 TEXTO_NADA_A_PARAR = "Não há nenhuma pergunta sendo respondida agora."
-TEXTO_ARQUIVO_SEM_PERGUNTA = "Recebi este arquivo."
+# Arquivo mandado sem legenda: a pergunta implícita é "o que tem aqui?". Até
+# 2026-09-24 era "Recebi este arquivo.", e o Jarvis respondia perguntando
+# qual aba preencher em vez de dizer o que viu.
+TEXTO_ARQUIVO_SEM_PERGUNTA = "O que tem neste arquivo?"
 
 
 def _normalizar(texto: str) -> str:

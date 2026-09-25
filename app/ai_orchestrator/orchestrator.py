@@ -248,7 +248,14 @@ def _planilha(message) -> str:
     Em 2026-09-21 a segunda chamada (documento inteiro) saía sem ele, e o
     modelo respondeu "não há planilha anexada" — depois de custar US$ 0,097.
     Um lugar só, para nenhuma chamada nova esquecer."""
-    return message.anexo_resumo if message.anexo_tipo == Message.Anexo.PLANILHA else ""
+    if message.anexo_tipo != Message.Anexo.PLANILHA:
+        return ""
+    if getattr(message, "planilha_da_conversa", False):
+        return (
+            "(Esta planilha foi enviada numa mensagem anterior desta conversa. Use-a se a "
+            "pergunta falar dela; se a pergunta for outra, ignore-a.)\n\n" + message.anexo_resumo
+        )
+    return message.anexo_resumo
 
 
 def _executar_com_correcao(plano, message, provider, executor, catalog, auditoria, historico):
@@ -862,6 +869,46 @@ def _deixar_planilha_pendente(message) -> dict:
     }}
 
 
+def _herdar_planilha_da_conversa(message, auditoria) -> None:
+    """A planilha acompanha a conversa enquanto está guardada.
+
+    2026-09-24, WhatsApp: a pessoa mandou a planilha com "O que existe nessa
+    planilha?" e, na mensagem seguinte, "Mas você conseguiu ver o que existe
+    dentro dela?" — o Jarvis respondeu que não havia planilha nenhuma, porque
+    ela só seguia adiante depois de um pedido de esclarecimento. Agora a
+    última planilha da conversa segue enquanto está no depósito (15 min
+    depois de recebida, renovados a cada uso); o planejador é avisado de que
+    ela veio antes e só a usa se a pergunta falar dela. Para de seguir quando
+    a conversa muda de assunto — a primeira resposta com dado que não a usou
+    — e depois de preenchida, quando sai do depósito."""
+    _herdar_planilha_pendente(message, auditoria)
+    if message.anexo_tipo:
+        return
+    anterior = (
+        Message.objects.filter(
+            conversation=message.conversation, id__lt=message.id,
+            direction=Message.Direction.INBOUND, anexo_tipo=Message.Anexo.PLANILHA,
+        )
+        .order_by("-id")
+        .first()
+    )
+    if anterior is None:
+        return
+    mudou_de_assunto = AIReply.objects.filter(
+        message__conversation=message.conversation,
+        message__id__gt=anterior.id, message__id__lt=message.id,
+        decision=AIReply.Decision.ANSWERED,
+    ).exists()
+    if mudou_de_assunto or not deposito.prolongar(anterior.anexo_token, segundos=SEGUNDOS_DA_PLANILHA_PENDENTE):
+        return
+    message.anexo_tipo = Message.Anexo.PLANILHA
+    message.anexo_nome = anterior.anexo_nome
+    message.anexo_resumo = anterior.anexo_resumo
+    message.anexo_token = anterior.anexo_token
+    message.planilha_da_conversa = True
+    auditoria.extras["planilha_da_conversa"] = anterior.pk
+
+
 def _herdar_planilha_pendente(message, auditoria) -> None:
     """Se a última resposta desta conversa foi um pedido de detalhe sobre uma
     planilha, esta mensagem (a resposta da pessoa) herda a planilha.
@@ -955,64 +1002,107 @@ def _nota_do_preenchimento(relatorio, nome: str) -> str:
 
 
 def _preencher_planilha(message, plano, executor, catalog, auditoria) -> str:
-    """Preenche a planilha anexada com o resultado da consulta.
+    """Preenche a planilha anexada com o resultado da consulta (uma aba)."""
+    return _preencher_abas(
+        message, [(plano.sql, plano.reference_query_id, plano.preenchimento)], executor, catalog, auditoria
+    )
 
-    Roda a consulta DE NOVO, com o limite alto: a que respondeu traz no
+
+def _preencher_abas(message, itens, executor, catalog, auditoria) -> str:
+    """Preenche a planilha anexada: cada item é (sql, referência,
+    preenchimento), um por aba, todos no mesmo arquivo.
+
+    Roda cada consulta DE NOVO, com o limite alto: a que respondeu traz no
     máximo 500 linhas porque é o que o modelo lê, e a planilha pode ter vinte
-    mil. Devolve a frase a acrescentar na resposta, ou vazio quando não deu
-    para preencher — nesse caso a resposta em texto continua valendo.
+    mil. Devolve a frase a acrescentar na resposta, ou vazio quando nada foi
+    preenchido — nesse caso a resposta em texto continua valendo.
     """
     dados = deposito.buscar(message.anexo_token)
     if dados is None:
         return "\n\n---\n\n" + canned.ANEXO_VENCIDO
 
-    pedido = planilha_anexada.PedidoDePreenchimento.do_plano(plano.preenchimento)
-    guard = validate_sql(plano.sql, catalog, max_rows=LINHAS_DO_PREENCHIMENTO)
-    if not guard.approved:
-        logger.warning("Consulta do preenchimento recusada pelo validador: %s", guard.reason)
-        return ""
+    feitas, recusas = [], []
+    for sql, referencia, bruto in itens:
+        pedido = planilha_anexada.PedidoDePreenchimento.do_plano(bruto)
+        guard = validate_sql(sql, catalog, max_rows=LINHAS_DO_PREENCHIMENTO)
+        if not guard.approved:
+            logger.warning("Consulta do preenchimento recusada pelo validador: %s", guard.reason)
+            continue
+        try:
+            resultado = executor.run(guard.sql, max_rows=LINHAS_DO_PREENCHIMENTO)
+        except QueryExecutionError as exc:
+            logger.warning("Consulta do preenchimento falhou: %s", exc)
+            continue
 
-    try:
-        resultado = executor.run(guard.sql, max_rows=LINHAS_DO_PREENCHIMENTO)
-    except QueryExecutionError as exc:
-        logger.warning("Consulta do preenchimento falhou: %s", exc)
-        return ""
-
-    auditoria.consulta(
-        attempt=len(auditoria.consultas) + 1,
-        sql=plano.sql,
-        reference_query_id=plano.reference_query_id,
-        guard_result=QueryRun.GuardResult.APPROVED,
-        status=QueryRun.Status.SUCCESS,
-        row_count=resultado.row_count,
-        truncated=resultado.truncated,
-        duration_ms=resultado.duration_ms,
-        # Mesma forma da amostra das outras consultas: esta é a última da
-        # resposta, e o painel de fonte e o gráfico leem dela.
-        result_sample={
-            "columns": list(resultado.columns),
-            "rows": [list(linha) for linha in resultado.rows[:5]],
-            "preenchimento": plano.preenchimento,
-        },
-    )
-
-    try:
-        preenchida = planilha_anexada.preencher(
-            message.anexo_nome, dados, pedido, resultado.columns, resultado.rows
+        auditoria.consulta(
+            attempt=len(auditoria.consultas) + 1,
+            sql=sql,
+            reference_query_id=referencia,
+            guard_result=QueryRun.GuardResult.APPROVED,
+            status=QueryRun.Status.SUCCESS,
+            row_count=resultado.row_count,
+            truncated=resultado.truncated,
+            duration_ms=resultado.duration_ms,
+            # Mesma forma da amostra das outras consultas: esta é a última da
+            # resposta, e o painel de fonte e o gráfico leem dela.
+            result_sample={
+                "columns": list(resultado.columns),
+                "rows": [list(linha) for linha in resultado.rows[:5]],
+                "preenchimento": bruto,
+            },
         )
-    except AnexoRecusado as exc:
-        logger.info("Não deu para preencher a planilha: %s", exc)
-        return f"\n\n---\n\nNão consegui preencher a planilha: {exc}"
-    finally:
-        deposito.descartar(message.anexo_token)
+        try:
+            preenchida = planilha_anexada.preencher(
+                message.anexo_nome, dados, pedido, resultado.columns, resultado.rows
+            )
+        except AnexoRecusado as exc:
+            logger.info("Não deu para preencher a planilha: %s", exc)
+            recusas.append(str(exc))
+            continue
+        dados = preenchida.dados
+        feitas.append((pedido.aba, preenchida))
+    deposito.descartar(message.anexo_token)
 
-    token = deposito.guardar(preenchida.dados, segundos=SEGUNDOS_DA_SAIDA)
-    Message.objects.filter(pk=message.pk).update(
-        anexo_resposta_token=token, anexo_resposta_nome=preenchida.nome
-    )
+    if not feitas:
+        return f"\n\n---\n\nNão consegui preencher a planilha: {recusas[0]}" if recusas else ""
+
+    nome = feitas[-1][1].nome
+    token = deposito.guardar(dados, segundos=SEGUNDOS_DA_SAIDA)
+    Message.objects.filter(pk=message.pk).update(anexo_resposta_token=token, anexo_resposta_nome=nome)
     message.anexo_resposta_token = token
-    message.anexo_resposta_nome = preenchida.nome
-    return _nota_do_preenchimento(preenchida, preenchida.nome)
+    message.anexo_resposta_nome = nome
+    if len(feitas) == 1:
+        texto = _nota_do_preenchimento(feitas[0][1], nome)
+    else:
+        texto = _nota_das_abas(feitas, nome)
+    if recusas:
+        texto += "\n\nNão consegui preencher tudo: " + "; ".join(recusas)
+    return texto
+
+
+def _nota_das_abas(feitas, nome: str) -> str:
+    """A nota do preenchimento com várias abas: quanto de cada uma, e o que
+    conferir em cada uma."""
+    contas = [f"**{r.preenchidas} de {r.total} linhas** da aba `{aba}`" for aba, r in feitas]
+    partes = [
+        f"\n\n---\n\nPreenchi {_lista_curta(contas)} de `{nome}`. "
+        "Baixe pelo botão **Baixar planilha preenchida**."
+    ]
+    for aba, relatorio in feitas:
+        if relatorio.aproximadas:
+            pares = [f"{planilha} → {banco}" for planilha, banco in relatorio.aproximadas]
+            partes.append(f"\n\n**Aba `{aba}`, casei por nome parecido — confira:** {_lista_curta(pares)}.")
+        if relatorio.sem_correspondencia_nomes:
+            partes.append(
+                f"\n\n**Aba `{aba}`, ficaram em branco, sem correspondência no banco:** "
+                f"{_lista_curta(relatorio.sem_correspondencia_nomes)}."
+            )
+        if relatorio.ambiguas:
+            partes.append(
+                f"\n\nAba `{aba}`: {relatorio.ambiguas} apareciam mais de uma vez no resultado; "
+                "deixei em branco em vez de escolher uma."
+            )
+    return "".join(partes)
 
 
 # ---------------------------------------------------------------- investigação
@@ -1344,6 +1434,18 @@ def _entregar_varias(plano, message, provider, executor, catalog, auditoria, his
     for campo in ("entendimento", "pedido_nao_atendido"):
         if getattr(plano, campo):
             raw[campo] = getattr(plano, campo)
+    if message.anexo_tipo == Message.Anexo.PLANILHA:
+        # Uma aba por consulta, todas no mesmo arquivo ("Preencha as duas",
+        # WhatsApp, 2026-09-24). A consulta vale como rodou (com a correção,
+        # se houve); a aba vem do plano.
+        itens = [
+            (p["sql"], consulta.get("reference_query_id") or "", consulta["preenchimento"])
+            for p, consulta in zip(passos, plano.consultas)
+            if p["resultado"] is not None and consulta.get("preenchimento")
+        ]
+        if itens:
+            texto += _preencher_abas(message, itens, executor, catalog, auditoria)
+            raw["preenchimento"] = [item[2] for item in itens]
     return _Decisao(
         decision=AIReply.Decision.ANSWERED,
         reply=texto,
@@ -1640,7 +1742,10 @@ def _conversa(plano, message, historico) -> _Decisao:
             rule="tentativa_de_injecao",
             raw={"reason": plano.reason, "rascunho": texto},
         )
-    contexto = "\n".join([message.content, *(m.text for m in historico)])
+    # O resumo da planilha também é fonte: "4 linhas", "AGO/26", as redes e os
+    # representantes que ela traz. Sem isto, em 2026-09-24 a descrição certa
+    # de "O que existe nessa planilha?" virou o texto de reserva.
+    contexto = "\n".join([message.content, _planilha(message), *(m.text for m in historico)])
     # Os números das consultas anteriores desta conversa também valem: "qual
     # MAT você considerou?" se responde com o período que estava no SQL e no
     # resultado da resposta anterior, não no texto dela. Sem isto, em
@@ -1903,7 +2008,7 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
         if decisao is not None:
             return decisao
     elif not message.anexo_tipo:
-        _herdar_planilha_pendente(message, auditoria)
+        _herdar_planilha_da_conversa(message, auditoria)
 
     plano = provider.plan(
         PlanRequest(
@@ -1980,14 +2085,16 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
         )
 
     if plano.intent == Plan.Intent.ANSWER_WITH_DATA and plano.consultas:
-        if len(plano.consultas) >= 2 and message.anexo_tipo != Message.Anexo.PLANILHA:
+        abas = message.anexo_tipo == Message.Anexo.PLANILHA and any(c.get("preenchimento") for c in plano.consultas)
+        if len(plano.consultas) >= 2 and (message.anexo_tipo != Message.Anexo.PLANILHA or abas):
             return _entregar_varias(plano, message, provider, executor, catalog, auditoria, historico)
         if not plano.sql:
             # Uma entrega só (ou planilha, que se preenche de uma consulta):
             # é o caminho comum.
             primeira = plano.consultas[0]
             plano = replace(plano, sql=primeira["sql"],
-                            reference_query_id=primeira.get("reference_query_id") or plano.reference_query_id)
+                            reference_query_id=primeira.get("reference_query_id") or plano.reference_query_id,
+                            preenchimento=plano.preenchimento or primeira.get("preenchimento") or {})
 
     if plano.intent == Plan.Intent.UNKNOWN or not plano.sql:
         return _Decisao(
@@ -2093,10 +2200,12 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
         if plano.preenchimento:
             texto += _preencher_planilha(message, plano, executor, catalog, auditoria)
             raw["preenchimento"] = plano.preenchimento
-        else:
+        elif not getattr(message, "planilha_da_conversa", False):
             # A consulta respondeu, mas o modelo não disse como casar as
             # colunas: a resposta em texto vale, e a planilha volta vazia.
-            texto += "\n\n---\n\n" + canned.PLANILHA_SEM_CASAMENTO
+            # Com a planilha de uma mensagem anterior, a pergunta pode ser
+            # outra: aí o aviso não cabe.
+            texto +="\n\n---\n\n" + canned.PLANILHA_SEM_CASAMENTO
 
     return _Decisao(
         decision=AIReply.Decision.ANSWERED,
