@@ -2153,6 +2153,113 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
 .cena-grafico i:nth-child(4) { animation-delay: 0.45s; background: var(--brand-green); }
 @keyframes cenaCresce { from { transform: scaleY(0); } to { transform: scaleY(1); } }
 
+/* 7. o fim: o Jarvis se transforma na versão armadura, nas cores da Ease
+   Labs. Uma faixa de luz verde desce pelo corpo e a armadura surge por onde
+   ela passa (um recorte que cresce junto com a faixa); a viseira se ajusta
+   à máscara quando a faixa passa por ela, e o anel some. Depois os jatos
+   tremulam e ele sobe pairando.
+   As peças ficam VISÍVEIS por padrão e a animação só as revela: com
+   "reduzir movimento" (que desliga a animação do mascote), a armadura
+   aparece pronta. */
+.j-armadura { display: none; }
+.jarvis--armadura .j-armadura { display: inline; }
+.jarvis--armadura .j-armadura:not(.j-arm-scan) { clip-path: url(#jvArmVarredura); }
+/* De armadura, quem flutua é o Jarvis inteiro: se o corpo e a viseira
+   seguissem flutuando sozinhos, eles dançariam dentro da armadura. */
+.jarvis--armadura .j-corpo, .jarvis--armadura .j-viseira, .jarvis--armadura .j-olho { animation: none; }
+/* o anel sai de cena devagar, enquanto a faixa desce */
+.jarvis--armadura .j-orbita-g { animation: orbitaSome 0.5s ease 0.25s forwards; }
+@keyframes orbitaSome { to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .jarvis--armadura .j-orbita-g { display: none; } }
+
+/* a viseira do Jarvis, dentro da moldura prateada; ela se ajusta quando a
+   faixa passa pela altura dela */
+.walk-ator .j-viseira {
+  transition: x 0.35s ease, y 0.35s ease, width 0.35s ease, height 0.35s ease, rx 0.35s ease,
+    fill 0.35s ease, stroke 0.35s ease;
+}
+.walk-ator .j-olho { transition: cx 0.35s ease, cy 0.35s ease, r 0.35s ease; }
+.jarvis--armadura .j-viseira {
+  x: 21.2px; y: 22.3px; width: 21.6px; height: 8.6px; rx: 4.3px;
+  fill: #141542; stroke: #A5A8F3; stroke-width: 0.7px;
+  transition-delay: 0.42s;
+}
+.jarvis--armadura .j-olho { cx: 38.2px; cy: 26.6px; r: 2px; transition-delay: 0.42s; filter: drop-shadow(0 0 1px #6ECC64); }
+
+.j-arm-ouro { fill: url(#jvArmPrata); stroke: #2E2F8F; stroke-width: 0.6; stroke-linejoin: round; }
+.j-arm-casca { fill: url(#jvArmCasco); stroke: #1E1F5C; stroke-width: 0.8; }
+.j-arm-contorno { fill: none; stroke: #1E1F5C; stroke-width: 6.2; stroke-linecap: round; }
+.j-arm-membro { fill: none; stroke: #5558D4; stroke-width: 4.6; stroke-linecap: round; }
+.j-arm-faixa { fill: none; stroke: #A5A8F3; stroke-width: 1.6; stroke-linecap: round; }
+.j-arm-faixa-fina { fill: none; stroke: #A5A8F3; stroke-width: 1.1; stroke-linecap: round; }
+.j-arm-junta { fill: none; stroke: #1E1F5C; stroke-width: 0.6; opacity: 0.8; }
+.j-arm-traco { fill: none; stroke: #3E40B0; stroke-width: 0.65; stroke-linecap: round; stroke-linejoin: round; }
+.j-arm-brilho { fill: none; stroke: #FFFFFF; stroke-width: 0.7; stroke-linecap: round; opacity: 0.85; }
+.j-arm-fone { fill: url(#jvArmPrata); stroke: #2E2F8F; stroke-width: 0.6; }
+.j-arm-fone-luz { fill: #8FE584; filter: drop-shadow(0 0 1px #6ECC64); }
+.j-arm-repulsor { fill: url(#jvArmNucleo); filter: drop-shadow(0 0 1.4px #6ECC64); }
+.j-arm-piscada { fill: none; stroke: var(--brand-green); stroke-width: 1.5; stroke-linecap: round; filter: drop-shadow(0 0 1px #6ECC64); }
+.j-arm-halo { fill: #8FE584; opacity: 0.45; filter: blur(1.6px); }
+.j-arm-nucleo { filter: drop-shadow(0 0 1.2px #6ECC64); }
+.j-arm-bota { fill: url(#jvArmPrata); stroke: #2E2F8F; stroke-width: 0.6; }
+.j-arm-chama { fill: url(#jvArmJato); filter: drop-shadow(0 0 1.6px #6ECC64); transform-box: fill-box; transform-origin: top center; }
+.j-arm-scan { fill: #C8F7C0; opacity: 0; filter: drop-shadow(0 0 1.6px #6ECC64); }
+
+/* a transformação: a faixa e o recorte andam juntos, de cima para baixo */
+.jarvis--armadura .j-arm-varredura { animation: armaduraRevela 1s cubic-bezier(0.45, 0, 0.25, 1) 0.2s backwards; }
+.jarvis--armadura .j-arm-scan { animation: armaduraFaixa 1s cubic-bezier(0.45, 0, 0.25, 1) 0.2s both; }
+@keyframes armaduraRevela { from { height: 8px; } to { height: 70px; } }
+@keyframes armaduraFaixa {
+  0%   { transform: translateY(10px); opacity: 0; }
+  10%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { transform: translateY(66px); opacity: 0; }
+}
+/* depois: os jatos tremulam, o reator respira e a mão acena */
+.jarvis--armadura .j-arm-chama { animation: armaduraChama 0.12s ease-in-out 1.1s infinite alternate; }
+.jarvis--armadura .j-arm-reator { transform-box: fill-box; transform-origin: center; animation: armaduraPulsa 2s ease-in-out 1.3s infinite; }
+.jarvis--armadura .j-arm-braco--aceno { transform-box: view-box; transform-origin: 43px 38px; animation: armaduraAcena 1.2s ease-in-out 1.9s 2; }
+@keyframes armaduraChama { from { transform: scaleY(0.82); } to { transform: scaleY(1.08); } }
+@keyframes armaduraPulsa { 0%, 100% { opacity: 1; } 50% { opacity: 0.75; } }
+@keyframes armaduraAcena { 0%, 100% { transform: rotate(0); } 30% { transform: rotate(-12deg); } 65% { transform: rotate(8deg); } }
+
+/* com os jatos ligados, ele sobe e fica pairando */
+.walk[data-quadro="6"] .walk-ator { transform-origin: 50% 100%; animation: armaduraDecola 0.8s cubic-bezier(0.3, 0, 0.3, 1) 1.15s both; }
+.walk[data-quadro="6"] .walk-ator .jarvis--armadura { animation: jarvisFlutua 3.2s ease-in-out 2s infinite; }
+@keyframes armaduraDecola { from { transform: translateY(0) scale(1); } to { transform: translateY(-10px) scale(1.45); } }
+.walk[data-quadro="6"] .walk-cena::after { animation: armaduraSombra 0.8s ease-out 1.15s both; }
+@keyframes armaduraSombra { to { transform: scale(0.6); opacity: 0.5; } }
+
+/* a despedida é o inverso da chegada: a faixa SOBE dos pés à cabeça e
+   recolhe a armadura por onde passa (os jatos se apagam primeiro); quando
+   ela passa pelos olhos, a viseira volta ao desenho normal, e o anel
+   reaparece. Ele pousa na lateral já como o mascote de sempre. */
+.jarvis--desarmando .j-armadura { display: inline; }
+.jarvis--desarmando .j-armadura:not(.j-arm-scan) { clip-path: url(#jvArmVarredura); }
+.jarvis--desarmando .j-arm-varredura { animation: armaduraRecolhe 0.6s cubic-bezier(0.45, 0, 0.25, 1) forwards !important; }
+.jarvis--desarmando .j-arm-scan { animation: armaduraFaixaVolta 0.6s cubic-bezier(0.45, 0, 0.25, 1) forwards !important; }
+.jarvis--desarmando .j-viseira, .jarvis--desarmando .j-olho { transition-delay: 0.4s; }
+.jarvis--desarmando .j-orbita-g { animation: orbitaVolta 0.35s ease-out 0.3s backwards !important; }
+@keyframes armaduraRecolhe { from { height: 70px; } to { height: 8px; } }
+@keyframes armaduraFaixaVolta {
+  0%   { transform: translateY(66px); opacity: 0; }
+  10%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { transform: translateY(10px); opacity: 0; }
+}
+@keyframes orbitaVolta { from { opacity: 0; } to { opacity: 1; } }
+
+/* estrelinhas em volta, piscando, como as dos outros quadros */
+.cena-estrela {
+  width: 11px; height: 11px;
+  background: #A6F29C;
+  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+  animation: cenaEntra 0.4s ease-out both, cenaPulsa 2.4s ease-in-out infinite !important;
+}
+.cena-estrela--1 { left: 34px;  top: 26px; animation-delay: 1.2s, 1.6s !important; }
+.cena-estrela--2 { right: 36px; top: 14px; width: 9px; height: 9px; background: var(--primary-400); animation-delay: 1.35s, 1.9s !important; }
+.cena-estrela--3 { right: 24px; top: 66px; width: 7px; height: 7px; animation-delay: 1.5s, 2.2s !important; }
+
 /* A cena encolhe com a tela; a legenda nunca some. */
 @media (max-height: 820px) { .walk-cena { --escala: 1.7; } }
 @media (max-height: 680px) { .walk-cena { --escala: 1.35; } .walk-legenda { min-height: 128px; } }

@@ -94,16 +94,108 @@
   // O mascote é redesenhado em SVG (as medidas saíram do PNG original em
   // docs/brand/) porque assim ele é nítido em qualquer tamanho, pesa ~1 KB e
   // cada parte pode ser animada pelo CSS: um GIF não faria nada disso.
-  const jarvis = (classe = '', orbita = false) => `
+  // A armadura (último quadro do passeio): o desenho da armadura à Homem de
+  // Ferro, nas cores da Ease Labs — casco índigo, prata no lugar do dourado,
+  // luzes no verde da marca (pedido do Rubens, 2026-09-25). A viseira e o
+  // olho verde continuam os do app. As peças só existem no Jarvis do passeio
+  // e só aparecem com a classe `jarvis--armadura`; a faixa de luz
+  // (`j-arm-scan`) desce pelo corpo e a armadura surge por onde ela passa.
+  const ARMADURA_ATRAS = `
+      <defs>
+        <linearGradient id="jvArmCasco" x1="0.15" y1="0" x2="0.85" y2="1">
+          <stop offset="0" stop-color="#9A9EFB"/><stop offset="0.45" stop-color="#5558D4"/><stop offset="1" stop-color="#2E2F8F"/>
+        </linearGradient>
+        <linearGradient id="jvArmPrata" x1="0.2" y1="0" x2="0.8" y2="1">
+          <stop offset="0" stop-color="#E4E5FF"/><stop offset="0.45" stop-color="#A5A8F3"/><stop offset="1" stop-color="#6F73E6"/>
+        </linearGradient>
+        <radialGradient id="jvArmNucleo" cx="50%" cy="50%" r="50%">
+          <stop offset="0" stop-color="#FFFFFF"/><stop offset="0.5" stop-color="#C8F7C0"/><stop offset="1" stop-color="#5FBF5A"/>
+        </radialGradient>
+        <linearGradient id="jvArmJato" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#FFFFFF"/><stop offset="0.35" stop-color="#B8F5AE"/><stop offset="1" stop-color="#6ECC64" stop-opacity="0"/>
+        </linearGradient>
+        <clipPath id="jvArmVarredura" clipPathUnits="userSpaceOnUse">
+          <rect class="j-arm-varredura" x="0" y="0" width="64" height="70"/>
+        </clipPath>
+      </defs>
+      <g class="j-armadura j-arm-propulsores">
+        <rect class="j-arm-bota" x="23.6" y="48.8" width="5.8" height="3.4" rx="1.6"/>
+        <rect class="j-arm-bota" x="34.6" y="48.8" width="5.8" height="3.4" rx="1.6"/>
+        <path class="j-arm-chama" d="M 24.2 51.6 Q 26.5 50.9 28.8 51.6 Q 28 58.6 26.5 63.8 Q 25 58.6 24.2 51.6 Z"/>
+        <path class="j-arm-chama" d="M 35.2 51.6 Q 37.5 50.9 39.8 51.6 Q 39 58.6 37.5 63.8 Q 36 58.6 35.2 51.6 Z"/>
+      </g>
+      <g class="j-armadura j-arm-braco j-arm-braco--punho">
+        <path class="j-arm-contorno" d="M 21.5 39.6 Q 16 40.2 12.4 44.4"/>
+        <path class="j-arm-membro" d="M 21.5 39.6 Q 16 40.2 12.4 44.4"/>
+        <path class="j-arm-faixa" d="M 16.2 38.6 L 17.4 42.2"/>
+        <circle class="j-arm-casca" cx="11.4" cy="45.6" r="3.9"/>
+        <path class="j-arm-faixa-fina" d="M 8.6 44.2 Q 11.4 42.6 14.2 44.2"/>
+        <path class="j-arm-junta" d="M 8.6 46.4 Q 11.4 45.2 14.2 46.4"/>
+        <path class="j-arm-junta" d="M 11.4 42.2 L 11.4 49"/>
+      </g>
+      <g class="j-armadura j-arm-braco j-arm-braco--aceno">
+        <path class="j-arm-contorno" d="M 42.6 38.4 Q 48.6 37.2 51.2 32"/>
+        <path class="j-arm-membro" d="M 42.6 38.4 Q 48.6 37.2 51.2 32"/>
+        <path class="j-arm-faixa" d="M 48.8 38 L 47.2 34.4"/>
+        <g class="j-arm-mao">
+          <rect class="j-arm-casca" x="47.6" y="21.2" width="2" height="5.2" rx="1" transform="rotate(-18 48.6 23.8)"/>
+          <rect class="j-arm-casca" x="50.3" y="20" width="2" height="5.8" rx="1" transform="rotate(-4 51.3 22.9)"/>
+          <rect class="j-arm-casca" x="53" y="20.6" width="2" height="5.4" rx="1" transform="rotate(10 54 23.3)"/>
+          <rect class="j-arm-casca" x="55.2" y="23.4" width="1.9" height="4.4" rx="0.95" transform="rotate(34 56.1 25.6)"/>
+          <circle class="j-arm-casca" cx="51.6" cy="28.4" r="3.8"/>
+          <circle class="j-arm-repulsor" cx="51.6" cy="28.4" r="2.2"/>
+          <circle cx="51.6" cy="28.4" r="1" fill="#FFFFFF"/>
+        </g>
+      </g>`;
+  const ARMADURA_FRENTE = `
+      <g class="j-armadura j-arm-casco">
+        <rect x="17" y="11.9" width="30" height="40.3" rx="15" fill="url(#jvArmCasco)"/>
+        <path class="j-arm-ouro" d="M 19.4 37 C 19.8 42.6 21.8 46.8 25 49.6 L 26.8 47.8 C 24.2 45.2 22.6 41.6 22.3 37 Z"/>
+        <path class="j-arm-ouro" d="M 44.6 37 C 44.2 42.6 42.2 46.8 39 49.6 L 37.2 47.8 C 39.8 45.2 41.4 41.6 41.7 37 Z"/>
+        <path class="j-arm-ouro" d="M 24.6 42.2 L 28.6 44.8 L 29.2 43.4 L 25.6 41 Z"/>
+        <path class="j-arm-ouro" d="M 39.4 42.2 L 35.4 44.8 L 34.8 43.4 L 38.4 41 Z"/>
+        <path class="j-arm-ouro" d="M 25.4 50.2 Q 32 52.3 38.6 50.2 L 38 49 Q 32 50.8 26 49 Z"/>
+        <path class="j-arm-junta" d="M 22.6 16.4 Q 32 11.6 41.4 16.4"/>
+        <ellipse cx="24" cy="17.4" rx="3.4" ry="1.7" fill="#FFFFFF" opacity="0.3" transform="rotate(-32 24 17.4)"/>
+      </g>
+      <g class="j-armadura j-arm-mascara">
+        <path class="j-arm-ouro" d="M 30 15.8 L 31 12.2 L 33 12.2 L 34 15.8 Z"/>
+        <path class="j-arm-ouro j-arm-rosto" d="M 19.8 24.2 C 19.8 18.6 24.8 15.6 32 15.6 C 39.2 15.6 44.2 18.6 44.2 24.2 L 44.2 31.8
+          C 44.2 36.6 40.6 40 36 40.6 L 28 40.6 C 23.4 40 19.8 36.6 19.8 31.8 Z"/>
+        <path class="j-arm-traco" d="M 27.2 18.2 L 32 19.4 L 36.8 18.2"/>
+        <path class="j-arm-traco" d="M 22.8 32.2 L 25.8 38.4"/>
+        <path class="j-arm-traco" d="M 41.2 32.2 L 38.2 38.4"/>
+        <path class="j-arm-traco" d="M 29.2 36.4 L 30.9 36.4 M 33.1 36.4 L 34.8 36.4"/>
+        <path class="j-arm-brilho" d="M 25.4 17.4 C 28 16.6 36 16.6 38.6 17.4"/>
+        <circle class="j-arm-fone" cx="18.2" cy="27.2" r="3.1"/>
+        <circle class="j-arm-fone-luz" cx="18.2" cy="27.2" r="1.6"/>
+        <circle class="j-arm-fone" cx="45.8" cy="27.2" r="3.1"/>
+        <circle class="j-arm-fone-luz" cx="45.8" cy="27.2" r="1.6"/>
+      </g>`;
+  const ARMADURA_REATOR = `
+      <path class="j-armadura j-arm-piscada" d="M 24.4 27.6 Q 26.7 24.9 29 27.6"/>
+      <g class="j-armadura j-arm-reator">
+        <circle class="j-arm-halo" cx="32" cy="46" r="5.4"/>
+        <circle cx="32" cy="46" r="3.6" fill="#1E1F5C" stroke="#A5A8F3" stroke-width="0.8"/>
+        <circle class="j-arm-nucleo" cx="32" cy="46" r="2.6" fill="url(#jvArmNucleo)"/>
+        <circle cx="32" cy="46" r="2.6" fill="none" stroke="#FFFFFF" stroke-width="0.35" stroke-dasharray="1.1 0.6"/>
+        <circle cx="32" cy="46" r="1.2" fill="#FFFFFF"/>
+      </g>
+      <rect class="j-armadura j-arm-scan" x="6" y="-2" width="52" height="1.4" rx="0.7"/>`;
+
+  const jarvis = (classe = '', orbita = false, armadura = false) => `
     <svg class="jarvis ${classe}" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+      ${armadura ? ARMADURA_ATRAS : ''}
       ${orbita ? `
       <g class="j-orbita-g">
         <path class="j-orbita j-orbita--tras" d="M 7,40 A 25,8 0 0,0 57,40"/>
         <circle class="j-satelite j-satelite--tras" r="2.2"/>
       </g>` : ''}
       <rect class="j-corpo" x="17" y="11.9" width="30" height="40.3" rx="15"/>
+      ${armadura ? ARMADURA_FRENTE : ''}
       <rect class="j-viseira" x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9"/>
       <circle class="j-olho" cx="40" cy="26.5" r="2.4"/>
+      ${armadura ? ARMADURA_REATOR : ''}
       ${orbita ? `
       <g class="j-orbita-g">
         <path class="j-orbita j-orbita--frente" d="M 7,40 A 25,8 0 0,1 57,40"/>
@@ -2430,7 +2522,7 @@
 
 
   // ---------------------------------------------------------- passeio
-  // O mascote abre a apresentação do Jarvis. Seis quadros, um assunto cada,
+  // O mascote abre a apresentação do Jarvis. Sete quadros, um assunto cada,
   // em tela cheia: no cartão pequeno de antes as cenas ficavam do tamanho de
   // um ícone, e elas são o que explica — o texto só legenda.
   //
@@ -2507,6 +2599,19 @@
           <i style="--h:34%"></i><i style="--h:62%"></i><i style="--h:46%"></i><i style="--h:88%"></i>
         </span>`,
     },
+    {
+      // O fim do passeio (2026-09-25): o Jarvis se transforma. Uma faixa de
+      // luz desce pelo corpo e a armadura surge por onde ela passa — é ele
+      // mudando, não uma imagem trocada. Depois os jatos acendem e ele sobe.
+      titulo: 'Pronto para decolar',
+      texto: 'Passeio concluído! O J.A.R.V.I.S. fica com o trabalho pesado nos dados, e você com as decisões. É só perguntar.',
+      estado: 'jarvis--vivo jarvis--armadura',
+      objetos: `
+        <span class="cena-estrela cena-estrela--1"></span>
+        <span class="cena-estrela cena-estrela--2"></span>
+        <span class="cena-estrela cena-estrela--3"></span>
+        <span class="cena-estrela cena-estrela--4"></span>`,
+    },
   ];
 
   const semMovimento = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -2528,10 +2633,17 @@
   };
   const mascoteDaLateral = () => $('#btnLogoHome .marca-jarvis');
 
-  const voar = (de, ator, volta = false) => {
+  // `desde`: onde o ator está quando o voo começa. No último quadro ele
+  // paira mais alto e maior; sem isto, a volta começava do tamanho normal e
+  // ele encolhia num tranco antes de sair voando.
+  const voar = (de, ator, volta = false, desde = 'none') => {
     if (semMovimento() || !naTela(de)) return Promise.resolve();
     const a = de.getBoundingClientRect();
+    // medido sem o transform próprio: as contas são do lugar dele no palco
+    const guardado = ator.style.transform;
+    ator.style.transform = 'none';
     const b = ator.getBoundingClientRect();
+    ator.style.transform = guardado;
     if (!b.width) return Promise.resolve();
     const escala = b.width / ator.offsetWidth;
     const dx = (a.left + a.width / 2 - (b.left + b.width / 2)) / escala;
@@ -2539,7 +2651,7 @@
     const quadros = [
       { transform: `translate(${dx}px, ${dy}px) scale(${a.width / b.width})` },
       { transform: `translate(${dx * 0.45}px, ${dy * 0.45 - 30}px) scale(${(a.width / b.width + 1) / 2})`, offset: 0.55 },
-      { transform: 'none' },
+      { transform: desde },
     ];
     const voo = ator.animate(volta ? quadros.reverse() : quadros, {
       duration: volta ? 480 : 680,
@@ -2597,7 +2709,8 @@
     passeioFechando = false;
     const parouNo = lerChave(CHAVE_PASSEIO) ? 0 : Number(lerChave(CHAVE_QUADRO) || 0);
     quadro = parouNo > 0 && parouNo < PASSEIO.length ? parouNo : 0;
-    $('#walkAtor').innerHTML = jarvis('jarvis--vivo', true);
+    // Com as peças da armadura: só o último quadro as acende.
+    $('#walkAtor').innerHTML = jarvis('jarvis--vivo', true, true);
     $('#walkAtor').classList.remove('pula');
     desenharQuadro();
     const walk = $('#walk');
@@ -2607,6 +2720,29 @@
     origemDoPasseio?.classList.add('jarvis-emprestado');
     voar(origemDoPasseio, $('#walkAtor'));
     $('#walkProximo').focus({ preventScroll: true });
+  };
+
+  // A despedida do último quadro: a armadura se recolhe ANTES do voo (a faixa
+  // de luz sobe, o inverso da chegada), e o Jarvis pousa na lateral já como o
+  // mascote de sempre. Antes ele pousava
+  // de armadura e virava o outro de uma vez (2026-09-25). Devolve onde ele
+  // estava (pairando, maior), para o voo partir dali sem tranco.
+  const desarmar = async (ator) => {
+    const svg = ator.querySelector('svg');
+    if (!svg?.classList.contains('jarvis--armadura') || semMovimento()) return 'none';
+    const desde = getComputedStyle(ator).transform;
+    ator.style.transform = desde === 'none' ? '' : desde;
+    // Sem o quadro 7, o pulinho da troca de quadro (`pula`) voltava a valer e
+    // passava por cima: ele encolhia, pulava e crescia de novo antes do voo.
+    ator.classList.remove('pula');
+    // solta a animação de pairar sem que ele pule: o transform fica preso
+    // no lugar em que estava
+    $('#walk').dataset.quadro = 'saindo';
+    svg.classList.remove('jarvis--armadura');
+    svg.classList.add('jarvis--desarmando');
+    // A faixa leva 0,6 s para subir; o voo sai no finzinho dela, sem pausa.
+    await new Promise((ok) => setTimeout(ok, 520));
+    return desde;
   };
 
   const fecharPasseio = async ({ perguntar = false } = {}) => {
@@ -2625,11 +2761,14 @@
     const lateral = mascoteDaLateral();
     const destino = naTela(lateral) ? lateral : origemDoPasseio;
     destino?.classList.add('jarvis-emprestado');
+    const ator = $('#walkAtor');
+    const desde = await desarmar(ator);
     walk.classList.add('saindo');
     await Promise.all([
-      voar(destino, $('#walkAtor'), true),
+      voar(destino, ator, true, desde),
       new Promise((ok) => setTimeout(ok, semMovimento() ? 0 : 260)),
     ]);
+    ator.style.transform = '';
     walk.hidden = true;
     walk.classList.remove('saindo');
     $('#walkPalco').innerHTML = '';   // para as animações da cena
