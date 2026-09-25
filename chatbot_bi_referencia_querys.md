@@ -69,6 +69,7 @@ o **dado** não existir na base (regra acima).
    | Estoque, ruptura, categoria de PDV | `estoque_redes` | 3 |
    | Adesão, transação, voucher | `pbm` | 4 |
    | Representante, painel, visita | `cddd` e `audit.rx_*` | 5 |
+   | IC (índice de conversão: share de sell out ÷ share de PX) | `td` + `audit` | 6 |
 
 3. **Ache a referência mais parecida com o padrão**, mesmo que seja de outro tema, e copie a
    *forma* dela: janela de tempo, denominador do share, filtros, cortes de base mínima.
@@ -2627,8 +2628,17 @@ ORDER BY 1 DESC, 3 DESC;
   qual dos dois quer, pergunte. Um médico pode ter sido visitado pelos dois.
 - **Pergunte o período.** MAT = 12 meses fechados até o mês de referência (MAT 01/07/2026 =
   ago/25 a jul/26); YTD = de janeiro até o mês de referência.
-- **Representante pelo nome:** `desc_territorio ILIKE '%primeiro nome%'` na `cddd.forca_vendas`. O
-  usuário escreve de várias formas ("Hermes", "Hermes Bizotto"); se voltar mais de um, pergunte qual.
+- **Representante pelo nome:** o nome é a coluna `desc_territorio` da `cddd.forca_vendas`, em
+  maiúsculas e sem acento, no formato NOME SOBRENOME (`ALEXANDRE CIMINI`). Filtre com **todas as
+  palavras que o usuário deu**, uma condição por palavra, sem acento: "Alexandre Cimini" →
+  `desc_territorio ILIKE '%ALEXANDRE%' AND desc_territorio ILIKE '%CIMINI%'`.
+  - Sobrou **um** representante → é ele. Siga sem perguntar: nome e sobrenome que batem com a fonte
+    não deixam dúvida — é o caso comum em planilha, que traz o nome completo.
+  - Só o primeiro nome e **um único** representante com ele → é ele, também sem perguntar.
+  - Pergunte qual **só** quando, com todas as palavras dadas, sobrar mais de um. Hoje só ALEXANDRE,
+    CAROLINE e MARCUS se repetem: é o primeiro nome deles, sozinho, que é ambíguo.
+  - Nenhum → a pessoa pode ter saído (`cddd.dim_ct`, abaixo) ou o nome está escrito diferente;
+    tente só o sobrenome antes de desistir.
 - **`cddd.forca_vendas` é a foto de hoje**, como o painel: só tem quem está no território agora.
   Representante desligado não aparece nela, nem para meses em que ele vendeu. Quem estava em qual
   território, e até quando, está na `cddd.scd_ct_territorio` (`data_saida_territorio`); o
@@ -3089,3 +3099,298 @@ WHERE v.cnpj = lpad(regexp_replace(:cnpj, '\D', '', 'g'), 14, '0')
 ORDER BY v.data_da_visita DESC
 LIMIT 10;
 ```
+
+## 6. IC — Índice de Conversão
+
+**IC = share de sell out ÷ share de prescrição (PX)**, no mesmo período e no mesmo recorte. Índice
+criado pelo BI & Analytics da Ease Labs para medir quanto da prescrição de um laboratório vira venda
+no PDV. Com 10% da prescrição do mercado e 7% da venda, algo se perdeu entre o consultório e o
+balcão — normalmente **troca de receituário na ponta** (o paciente sai com o produto de outro
+laboratório, por preço, disponibilidade ou indicação do balconista).
+
+| Faixa | Leitura |
+|---|---|
+| **IC ≈ 1** | A venda acompanha a prescrição |
+| **IC < 1** | Perde-se venda no PDV. Quanto menor, maior a suspeita de troca no balcão, ruptura ou preço fora da faixa |
+| **IC > 1** | Vende-se mais do que a prescrição observada explica: conversão forte no balcão, recompra, ou prescrição subrepresentada |
+
+O IC **não prova** troca de receituário: aponta onde investigar. A conclusão vem do cruzamento com
+estoque (ruptura), preço e cobertura de visita.
+
+| Lado | Fonte | Regras |
+|---|---|---|
+| **Sell out** | `td.fato_td` (mercado auditado) | `desc_canal <> 'HOSPITALAR'` · unidades ÷ 1000 · **exclui Mevatyl** |
+| **Prescrição** | `audit.prescricao` (`px1`) | competência mensal (dia 1) · **exclui Tetraidrocanabinol** |
+
+- **O denominador é sempre o mercado no mesmo recorte.** IC de um representante usa o mercado do
+  território dele, não o nacional.
+- **Laboratório:** no sell out, `cddd.fab.desc_sigla_fab`; na prescrição,
+  `audit.prescricao.cdglaboratorio`. As chaves são iguais (`EAS`, `ACH`, `GRE`, `MQF`, `P.D`, `EUF`,
+  `U.Q`, `HBA`…): o cruzamento é direto.
+- **Classe** (Extrato × Isolado): no sell out, `'EXT'` no nome da apresentação = Extrato, senão
+  Isolado; na prescrição, `descmole = 'EXTRATO CANNABIS SATIVA'` = Extrato, `'CANABIDIOL'` = Isolado.
+- **Período:** mensal e igual dos dois lados, **só meses fechados**. A prescrição tem competência no
+  dia 1; o mercado (TD) fecha o mês inteiro. Mês parcial derruba o IC sem significar nada.
+- **Nunca use o sell out da Ease (`cddd.vw_sell_out` ou `fato_cdd`) no IC:** só tem a Ease e não dá
+  share de mercado.
+- **Base pequena:** laboratório, brick ou território com pouca venda gera IC instável. Corte por
+  volume mínimo (ex.: `so_lab > 500`) e diga que cortou.
+- **Território mistura dois bricks:** a prescrição entra pelo brick do médico
+  (`audit.medico.utc_codigo`) e a venda pelo brick do PDV (`td.fato_td.cod_utc`). O paciente pode
+  ser atendido num brick e comprar noutro, o que explica parte do IC alto ou baixo em território
+  pequeno.
+- **IC não é conversão individual:** não diga "de cada 10 receitas, 7 viraram venda". É razão entre
+  participações de mercado em duas bases distintas.
+- **Não misture canais:** o IC oficial é sem hospitalar. Se pedirem com mercado público, diga que
+  muda a régua e mostre os dois.
+- **Recortes que não existem:** IC de SKU (a prescrição não separa por apresentação, só por
+  molécula) e IC por PDV (o mercado não tem PDV, só brick).
+- **Outros recortes** usam a mesma estrutura, trocando o filtro **dos dois lados**: UF ou região
+  (junte `cddd.utc` pelo `cod_utc` nos dois e agrupe por `uf`/`regiao`); brick (`cod_utc = :cod_utc`
+  nos dois); acumulado — trimestre, MAT — (tire o `mes` dos `GROUP BY` e some o período inteiro).
+
+*"Qual o IC de cada laboratório nos últimos meses?"* · *"Qual o IC da Ease?"* (filtre `lab = 'EAS'`)
+
+```sql
+-- F01 · IC de todos os laboratórios, mês a mês
+WITH mol AS (   -- 1 linha por chave de produto (a relação tem 1 chave duplicada)
+  SELECT DISTINCT ON (cdgmarca, codigoconcentracao, codigoapresentacao, codigoforma, cdglaboratorio)
+         cdgmarca, codigoconcentracao, codigoapresentacao, codigoforma, cdglaboratorio, descmole
+  FROM audit.molecula_produto_relacao
+  ORDER BY cdgmarca, codigoconcentracao, codigoapresentacao, codigoforma, cdglaboratorio, descmole
+),
+px AS (
+  SELECT to_char(p.data, 'YYYYMM') AS mes, p.cdglaboratorio AS lab, p.px1 AS px
+  FROM audit.prescricao p
+  LEFT JOIN mol r
+         ON r.cdgmarca = p.cdgmarca AND r.codigoconcentracao = p.cdgconcentracao
+        AND r.codigoapresentacao = p.cdgapresentacao AND r.codigoforma = p.cdgforma::text
+        AND r.cdglaboratorio = p.cdglaboratorio
+  WHERE p.data BETWEEN :data_ini AND :data_fim                  -- competências: '2026-06-01' a '2026-08-01'
+    AND (r.descmole IS NULL OR upper(r.descmole) NOT LIKE '%TETRAIDROCANABINOL%')
+),
+so AS (
+  SELECT f.cod_anomes AS mes,
+         COALESCE(fb.desc_sigla_fab, '??')         AS lab,
+         COALESCE(fb.desc_fab, 'NÃO IDENTIFICADO') AS laboratorio,
+         f.und / 1000.0                            AS und
+  FROM td.fato_td f
+  LEFT JOIN cddd.canal dc ON dc.cod_subcanal = f.cod_subcanal
+  LEFT JOIN cddd.apres a  ON a.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN td.apres ta   ON ta.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN cddd.prod pr  ON pr.cod_marca = COALESCE(a.cod_marca, ta.cod_marca)
+  LEFT JOIN cddd.fab fb   ON fb.cod_fab = pr.cod_fab
+  WHERE dc.desc_canal <> 'HOSPITALAR'
+    AND f.cod_anomes BETWEEN :anomes_ini AND :anomes_fim          -- o mesmo período: '202606' a '202608'
+    AND upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) NOT LIKE '%MEVATYL%'
+),
+px_mes AS (SELECT mes, SUM(px) AS px_mercado FROM px GROUP BY 1),
+so_mes AS (SELECT mes, SUM(und) AS so_mercado FROM so GROUP BY 1),
+px_lab AS (SELECT mes, lab, SUM(px) AS px_lab FROM px GROUP BY 1, 2),
+so_lab AS (SELECT mes, lab, MAX(laboratorio) AS laboratorio, SUM(und) AS so_lab FROM so GROUP BY 1, 2)
+SELECT s.mes,
+       s.laboratorio,
+       ROUND((100 * p.px_lab / pm.px_mercado)::numeric, 2) AS share_px_pct,
+       ROUND((100 * s.so_lab / sm.so_mercado)::numeric, 2) AS share_sellout_pct,
+       ROUND(((s.so_lab / sm.so_mercado) / NULLIF(p.px_lab / pm.px_mercado, 0))::numeric, 2) AS ic
+FROM so_lab s
+JOIN so_mes sm ON sm.mes = s.mes
+JOIN px_lab p  ON p.mes = s.mes AND p.lab = s.lab
+JOIN px_mes pm ON pm.mes = s.mes
+WHERE s.so_lab > 500          -- corta laboratório sem volume: IC de base pequena oscila demais
+ORDER BY s.mes, ic;
+```
+
+Gabarito (jun a ago/26): Ease Labs **0,73 · 0,70 · 0,76** — o pior entre os grandes. Aché 0,86 ·
+0,86 · 0,88; Greencare 0,76 · 0,81 · 0,78. Do outro lado, Prati-Donaduzzi 1,24, Eurofarma 1,25 e
+Herbarium 1,48 em jun/26: vendem acima da prescrição observada.
+
+*"Qual o IC do nosso Extrato?"* · *"O IC é pior no Isolado ou no Extrato?"*
+
+```sql
+-- F02 · IC por classe (Extrato e Isolado)
+WITH mol AS (
+  SELECT DISTINCT ON (cdgmarca, codigoconcentracao, codigoapresentacao, codigoforma, cdglaboratorio)
+         cdgmarca, codigoconcentracao, codigoapresentacao, codigoforma, cdglaboratorio, descmole
+  FROM audit.molecula_produto_relacao
+  ORDER BY cdgmarca, codigoconcentracao, codigoapresentacao, codigoforma, cdglaboratorio, descmole
+),
+px AS (
+  SELECT to_char(p.data, 'YYYYMM') AS mes, p.cdglaboratorio AS lab,
+         CASE WHEN r.descmole = 'EXTRATO CANNABIS SATIVA' THEN 'Extrato'
+              WHEN r.descmole = 'CANABIDIOL'              THEN 'Isolado'
+              ELSE 'Outros' END AS classe,
+         p.px1 AS px
+  FROM audit.prescricao p
+  LEFT JOIN mol r
+         ON r.cdgmarca = p.cdgmarca AND r.codigoconcentracao = p.cdgconcentracao
+        AND r.codigoapresentacao = p.cdgapresentacao AND r.codigoforma = p.cdgforma::text
+        AND r.cdglaboratorio = p.cdglaboratorio
+  WHERE p.data BETWEEN :data_ini AND :data_fim
+    AND (r.descmole IS NULL OR upper(r.descmole) NOT LIKE '%TETRAIDROCANABINOL%')
+),
+so AS (
+  SELECT f.cod_anomes AS mes,
+         COALESCE(fb.desc_sigla_fab, '??')         AS lab,
+         COALESCE(fb.desc_fab, 'NÃO IDENTIFICADO') AS laboratorio,
+         CASE WHEN upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) LIKE '%EXT%'
+              THEN 'Extrato' ELSE 'Isolado' END    AS classe,
+         f.und / 1000.0                            AS und
+  FROM td.fato_td f
+  LEFT JOIN cddd.canal dc ON dc.cod_subcanal = f.cod_subcanal
+  LEFT JOIN cddd.apres a  ON a.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN td.apres ta   ON ta.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN cddd.prod pr  ON pr.cod_marca = COALESCE(a.cod_marca, ta.cod_marca)
+  LEFT JOIN cddd.fab fb   ON fb.cod_fab = pr.cod_fab
+  WHERE dc.desc_canal <> 'HOSPITALAR'
+    AND f.cod_anomes BETWEEN :anomes_ini AND :anomes_fim
+    AND upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) NOT LIKE '%MEVATYL%'
+),
+px_mes AS (SELECT mes, classe, SUM(px) AS px_mercado FROM px WHERE classe <> 'Outros' GROUP BY 1, 2),
+so_mes AS (SELECT mes, classe, SUM(und) AS so_mercado FROM so GROUP BY 1, 2),
+px_lab AS (SELECT mes, classe, lab, SUM(px) AS px_lab FROM px WHERE classe <> 'Outros' GROUP BY 1, 2, 3),
+so_lab AS (SELECT mes, classe, lab, MAX(laboratorio) AS laboratorio, SUM(und) AS so_lab FROM so GROUP BY 1, 2, 3)
+SELECT s.mes, s.classe, s.laboratorio,
+       ROUND((100 * p.px_lab / pm.px_mercado)::numeric, 2) AS share_px_pct,
+       ROUND((100 * s.so_lab / sm.so_mercado)::numeric, 2) AS share_sellout_pct,
+       ROUND(((s.so_lab / sm.so_mercado) / NULLIF(p.px_lab / pm.px_mercado, 0))::numeric, 2) AS ic
+FROM so_lab s
+JOIN so_mes sm ON sm.mes = s.mes AND sm.classe = s.classe
+JOIN px_lab p  ON p.mes = s.mes AND p.classe = s.classe AND p.lab = s.lab
+JOIN px_mes pm ON pm.mes = s.mes AND pm.classe = s.classe
+WHERE s.lab IN ('EAS', 'ACH', 'GRE')   -- remova para todos os laboratórios; filtre s.classe para uma só
+ORDER BY s.classe, s.mes, ic;
+```
+
+Gabarito (jun a ago/26): o problema da Ease está no **Isolado** — IC 0,65 · 0,64 · 0,67, contra
+**0,93 · 0,83 · 0,96 no Extrato**. No Extrato o Aché passa de 1 (1,17 · 1,11 · 1,24) e a Greencare
+fica em 0,86 · 0,83 · 0,87.
+
+*"Qual o IC da regional do Jonathan Abrahão?"* — o recorte é pelos **bricks do território**, com a
+regra de nome da seção 5 para achar o representante.
+
+```sql
+-- F03 · IC de um representante (bricks do território)
+WITH terr AS (
+  SELECT DISTINCT cod_utc FROM cddd.forca_vendas
+  WHERE desc_territorio ILIKE '%' || :rep || '%'          -- ex.: 'JONATHAN'; confirme o nome na E01
+),
+mol AS (
+  SELECT DISTINCT ON (cdgmarca, codigoconcentracao, codigoapresentacao, codigoforma, cdglaboratorio)
+         cdgmarca, codigoconcentracao, codigoapresentacao, codigoforma, cdglaboratorio, descmole
+  FROM audit.molecula_produto_relacao
+  ORDER BY cdgmarca, codigoconcentracao, codigoapresentacao, codigoforma, cdglaboratorio, descmole
+),
+px AS (
+  SELECT to_char(p.data, 'YYYYMM') AS mes, p.cdglaboratorio AS lab, p.px1 AS px
+  FROM audit.prescricao p
+  JOIN audit.medico m ON m.cdgmedico = p.cdgmedico            -- brick do médico
+  LEFT JOIN mol r
+         ON r.cdgmarca = p.cdgmarca AND r.codigoconcentracao = p.cdgconcentracao
+        AND r.codigoapresentacao = p.cdgapresentacao AND r.codigoforma = p.cdgforma::text
+        AND r.cdglaboratorio = p.cdglaboratorio
+  WHERE p.data BETWEEN :data_ini AND :data_fim
+    AND (r.descmole IS NULL OR upper(r.descmole) NOT LIKE '%TETRAIDROCANABINOL%')
+    AND m.utc_codigo IN (SELECT cod_utc FROM terr)
+),
+so AS (
+  SELECT f.cod_anomes AS mes,
+         COALESCE(fb.desc_sigla_fab, '??')         AS lab,
+         COALESCE(fb.desc_fab, 'NÃO IDENTIFICADO') AS laboratorio,
+         f.und / 1000.0                            AS und
+  FROM td.fato_td f
+  LEFT JOIN cddd.canal dc ON dc.cod_subcanal = f.cod_subcanal
+  LEFT JOIN cddd.apres a  ON a.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN td.apres ta   ON ta.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN cddd.prod pr  ON pr.cod_marca = COALESCE(a.cod_marca, ta.cod_marca)
+  LEFT JOIN cddd.fab fb   ON fb.cod_fab = pr.cod_fab
+  WHERE dc.desc_canal <> 'HOSPITALAR'
+    AND f.cod_anomes BETWEEN :anomes_ini AND :anomes_fim
+    AND upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) NOT LIKE '%MEVATYL%'
+    AND f.cod_utc IN (SELECT cod_utc FROM terr)                  -- brick do PDV
+),
+px_mes AS (SELECT mes, SUM(px) AS px_mercado FROM px GROUP BY 1),
+so_mes AS (SELECT mes, SUM(und) AS so_mercado FROM so GROUP BY 1),
+px_lab AS (SELECT mes, lab, SUM(px) AS px_lab FROM px GROUP BY 1, 2),
+so_lab AS (SELECT mes, lab, MAX(laboratorio) AS laboratorio, SUM(und) AS so_lab FROM so GROUP BY 1, 2)
+SELECT s.mes, s.laboratorio,
+       ROUND((100 * p.px_lab / pm.px_mercado)::numeric, 2) AS share_px_pct,
+       ROUND((100 * s.so_lab / sm.so_mercado)::numeric, 2) AS share_sellout_pct,
+       ROUND(((s.so_lab / sm.so_mercado) / NULLIF(p.px_lab / pm.px_mercado, 0))::numeric, 2) AS ic,
+       ROUND(s.so_lab::numeric, 0) AS unidades,
+       ROUND(p.px_lab::numeric, 0) AS px
+FROM so_lab s
+JOIN so_mes sm ON sm.mes = s.mes
+JOIN px_lab p  ON p.mes = s.mes AND p.lab = s.lab
+JOIN px_mes pm ON pm.mes = s.mes
+WHERE s.lab IN ('EAS', 'ACH', 'GRE', 'P.D')      -- ou só 'EAS'
+ORDER BY s.mes, ic;
+```
+
+Gabarito (Jonathan Abrahão, jun a ago/26): IC da Ease **0,98 · 0,84 · 0,83** — bem acima da média
+nacional dela, com 173, 176 e 181 unidades no território. No mesmo recorte, Prati-Donaduzzi fica em
+1,09 a 1,12 e Greencare em 0,80 a 0,84.
+
+*"Qual o IC da equipe do Gabriel Bastos?"* — mesma lógica, um nível acima:
+`fv_distrito` → `fv_territorio` → `forca_vendas`.
+
+```sql
+-- F04 · IC de um GR (bricks de todos os territórios do distrito)
+WITH terr AS (
+  SELECT DISTINCT fv.cod_utc
+  FROM cddd.forca_vendas fv
+  JOIN cddd.fv_territorio t ON t.cod_territorio = fv.cod_territorio
+  JOIN cddd.fv_distrito d   ON d.cod_distrito = t.cod_distrito
+  WHERE d.desc_distrito ILIKE '%' || :gr || '%'           -- ex.: 'GABRIEL'
+),
+mol AS (
+  SELECT DISTINCT ON (cdgmarca, codigoconcentracao, codigoapresentacao, codigoforma, cdglaboratorio)
+         cdgmarca, codigoconcentracao, codigoapresentacao, codigoforma, cdglaboratorio, descmole
+  FROM audit.molecula_produto_relacao
+  ORDER BY cdgmarca, codigoconcentracao, codigoapresentacao, codigoforma, cdglaboratorio, descmole
+),
+px AS (
+  SELECT to_char(p.data, 'YYYYMM') AS mes, p.cdglaboratorio AS lab, p.px1 AS px
+  FROM audit.prescricao p
+  JOIN audit.medico m ON m.cdgmedico = p.cdgmedico
+  LEFT JOIN mol r
+         ON r.cdgmarca = p.cdgmarca AND r.codigoconcentracao = p.cdgconcentracao
+        AND r.codigoapresentacao = p.cdgapresentacao AND r.codigoforma = p.cdgforma::text
+        AND r.cdglaboratorio = p.cdglaboratorio
+  WHERE p.data BETWEEN :data_ini AND :data_fim
+    AND (r.descmole IS NULL OR upper(r.descmole) NOT LIKE '%TETRAIDROCANABINOL%')
+    AND m.utc_codigo IN (SELECT cod_utc FROM terr)
+),
+so AS (
+  SELECT f.cod_anomes AS mes,
+         COALESCE(fb.desc_sigla_fab, '??') AS lab,
+         f.und / 1000.0                    AS und
+  FROM td.fato_td f
+  LEFT JOIN cddd.canal dc ON dc.cod_subcanal = f.cod_subcanal
+  LEFT JOIN cddd.apres a  ON a.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN td.apres ta   ON ta.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN cddd.prod pr  ON pr.cod_marca = COALESCE(a.cod_marca, ta.cod_marca)
+  LEFT JOIN cddd.fab fb   ON fb.cod_fab = pr.cod_fab
+  WHERE dc.desc_canal <> 'HOSPITALAR'
+    AND f.cod_anomes BETWEEN :anomes_ini AND :anomes_fim
+    AND upper(COALESCE(a.desc_apresentacao, ta.desc_apresentacao)) NOT LIKE '%MEVATYL%'
+    AND f.cod_utc IN (SELECT cod_utc FROM terr)
+),
+px_mes AS (SELECT mes, SUM(px) AS px_mercado FROM px GROUP BY 1),
+so_mes AS (SELECT mes, SUM(und) AS so_mercado FROM so GROUP BY 1),
+px_lab AS (SELECT mes, lab, SUM(px) AS px_lab FROM px GROUP BY 1, 2),
+so_lab AS (SELECT mes, lab, SUM(und) AS so_lab FROM so GROUP BY 1, 2)
+SELECT s.mes,
+       ROUND((100 * p.px_lab / pm.px_mercado)::numeric, 2) AS share_px_pct,
+       ROUND((100 * s.so_lab / sm.so_mercado)::numeric, 2) AS share_sellout_pct,
+       ROUND(((s.so_lab / sm.so_mercado) / NULLIF(p.px_lab / pm.px_mercado, 0))::numeric, 2) AS ic
+FROM so_lab s
+JOIN so_mes sm ON sm.mes = s.mes
+JOIN px_lab p  ON p.mes = s.mes AND p.lab = s.lab
+JOIN px_mes pm ON pm.mes = s.mes
+WHERE s.lab = 'EAS'
+ORDER BY s.mes;
+```
+
+Gabarito (GR Gabriel Bastos, Ease, jun a ago/26): **0,78 · 0,76 · 0,81**, com share de PX de ~16% e
+share de sell out de ~12% no distrito.

@@ -23,7 +23,7 @@ _TABELA_CITADA = re.compile(r"`([a-z_]+\.[A-Za-z_][A-Za-z0-9_]*)`")
 
 # Nome curto de cada seção, na ordem do documento. Serve de chave em toda a
 # aplicação (roteador, registro em AICall, relatório de custo por tema).
-CHAVES = ("prescricao", "sell_out", "estoque", "pbm", "forca_vendas")
+CHAVES = ("prescricao", "sell_out", "estoque", "pbm", "forca_vendas", "ic")
 
 
 @dataclass(frozen=True)

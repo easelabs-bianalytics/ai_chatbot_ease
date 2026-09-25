@@ -68,6 +68,17 @@ _TERMOS = {
             "equipe", "hierarquia", "email do", "e-mail do"),
         1: ("gr ", " gr", "remota", "forca de vendas", "quem atende", "quem e o", "quem sao"),
     },
+    # Índice de Conversão (seção 6). "IC" sozinho é curto demais para buscar
+    # solto: vai com espaço e pontuação, como o " mat " do Sell Out.
+    "ic": {
+        # Peso 3: frases que só existem no IC e que também têm palavra de
+        # prescrição e de venda ("convertendo a prescrição em venda"). Com
+        # peso 2 empatavam com os dois temas e o IC ia só como resumo.
+        3: ("indice de conversao", "troca de receit", "troca no balcao", "prescricao em venda",
+            "receita em venda", "prescricao vira venda", "receita vira venda"),
+        2: (" ic ", " ic?", " ic.", " ic,"),
+        1: ("conversao", "converte"),
+    },
 }
 
 

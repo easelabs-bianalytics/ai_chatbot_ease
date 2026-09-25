@@ -88,6 +88,12 @@ def test_documento_sem_secao_falha_alto():
         ("Quantas adesões ao PBM tivemos em julho?", "pbm"),
         ("Quais médicos estão no painel do Josias?", "forca_vendas"),
         ("Quantas visitas efetivas fizemos em agosto?", "forca_vendas"),
+        # IC (seção 6, 2026-09-25): a pergunta tem palavra de prescrição e de
+        # venda, e o IC precisa ganhar dos dois para ir com as consultas.
+        ("Qual o IC da Ease?", "ic"),
+        ("Como está o índice de conversão da Ease no Isolado?", "ic"),
+        ("O distrito do Gabriel está convertendo a prescrição em venda?", "ic"),
+        ("Tem troca de receita no balcão na Raia?", "ic"),
     ],
 )
 def test_tema_principal_da_pergunta(pergunta, esperada):

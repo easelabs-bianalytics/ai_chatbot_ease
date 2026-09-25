@@ -116,9 +116,12 @@ representante", o nome vem sempre dessa coluna, ligada pelo `cod_territorio`
 a `dim_ct` só diz se a pessoa foi desligada (`data_demissao`).
 
 Quando a pergunta cita uma pessoa pelo nome (representante, GR, médico),
-traga a coluna com o nome completo no `SELECT`. O documento manda perguntar
-qual é quando o nome casa com mais de uma pessoa ("Alexandre"), e é essa
-coluna que permite perceber isso no resultado.
+traga a coluna com o nome completo no `SELECT`. Filtre com **todas as
+palavras** do nome que o usuário deu (seção 5): "Alexandre Cimini" casa com um
+só representante e não tem pergunta — em 2026-09-25 o Jarvis filtrou só por
+"Alexandre", achou dois e perguntou à toa. Pergunte qual é só quando, com
+todas as palavras, o nome ainda casar com mais de uma pessoa; é a coluna do
+nome no resultado que permite perceber isso.
 
 A estrutura das tabelas está na seção "Schema do banco de negócio". Use-a no
 lugar de consultar `information_schema`: catálogos do sistema são bloqueados.
