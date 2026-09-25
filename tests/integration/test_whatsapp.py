@@ -444,3 +444,27 @@ def test_marcar_outra_pessoa_por_lid_nao_chama_o_jarvis(grupo, cliente):
 
     assert resultado == "grupo_sem_mencao"
     assert config.lid_do_jarvis() == "22777050443952@lid"   # aprendeu mesmo assim
+
+
+def test_tabela_longa_vai_inteira_na_planilha_e_sem_o_botao_da_tela(paulo, cliente):
+    """2026-09-25, grupo: "os 10 maiores prescritores de cada território" deu
+    340 linhas, e a planilha do WhatsApp saiu com 100 — as que a resposta
+    guarda para a tela. Faltava território. A planilha refaz a consulta
+    inteira; e o "botão Baixar Excel" do texto vira a planilha anexada."""
+    import io
+
+    from openpyxl import load_workbook
+
+    grande = make_result(("territorio", "medico", "px"), [(f"T{i // 10}", f"MEDICO {i}", 400 - i) for i in range(340)])
+    texto = "A planilha traz 340 linhas e pode ser baixada pelo botão “Baixar Excel” logo abaixo desta resposta."
+    _receber(_evento("os 10 maiores prescritores de cada território em excel"), cliente, [plano(excel=True)],
+             [resposta(texto, blocos=({"tipo": "texto", "texto": texto},
+                                      {"tipo": "tabela", "consulta": 0, "colunas": ["territorio", "medico", "px"]}))],
+             resultados=(grande, grande))
+
+    documento = next(e for e in cliente.enviados if e["tipo"] == "document")
+    planilha = load_workbook(io.BytesIO(documento["dados"]))
+    assert max(aba.max_row for aba in planilha.worksheets) >= 341          # cabeçalho + 340
+    textos = " ".join(e["texto"] for e in cliente.enviados if e["tipo"] == "texto")
+    assert "Baixar Excel" not in textos and "na planilha anexada" in textos
+    assert "e mais 335 linhas" in textos
