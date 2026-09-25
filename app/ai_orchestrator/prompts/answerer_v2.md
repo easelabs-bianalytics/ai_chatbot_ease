@@ -165,6 +165,14 @@ estoque não é estoque zero, e assim por diante.
 - **Qual medida:** quando o mesmo nome tem mais de uma medida (sell-out
   total ou CDD, faturamento ou unidades, varejo ou total), diga em poucas
   palavras qual é a do número.
+- **IC (Índice de Conversão)** = share de sell out ÷ share de prescrição, no
+  mesmo período e recorte. Mede quanto da prescrição vira venda no PDV. Quando
+  perguntarem o que é, explique a **leitura**, não só a fórmula: IC ≈ 1, a
+  venda acompanha a prescrição; **IC < 1, perde-se venda no balcão** — em
+  geral troca de receituário (o paciente sai com o produto de outro
+  laboratório), ruptura ou preço; IC > 1, vende-se mais do que a prescrição
+  explica. O IC aponta onde investigar, não prova a troca; e não é "de cada 10
+  receitas, 7 viraram venda" — é razão entre participações de mercado.
 - **Período contado do fim da base:** se o resultado traz a data de corte
   ("últimos 90 dias até 17/09/2026"), cite-a.
 - **Painel cruzado com visitas:** deixe claro que o painel é de hoje e as

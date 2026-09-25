@@ -127,7 +127,9 @@ regras:
     sql_deve_conter: ["3000"]
   - nome: IC é sem hospitalar, sem Mevatyl no sell out e sem THC na prescrição
     referencias: [F01, F02, F03, F04]
-    sql_deve_conter: ["hospitalar", "mevatyl", "tetraidrocanabinol", "fato_td", "prescricao"]
+    # THC fora da prescrição: pelo NOT LIKE, ou filtrando só Canabidiol e Extrato
+    # (a F02 separa as classes e deixa o resto de fora; o modelo acertou assim).
+    sql_deve_conter: ["hospitalar", "mevatyl", ["tetraidrocanabinol", "descmolein("], "fato_td", "prescricao"]
     sql_nao_deve_conter: ["vw_sell_out", "fato_cdd"]
   - nome: PDV visitado vem da trade_visita, nunca da rx_visitas (visitas a médicos)
     referencias: [E28, E29, E30]
@@ -1310,6 +1312,19 @@ casos:
     referencia: F01
     parametros: {data_ini: "2026-04-01", data_fim: "2026-06-01", anomes_ini: "202604", anomes_fim: "202606"}
 
+  - id: F01-o-que-e-ic-e-evolucao-2026
+    grupo: referencia
+    pergunta: Jarvis, o que é IC? Como está o IC da Ease ao longo do ano de 2026? Crie uma visualização de evolução do IC Ease
+    esperado: answer_with_data
+    referencia: F01
+    parametros: {data_ini: "2026-01-01", data_fim: "2026-08-01", anomes_ini: "202601", anomes_fim: "202608"}
+    comparar_resultado: false
+    resposta_deve_conter: ["prescrição", "balcão"]
+    nota: >-
+      WhatsApp, 2026-09-25: a consulta estava certa, mas a redação (definir o IC, analisar
+      oito meses e desenhar o gráfico) estourou o limite de 2000 tokens e saiu só a tabela
+      crua. A resposta tem que explicar o IC (share de sell out ÷ share de prescrição).
+
   - id: F02-ic-isolado-jul26
     grupo: referencia
     pergunta: Em julho de 2026, a Ease converte melhor a prescrição no Isolado ou no Extrato?
@@ -1319,7 +1334,7 @@ casos:
 
   - id: F03-ic-representante-ago26
     grupo: referencia
-    pergunta: Qual foi o IC da Ease no território do Jonathan em agosto de 2026?
+    pergunta: Qual foi o IC da Ease e dos principais concorrentes no território do Jonathan em agosto de 2026?
     esperado: answer_with_data
     referencia: F03
     parametros: {rep: "JONATHAN", data_ini: "2026-08-01", data_fim: "2026-08-01", anomes_ini: "202608", anomes_fim: "202608"}

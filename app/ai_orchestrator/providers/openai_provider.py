@@ -98,7 +98,10 @@ MAX_TOKENS_PLANO = 8000
 # pergunta sobe para o principal, que é quem escreve SQL.
 MAX_LETRAS_CONVERSA_BARATA = 120
 _INTENCOES_QUE_SOBEM = frozenset({Plan.Intent.ANSWER_WITH_DATA, Plan.Intent.INVESTIGATE})
-MAX_TOKENS_RESPOSTA = 2000
+# O limite conta também o raciocínio. Com 2000, "o que é IC? como está o IC
+# da Ease em 2026? crie uma visualização" saiu cortado (2026-09-25): definir,
+# analisar oito meses e desenhar o gráfico não cabe. Só se paga o que é usado.
+MAX_TOKENS_RESPOSTA = 4000
 # A análise de uma investigação conta a cadeia de evidências em blocos; com
 # 2000 ela saía cortada no meio. Continua no modelo barato.
 MAX_TOKENS_ANALISE = 3500
@@ -622,9 +625,12 @@ class OpenAIProvider(AIProvider):
             entrada += (
                 "\n\n# Planilha anexada pelo usuário\n\n"
                 + request.planilha
-                + "\n\n**O que a pessoa quer com o arquivo decide o caminho.** Se ela pergunta "
-                "o que tem nele, pede um resumo, manda o arquivo sem pedido, ou pergunta se você "
-                "conseguiu ver: responda em `conversation`, com segurança, a partir do resumo "
+                + "\n\n**O que a pessoa quer com o arquivo decide o caminho.** Arquivo que chega "
+                "sem pedido (\"Segue o arquivo.\") continua a conversa: se uma mensagem anterior já "
+                "disse o que fazer com ele (\"vou te mandar a planilha, preenche com o sell out\"), "
+                "faça isso. Se ela pergunta o que tem nele, pede um resumo, manda o arquivo sem "
+                "pedido e sem aviso antes, ou pergunta se você conseguiu ver: responda em "
+                "`conversation`, com segurança, a partir do resumo "
                 "acima — quantas abas, o que cada uma traz (as colunas e as linhas-chave, pelo "
                 "nome), o que está vazio para preencher — e ofereça preencher, dizendo com que "
                 "dado. Nunca diga que não consegue ver a planilha: o resumo é ela. Os números e "
@@ -795,6 +801,13 @@ class OpenAIProvider(AIProvider):
             entrada += (
                 "\n\n# Revisão\n\nA sua resposta anterior citou número sem suporte no "
                 f"resultado: {request.revision_note}\n\nReescreva sem esse número."
+            )
+        if request.mais_curta:
+            entrada += (
+                "\n\n# Tamanho\n\nA sua resposta anterior passou do limite e foi cortada. "
+                "Escreva a mesma resposta mais enxuta: no máximo três blocos de texto curtos, "
+                "sem copiar linhas do resultado (a tabela e o gráfico mostram os números) e com "
+                "o gráfico no formato simples, se couber."
             )
 
         conteudo, usage = self._chamar(

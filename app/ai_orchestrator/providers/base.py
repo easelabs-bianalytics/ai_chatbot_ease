@@ -171,6 +171,9 @@ class AnswerRequest:
     # Preenchido só na reescrita: o número que a resposta citou sem suporte
     # no resultado (ADR-0010).
     revision_note: str = ""
+    # A tentativa anterior estourou o limite de tokens de saída: a segunda
+    # pede a mesma resposta, mais enxuta (2026-09-25, "o que é IC?").
+    mais_curta: bool = False
     # Quantas linhas a consulta devolveu (a IA lê no máximo 50) e se o
     # usuário pediu planilha: é o que decide mostrar a lista ou apontar para
     # o botão "Baixar Excel".

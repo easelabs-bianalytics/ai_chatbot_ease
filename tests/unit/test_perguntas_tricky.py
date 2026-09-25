@@ -82,8 +82,8 @@ def test_saida_cortada_nao_e_repetida():
     assert len(tentativas) == 1
 
 
-def test_resposta_cortada_vira_tabela_e_nao_problema_tecnico(conversa, catalogo):
-    provider = ScriptedAIProvider([plano()], [AIOutputTruncated("cortada")])
+def test_resposta_cortada_duas_vezes_vira_tabela_e_nao_problema_tecnico(conversa, catalogo):
+    provider = ScriptedAIProvider([plano()], [AIOutputTruncated("cortada"), AIOutputTruncated("cortada de novo")])
 
     reply = _responder(_pergunta(conversa, "Quais CDs estão em ruptura?"), catalogo,
                        provider=provider, executor=FakeQueryExecutor([RUPTURA]))
@@ -92,6 +92,20 @@ def test_resposta_cortada_vira_tabela_e_nao_problema_tecnico(conversa, catalogo)
     assert reply.rule == "resposta_sem_narrativa"
     assert reply.reply_text.startswith("rede | cd | produto | dde_base")
     assert Message.objects.get(pk=reply.message_id).status != Message.Status.FAILED
+
+
+def test_resposta_cortada_tenta_de_novo_mais_curta_antes_da_tabela(conversa, catalogo):
+    """2026-09-25, WhatsApp: "o que é IC? Como está o IC da Ease em 2026?
+    Crie uma visualização" estourou o limite da redação e saiu só a tabela
+    crua. A segunda tentativa, pedida mais enxuta, entrega a explicação."""
+    provider = ScriptedAIProvider([plano()], [AIOutputTruncated("cortada"), resposta("São 50 CDs em ruptura.")])
+
+    reply = _responder(_pergunta(conversa, "Quais CDs estão em ruptura?"), catalogo,
+                       provider=provider, executor=FakeQueryExecutor([RUPTURA]))
+
+    assert reply.rule != "resposta_sem_narrativa"
+    assert reply.reply_text == "São 50 CDs em ruptura."
+    assert [r.mais_curta for r in provider.answer_requests] == [False, True]
 
 
 # ------------------------------------------------------ checagem de números

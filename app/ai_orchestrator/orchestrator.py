@@ -181,6 +181,21 @@ class _Auditoria:
         return self.chamadas[-1][1].model if self.chamadas else ""
 
 
+def _redigir_sem_corte(provider, pedido):
+    """A redação, com uma segunda chance quando ela vem cortada no limite de
+    tokens: a mesma resposta, pedida mais enxuta.
+
+    2026-09-25, WhatsApp: "o que é IC? Como está o IC da Ease em 2026? Crie
+    uma visualização" estourou o limite e saiu só a tabela crua, sem a
+    explicação e sem o gráfico — a consulta estava certa. Tentar de novo
+    custa uma chamada ao modelo barato; a tabela crua custa a resposta."""
+    try:
+        return provider.answer(pedido)
+    except AIOutputTruncated:
+        logger.warning("A redação veio cortada no limite de tokens; tentando de novo, mais curta")
+        return provider.answer(replace(pedido, mais_curta=True))
+
+
 def _tabela(resultado) -> str:
     """Resultado em texto, sem narrativa nenhuma.
 
@@ -661,11 +676,11 @@ def _redigir(plano, resultado, message, provider, catalog, auditoria, historico,
         so_visual=so_visual,
     )
     try:
-        resposta = provider.answer(pedido)
+        resposta = _redigir_sem_corte(provider, pedido)
     except AIOutputTruncated:
-        # A redação estourou o limite escrevendo a resposta (em produção,
-        # copiando 50 linhas numa tabela). O dado está aqui: sai a tabela.
-        logger.warning("A redação veio cortada no limite de tokens; enviando a tabela crua")
+        # A redação estourou o limite duas vezes (em produção, copiando 50
+        # linhas numa tabela). O dado está aqui: sai a tabela.
+        logger.warning("A redação veio cortada no limite de tokens duas vezes; enviando a tabela crua")
         return _tabela(resultado), {"rule": "resposta_sem_narrativa", "excel": plano.excel, "saida_cortada": True}
     auditoria.chamada(AICall.Stage.ANSWER, resposta.usage)
 
