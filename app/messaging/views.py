@@ -1,6 +1,7 @@
 """API do chat (ADR-0007). Tudo exige login (ADR-0011)."""
 
 from pathlib import Path
+from urllib.parse import quote
 
 from django.db.models import Q
 from django.http import HttpResponse
@@ -441,6 +442,10 @@ class MessageExcelView(APIView):
             return Response({"error": planilha.erro}, status=planilha.status)
         http = HttpResponse(planilha.conteudo, content_type=XLSX)
         http["Content-Disposition"] = f'attachment; filename="{planilha.nome}"'
+        if planilha.cortada:
+            # A tela mostra o aviso ao baixar (2026-09-30): o arquivo sozinho
+            # não garante que a pessoa veja que não veio tudo.
+            http["X-Jarvis-Aviso"] = quote(planilha_da_resposta.aviso_de_corte())
         return http
 
 

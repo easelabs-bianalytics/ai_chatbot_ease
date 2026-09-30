@@ -11,9 +11,6 @@ import datetime
 import io
 import re
 
-from openpyxl import Workbook
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
-from openpyxl.utils import get_column_letter
 
 INDIGO = "5558D4"
 CINZA_BORDA = "DDDFE6"
@@ -26,7 +23,6 @@ _COLUNA_DE_CODIGO = re.compile(r"(cnpj|cpf|ean|crm|cep|cod|telefone|telef|ddd|se
 _DATA = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _DATA_HORA = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}")
 
-_BORDA = Border(*(Side(style="thin", color=CINZA_BORDA),) * 4)
 _FONTE = "Calibri"
 
 
@@ -74,64 +70,99 @@ def _formato(valor) -> str | None:
     return None
 
 
+# Largura das colunas: medida nas primeiras linhas. Medir as 50.000 custava
+# mais que o resto e não muda a largura de nada.
+LINHAS_PARA_A_LARGURA = 500
+
+
 def montar_planilha(colunas, linhas, info: dict) -> bytes:
     """Devolve o `.xlsx` pronto.
 
     `info` vai para a aba "Informações": pergunta, momento, linhas, se foi
-    cortado, referência e a consulta executada."""
-    livro = Workbook()
-    dados = livro.active
-    dados.title = "Dados"
+    cortado, referência e a consulta executada.
 
-    cabecalho = [_titulo_da_coluna(c) for c in colunas]
-    dados.append(cabecalho)
-    for celula in dados[1]:
-        celula.font = Font(name=_FONTE, bold=True, color="FFFFFF", size=11)
-        celula.fill = PatternFill("solid", fgColor=INDIGO)
-        celula.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        celula.border = _BORDA
-    dados.row_dimensions[1].height = 22
-
-    larguras = [len(t) for t in cabecalho]
-    zebra = PatternFill("solid", fgColor=CINZA_ZEBRA)
-    for n, linha in enumerate(linhas, start=2):
-        valores = [_valor(colunas[i], v) for i, v in enumerate(linha)]
-        dados.append(valores)
-        for i, valor in enumerate(valores):
-            celula = dados.cell(row=n, column=i + 1)
-            celula.border = _BORDA
-            celula.font = Font(name=_FONTE, size=10)
-            formato = _formato(valor)
-            if formato:
-                celula.number_format = formato
-            if n % 2 == 1:
-                celula.fill = zebra
-            texto = valor.strftime("%d/%m/%Y") if isinstance(valor, datetime.date) else str(valor or "")
-            larguras[i] = max(larguras[i], len(texto))
-
-    for i, largura in enumerate(larguras, start=1):
-        dados.column_dimensions[get_column_letter(i)].width = min(max(largura + 3, 10), 60)
-    dados.freeze_panes = "A2"
-    if colunas:
-        dados.auto_filter.ref = f"A1:{get_column_letter(len(colunas))}{max(len(linhas) + 1, 1)}"
-
-    _aba_de_informacoes(livro, info)
+    Gravado com o `xlsxwriter`, linha a linha e com um formato pronto por
+    tipo de valor. Em produção (2026-09-30) o `openpyxl`, que estilizava
+    célula por célula, levava 162 s para a `trade_visita` inteira (35.658
+    linhas × 52 colunas): o download do chat web caía no tempo do balanceador
+    e o worker do WhatsApp ficava preso. A zebra é formatação condicional do
+    próprio Excel, sem custo por linha."""
+    import xlsxwriter
 
     saida = io.BytesIO()
-    livro.save(saida)
+    livro = xlsxwriter.Workbook(saida, {"in_memory": True, "strings_to_numbers": False,
+                                         "strings_to_formulas": False, "strings_to_urls": False})
+    base = {"font_name": _FONTE, "font_size": 10, "border": 1, "border_color": "#" + CINZA_BORDA}
+    formatos = {
+        None: livro.add_format(base),
+        "dd/mm/yyyy": livro.add_format({**base, "num_format": "dd/mm/yyyy"}),
+        "dd/mm/yyyy hh:mm": livro.add_format({**base, "num_format": "dd/mm/yyyy hh:mm"}),
+        "#,##0": livro.add_format({**base, "num_format": "#,##0"}),
+        "#,##0.00": livro.add_format({**base, "num_format": "#,##0.00"}),
+    }
+    cabecalho_fmt = livro.add_format({
+        "font_name": _FONTE, "font_size": 11, "bold": True, "font_color": "#FFFFFF",
+        "bg_color": "#" + INDIGO, "align": "center", "valign": "vcenter", "text_wrap": True,
+        "border": 1, "border_color": "#" + CINZA_BORDA,
+    })
+
+    # Cortada: o nome da aba já avisa, e o arquivo abre na aba "Informações",
+    # onde está o aviso inteiro — quem só olhasse os dados não saberia.
+    dados = livro.add_worksheet("Dados (cortada)" if info.get("cortada") else "Dados")
+    cabecalho = [_titulo_da_coluna(c) for c in colunas]
+    dados.write_row(0, 0, cabecalho, cabecalho_fmt)
+    dados.set_row(0, 22)
+
+    larguras = [len(t) for t in cabecalho]
+    for n, linha in enumerate(linhas, start=1):
+        for i, bruto in enumerate(linha):
+            valor = _valor(colunas[i], bruto)
+            formato = formatos.get(_formato(valor), formatos[None])
+            if valor is None:
+                dados.write_blank(n, i, None, formato)
+            elif isinstance(valor, (datetime.date, datetime.datetime)):
+                dados.write_datetime(n, i, valor, formato)
+            elif isinstance(valor, (int, float)):
+                dados.write_number(n, i, valor, formato)
+            else:
+                dados.write_string(n, i, str(valor), formato)
+            if n <= LINHAS_PARA_A_LARGURA:
+                texto = valor.strftime("%d/%m/%Y") if isinstance(valor, datetime.date) else str(valor or "")
+                larguras[i] = max(larguras[i], len(texto))
+
+    for i, largura in enumerate(larguras):
+        dados.set_column(i, i, min(max(largura + 3, 10), 60))
+    dados.freeze_panes(1, 0)
+    if colunas:
+        ultima = max(len(linhas), 1)
+        dados.autofilter(0, 0, ultima, len(colunas) - 1)
+        if linhas:
+            dados.conditional_format(1, 0, len(linhas), len(colunas) - 1, {
+                "type": "formula", "criteria": "=MOD(ROW(),2)=1",
+                "format": livro.add_format({"bg_color": "#" + CINZA_ZEBRA}),
+            })
+
+    aba = _aba_de_informacoes(livro, info)
+    if info.get("cortada"):
+        aba.activate()
+    livro.close()
     return saida.getvalue()
 
 
-def _aba_de_informacoes(livro, info: dict) -> None:
-    aba = livro.create_sheet("Informações")
-    aba.column_dimensions["A"].width = 24
-    aba.column_dimensions["B"].width = 100
+def _aba_de_informacoes(livro, info: dict):
+    aba = livro.add_worksheet("Informações")
+    aba.set_column(0, 0, 24)
+    aba.set_column(1, 1, 100)
 
-    aba["A1"] = "Jarvis · Ease Labs"
-    aba["A1"].font = Font(name=_FONTE, bold=True, size=14, color=INDIGO)
-    aba["A2"] = "BI & Analytics — dados consultados em modo somente leitura na base de BI"
-    aba["A2"].font = Font(name=_FONTE, size=10, color=CINZA_TEXTO)
+    aba.write(0, 0, "Jarvis · Ease Labs", livro.add_format({"font_name": _FONTE, "bold": True, "font_size": 14,
+                                                           "font_color": "#" + INDIGO}))
+    aba.write(1, 0, "BI & Analytics — dados consultados em modo somente leitura na base de BI",
+              livro.add_format({"font_name": _FONTE, "font_size": 10, "font_color": "#" + CINZA_TEXTO}))
 
+    borda = {"border": 1, "border_color": "#" + CINZA_BORDA, "valign": "top", "font_size": 10}
+    rotulo_fmt = livro.add_format({**borda, "font_name": _FONTE, "bold": True})
+    valor_fmt = livro.add_format({**borda, "font_name": _FONTE, "text_wrap": True})
+    sql_fmt = livro.add_format({**borda, "font_name": "Consolas", "text_wrap": True})
     campos = [
         ("Pergunta", info.get("pergunta", "")),
         ("Planilha gerada em", info.get("gerada_em", "")),
@@ -140,12 +171,12 @@ def _aba_de_informacoes(livro, info: dict) -> None:
         ("Referência usada", info.get("referencia") or "nenhuma (consulta escrita pela IA)"),
         ("Consulta executada", info.get("sql", "")),
     ]
-    for n, (rotulo, valor) in enumerate(campos, start=4):
-        a = aba.cell(row=n, column=1, value=rotulo)
-        b = aba.cell(row=n, column=2, value=valor)
-        a.font = Font(name=_FONTE, bold=True, size=10)
-        b.font = Font(name="Consolas" if rotulo == "Consulta executada" else _FONTE, size=10)
-        a.alignment = Alignment(vertical="top")
-        b.alignment = Alignment(vertical="top", wrap_text=True)
-        a.border = b.border = _BORDA
-    aba.row_dimensions[9].height = min(15 * (str(info.get("sql", "")).count("\n") + 1), 400)
+    for n, (rotulo, valor) in enumerate(campos, start=3):
+        aba.write_string(n, 0, rotulo, rotulo_fmt)
+        formato = sql_fmt if rotulo == "Consulta executada" else valor_fmt
+        if isinstance(valor, (int, float)) and not isinstance(valor, bool):
+            aba.write_number(n, 1, valor, formato)
+        else:
+            aba.write_string(n, 1, str(valor or ""), formato)
+    aba.set_row(8, min(15 * (str(info.get("sql", "")).count("\n") + 1), 400))
+    return aba

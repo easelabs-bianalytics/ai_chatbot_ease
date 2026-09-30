@@ -110,9 +110,9 @@ def _sem_o_botao_da_tela(texto: str, tem_planilha: bool = True) -> str:
             + "\n\n_Não consegui gerar a planilha agora. Peça de novo em instantes._")
 
 
-def _legenda(linhas: int, cortada: bool = False) -> str:
-    texto = f"{linhas:,} linhas".replace(",", ".")
-    return texto + " (a lista passou do limite da planilha; filtre para ter o resto)" if cortada else texto
+def _legenda(linhas: int, cortada: bool = False, titulo: str = "") -> str:
+    texto = titulo or f"{linhas:,} linhas".replace(",", ".")
+    return f"{texto}\n⚠️ {planilha_da_resposta.aviso_de_corte()}" if cortada else texto
 
 
 def _tabela(bloco, dados, arquivos, resposta, executor=None) -> str:
@@ -142,7 +142,8 @@ def _tabela(bloco, dados, arquivos, resposta, executor=None) -> str:
             inteira = None
     if inteira is not None:
         conteudo, total_do_arquivo = inteira.conteudo, inteira.linhas
-        legenda = bloco.get("titulo") or _legenda(total_do_arquivo, inteira.cortada)
+        # Com título, o aviso de corte continuava valendo: antes ele sumia.
+        legenda = _legenda(total_do_arquivo, inteira.cortada, bloco.get("titulo") or "")
         rodape = f"\n_…e mais {total_do_arquivo - 5:,} linhas na planilha {nome}._".replace(",", ".")
     else:
         # Sem a lista inteira, a legenda e o texto dizem o total real: "100

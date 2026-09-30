@@ -213,3 +213,29 @@ def test_sem_grafico_a_tela_nao_recebe_os_dados(cliente, resposta):
 
     assert "grafico" not in fonte
     assert "dados" not in fonte
+
+
+def test_planilha_cortada_avisa_na_tela_e_no_arquivo(cliente, resposta, monkeypatch):
+    """2026-09-30: a lista que passa de 50.000 linhas TEM de avisar. Antes o
+    aviso ficava só na aba "Informações", que quase ninguém abre."""
+    from urllib.parse import unquote
+
+    cortado = make_result(("mes", "total_und"), [("2026-07", 761), ("2026-08", 777)], truncated=True)
+    _executor(monkeypatch, FakeQueryExecutor([cortado]))
+
+    r = cliente.get(_url(resposta))
+
+    aviso = unquote(r["X-Jarvis-Aviso"])
+    assert "passou de 50.000 linhas" in aviso and "Filtre" in aviso
+    livro = load_workbook(io.BytesIO(r.content))
+    assert livro.sheetnames == ["Dados (cortada)", "Informações"]
+    assert livro.active.title == "Informações"       # abre no aviso
+
+
+def test_planilha_completa_nao_avisa(cliente, resposta, monkeypatch):
+    _executor(monkeypatch, FakeQueryExecutor([RESULTADO]))
+
+    r = cliente.get(_url(resposta))
+
+    assert "X-Jarvis-Aviso" not in r
+    assert load_workbook(io.BytesIO(r.content)).sheetnames == ["Dados", "Informações"]

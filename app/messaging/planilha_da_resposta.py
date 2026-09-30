@@ -23,6 +23,19 @@ from datasource.sql_guard import validate_sql
 EXPORT_MAX_ROWS = 50_000
 
 
+def aviso_de_corte() -> str:
+    """O aviso de lista cortada, igual no arquivo, na tela e no WhatsApp.
+
+    Pedido do Rubens (2026-09-30): a pessoa TEM de saber que não veio tudo.
+    Até aqui o aviso morava só na aba "Informações" do arquivo, que quase
+    ninguém abre, e no WhatsApp sumia quando a tabela tinha título."""
+    limite = f"{EXPORT_MAX_ROWS:,}".replace(",", ".")
+    return (
+        f"A consulta passou de {limite} linhas e a planilha traz só as primeiras {limite}. "
+        "Filtre por período, rede, UF ou representante para ter o restante."
+    )
+
+
 @dataclass(frozen=True)
 class Planilha:
     conteudo: bytes = b""
@@ -97,11 +110,7 @@ def gerar(resposta, user, executor, consulta=None) -> Planilha:
         return Planilha(erro="não consegui gerar a planilha agora; tente de novo em instantes", status=502)
 
     agora = timezone.localtime()
-    observacao = (
-        f"Lista cortada em {EXPORT_MAX_ROWS:,} linhas; refine o filtro para ter o restante.".replace(",", ".")
-        if resultado.truncated
-        else "Lista completa."
-    )
+    observacao = aviso_de_corte() if resultado.truncated else "Lista completa."
     conteudo = montar_planilha(
         resultado.columns,
         resultado.rows,
@@ -110,6 +119,7 @@ def gerar(resposta, user, executor, consulta=None) -> Planilha:
             "gerada_em": agora.strftime("%d/%m/%Y %H:%M"),
             "linhas": resultado.row_count,
             "observacao": observacao,
+            "cortada": bool(resultado.truncated),
             "referencia": referencia,
             "sql": sql,
         },

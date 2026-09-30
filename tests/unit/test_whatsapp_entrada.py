@@ -165,3 +165,12 @@ def test_formas_do_numero_com_e_sem_o_nono_digito():
     # fixo (começa com 2 a 5) e número de fora não ganham o 9
     assert formas_do_numero("553132221234") == {"553132221234"}
     assert formas_do_numero("14155550123") == {"14155550123"}
+
+
+def test_legenda_da_planilha_cortada_avisa_mesmo_com_titulo():
+    """No WhatsApp, a tabela com título perdia o aviso de corte (2026-09-30)."""
+    from whatsapp.saida import _legenda
+
+    assert "passou de 50.000 linhas" in _legenda(50_000, cortada=True, titulo="PDVs visitados")
+    assert _legenda(50_000, cortada=True, titulo="PDVs visitados").startswith("PDVs visitados")
+    assert _legenda(340) == "340 linhas"

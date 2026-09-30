@@ -21,6 +21,7 @@ dependencies = [
     "sqlglot>=25.0",
     "vl-convert-python>=1.7",
     "whitenoise>=6.8",
+    "xlsxwriter>=3.2.9",
 ]
 
 [dependency-groups]

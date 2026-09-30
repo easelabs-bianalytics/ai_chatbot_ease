@@ -2104,7 +2104,11 @@
       link.download = nome ? nome[1] : 'jarvis.xlsx';
       link.click();
       URL.revokeObjectURL(url);
-      toast('Planilha baixada.');
+      // Lista cortada no limite da planilha: o aviso fica na tela por mais
+      // tempo, como alerta — a pessoa precisa saber que não veio tudo.
+      const aviso = r.headers.get('X-Jarvis-Aviso');
+      if (aviso) toast(`Planilha baixada. ${decodeURIComponent(aviso)}`, true, 12000);
+      else toast('Planilha baixada.');
     } catch (e) {
       toast(`Não consegui gerar a planilha: ${e.message}`, true);
     } finally {
