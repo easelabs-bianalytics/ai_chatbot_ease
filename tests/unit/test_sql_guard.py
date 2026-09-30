@@ -7,13 +7,16 @@ do combinado.
 
 import pytest
 
-from catalog.loader import load_catalog
+from catalog.loader import load_catalog  # noqa: F401
+from tests.fakes.catalogo import catalogo_com_bloqueio
 from datasource.sql_guard import validate_sql
 
 
 @pytest.fixture(scope="module")
 def catalogo():
-    return load_catalog()
+    # O mecanismo de bloqueio, com a lista que valeu até 2026-09-30: o
+    # catálogo real não bloqueia mais coluna nenhuma (O-02).
+    return catalogo_com_bloqueio()
 
 
 def test_consulta_de_leitura_e_aprovada(catalogo):

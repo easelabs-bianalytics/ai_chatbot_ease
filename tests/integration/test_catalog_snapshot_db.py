@@ -20,4 +20,6 @@ def test_snapshot_do_banco_traz_colunas_e_omite_as_bloqueadas(monkeypatch, tmp_p
     texto = destino.read_text(encoding="utf-8")
     assert "`cddd.vendas_consolidado`" in texto
     assert '"STATUS_TRN" text' in texto
-    assert "CPF_CONS" not in texto
+    # Desde 2026-09-30 (O-02) nenhuma coluna é bloqueada: o snapshot mostra
+    # as colunas do consumidor, e a IA sabe que elas existem.
+    assert "CPF_CONS" in texto

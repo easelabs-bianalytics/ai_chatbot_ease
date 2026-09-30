@@ -9,7 +9,8 @@ import os
 
 import pytest
 
-from catalog.loader import load_catalog
+from catalog.loader import load_catalog  # noqa: F401
+from tests.fakes.catalogo import catalogo_com_bloqueio
 from datasource.executors.base import QueryExecutionError, QueryTimeout
 from datasource.executors.postgres_readonly import PostgresReadOnlyExecutor
 from datasource.sql_guard import validate_sql
@@ -29,7 +30,9 @@ def executor(dsn):
 
 @pytest.fixture(scope="module")
 def catalogo():
-    return load_catalog()
+    # O mecanismo de bloqueio, com a lista que valeu até 2026-09-30: o
+    # catálogo real não bloqueia mais coluna nenhuma (O-02).
+    return catalogo_com_bloqueio()
 
 
 def test_consulta_simples_devolve_colunas_e_linhas(executor):

@@ -26,7 +26,10 @@ def test_le_o_catalogo_real_do_projeto():
     catalogo = load_catalog()
 
     assert "cddd" in catalogo.schemas
-    assert catalogo.blocked_columns_for("pbm.fato_pbm_transacoes")
+    # Decisão de 2026-09-30 (O-02): nenhuma coluna bloqueada; dado de pessoa
+    # física pode ser consultado e compartilhado quando pedido.
+    assert catalogo.blocked_columns == {}
+    assert "pbm.fato_pbm_transacoes_stg" in catalogo.blocked_tables
     assert catalogo.references
 
 

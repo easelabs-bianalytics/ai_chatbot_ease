@@ -3,13 +3,16 @@
 import pytest
 from django.core.management import CommandError, call_command
 
-from catalog.loader import load_catalog
+from catalog.loader import load_catalog  # noqa: F401
+from tests.fakes.catalogo import catalogo_com_bloqueio
 from catalog.snapshot import render_snapshot
 
 
 @pytest.fixture(scope="module")
 def catalogo():
-    return load_catalog()
+    # O mecanismo de bloqueio, com a lista que valeu até 2026-09-30: o
+    # catálogo real não bloqueia mais coluna nenhuma (O-02).
+    return catalogo_com_bloqueio()
 
 
 RELACOES = {
