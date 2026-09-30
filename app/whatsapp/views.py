@@ -12,7 +12,8 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from whatsapp import config, servicos, tasks
+from messaging import fila
+from whatsapp import config, entrada, servicos, tasks
 from whatsapp.cliente import EvolutionCliente, WhatsAppIndisponivel, cliente_configurado
 from whatsapp.models import ContatoWhatsApp, GrupoWhatsApp
 
@@ -46,8 +47,16 @@ class WebhookView(APIView):
         if servicos.parar_se_pedido(payload):
             return Response({"ok": True})
         # Espera sorteada antes de atender (config.atraso_da_resposta); o
-        # "parar" acima continua imediato.
-        tasks.receber.apply_async(args=[payload], countdown=config.atraso_da_resposta())
+        # "parar" acima continua imediato. A senha guarda a ordem de chegada
+        # no chat: a espera sorteada não pode fazer a segunda pergunta passar
+        # na frente da primeira (messaging/fila.py).
+        recebida = entrada.ler(payload)
+        conversa = f"whatsapp:{recebida.jid}" if recebida else ""
+        tasks.receber.apply_async(
+            args=[payload],
+            kwargs={"conversa": conversa, "senha": fila.tirar_senha(conversa) if conversa else 0},
+            countdown=config.atraso_da_resposta(),
+        )
         return Response({"ok": True})
 
 

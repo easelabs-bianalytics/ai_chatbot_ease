@@ -247,6 +247,11 @@ na `main` do `sales_force_crm`
   `WHATSAPP_WEBHOOK_TOKEN`, e sem eles fica presa em
   `ResourceInitializationError`.
 
+- [ ] **Worker em paralelo (ADR-0030, 2026-09-30):** o comando do
+      `jarvis-worker` em `infra/modules/compute/jarvis.tf` passa de `-P solo`
+      para `-P threads -c 4` (editado na `feat/infra-jarvis`, sem commit).
+      Sobe junto com a imagem que tem a fila por conversa (`messaging/fila.py`):
+      `plan` com alvo na task do Jarvis deve mostrar só a imagem e o comando
 - [ ] Rodar `migrate` na task avulsa antes do bump: `ai_orchestrator.0006`
       (etapa `self_check`) e `messaging.0006` (tabela `Avaliacao`), ADR-0027
 - [ ] Antes de cada deploy, rodar `run_synthetic_cases` (a suíte completa com
@@ -344,15 +349,38 @@ São **dois repositórios**, e a maior parte das mudanças mexe só no primeiro.
 | Repositório | Onde | Branch | O que vai nele |
 |---|---|---|---|
 | **Jarvis** (`bi/`) | `easelabs-bianalytics/ai_chatbot_ease` | `main` — é a convenção do histórico até aqui | o app inteiro: código, tela, prompts, catálogo, migrations, docs, scripts SQL |
-| **`sales_force_crm`** | `easelabs-analytics/sales_force_crm` | **sempre a `feat/infra-jarvis`** — uma branch só, de vida longa; merge na `main` mais tarde | só `infra/` — o que o Jarvis precisa na AWS |
+| **`sales_force_crm`** | `easelabs-analytics/sales_force_crm` | **sempre a `feat/infra-jarvis`** — uma branch só, de vida longa — e, a cada mudança, **merge direto na `main`, sem PR** | só `infra/` — o que o Jarvis precisa na AWS |
 
 **A branch do `sales_force_crm` (decisão do Rubens, 2026-09-21):** tudo o que
 é do Jarvis — bump de imagem, variável, secret, alarme — é commitado na
 **`feat/infra-jarvis`**. Nada de branch nova por mudança e nada de commit
 direto na `main`: o app ainda vai mudar de estrutura, e a `main` é
-compartilhada com o time do Cockpit. O merge na `main` vem depois, combinado
-com a Natália e no padrão dela (commit `merge: incorpora feat/infra-jarvis em
-main`, como os de `951618b` e `2f03e64`).
+compartilhada com o time do Cockpit.
+
+**Merge direto na `main`, sem PR (Natália, 2026-09-25).** Nas palavras
+dela: "não precisa ficar criando PR não, pode mergear direto, só confere o
+plano antes (o próprio git merge já bloqueia e avisa se houver conflito) e
+se não tiver conflito pode fazer o merge. Se não a PR fica lá aberta, PR é
+mais se alguém fosse revisar seu código, o que a gente não faz aqui." Então,
+depois de cada mudança empurrada na `feat/infra-jarvis`:
+
+1. **O `plan` conferido** — o mesmo que já vem antes de todo `apply` (regra
+   6): só o que é do Jarvis, nada de drift.
+2. **Merge na `main`**, no padrão dela (como os de `951618b` e `2f03e64`):
+
+   ```bash
+   cd /d/Projetos/sales_force_crm
+   git checkout main && git pull --ff-only origin main
+   git merge --no-ff feat/infra-jarvis -m "merge: incorpora feat/infra-jarvis em main"
+   git push origin main
+   git checkout feat/infra-jarvis
+   ```
+
+3. **Deu conflito:** `git merge --abort`, a mudança fica só na
+   `feat/infra-jarvis` e o Rubens é avisado. Conflito não se resolve sozinho:
+   do outro lado é trabalho de outra pessoa.
+4. **Nunca abrir PR.** PR é para revisão de código, que o time não faz; ela
+   só fica aberta, parada.
 
 Como a Natália trabalha, conferido no histórico em 2026-09-21: o dia a dia
 dela vai **direto na `main`** (inclusive infra, como o IAM `7a22750` e o bump
@@ -365,8 +393,8 @@ precisa acompanhar:
   atrás, é avanço rápido, sem commit de merge);
 - **enquanto a branch tiver algo que a `main` não tem**, um `plan` feito por
   outra pessoa a partir da `main` mostra os nossos recursos novos como sobra
-  a destruir. Avisar a Natália quando empurrar algo que não seja só bump de
-  imagem.
+  a destruir — é o que o merge direto na `main` (acima) evita. Se um merge
+  ficar pendente por conflito, avisar a Natália.
 
 Em 2026-09-21 a `feat/infra-jarvis` foi avançada até a `main` (que já tinha
 os dois merges do dia e o trabalho dela), e a `feat/infra-jarvis-alarmes`

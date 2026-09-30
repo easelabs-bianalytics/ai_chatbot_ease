@@ -34,6 +34,12 @@ consulta, e as lições dela (grupos, número restringido) estão no ADR.
 - Trabalhar em incrementos pequenos: apresentar plano e arquivos antes,
   rodar testes e mostrar resultado depois. `docs/plan.md` é atualizado a
   cada fase.
+- **`sales_force_crm` (infra na AWS): sem PR.** O trabalho vai na
+  `feat/infra-jarvis` e, depois do `plan` conferido, é mesclado **direto na
+  `main`** (`merge: incorpora feat/infra-jarvis em main`). Se o `git merge`
+  der conflito, `git merge --abort` e avisar — não resolver sozinho. PR não
+  se abre: não há revisão de código no time (Natália, 2026-09-25). O
+  passo a passo está em "Como commitar daqui em diante", no `docs/plan.md`.
 
 ## Stack
 
@@ -120,7 +126,7 @@ uv run python app/manage.py migrate
 uv run pytest
 uv run python app/manage.py chat_local            # provider real, terminal
 # chat web local: DEBUG=1 no processo + worker + servidor
-(cd app && DEBUG=1 uv run celery -A config worker -P solo)
+(cd app && DEBUG=1 uv run celery -A config worker -P threads -c 4)   # como em produção: 4 em paralelo, 1 por conversa
 DEBUG=1 uv run python app/manage.py runserver     # http://127.0.0.1:8000
 uv run python app/manage.py run_synthetic_cases --so-gabarito   # só os gabaritos, sem IA
 uv run python app/manage.py run_synthetic_cases   # gera docs/validation-report.md

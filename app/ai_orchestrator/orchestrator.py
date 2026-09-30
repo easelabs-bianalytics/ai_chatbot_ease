@@ -98,6 +98,25 @@ def _max_history_messages() -> int:
 FONTES_NO_HISTORICO = 3
 
 
+def _em_grupo(message) -> bool:
+    conversa = message.conversation
+    return getattr(conversa, "canal", "") == "whatsapp" and str(getattr(conversa, "whatsapp_jid", "")).endswith("@g.us")
+
+
+def _com_autor(mensagem) -> str:
+    """No grupo do WhatsApp várias pessoas perguntam na mesma conversa. Sem o
+    nome de quem escreveu, o "e em julho?" do Bruno virava seguimento da
+    pergunta da Ana (2026-09-30). O nome vai só para o modelo; no banco a
+    pergunta continua como a pessoa escreveu."""
+    autor = (getattr(mensagem, "autor_nome", "") or getattr(mensagem, "autor_externo", "") or "").strip()
+    return f"[{autor}] {mensagem.content}" if autor else mensagem.content
+
+
+def _pergunta(message) -> str:
+    """A pergunta como vai ao planejador: com o autor, em grupo."""
+    return _com_autor(message) if _em_grupo(message) else message.content
+
+
 def _historico(message: Message) -> tuple:
     """Mensagens anteriores da conversa, em ordem, sem a atual.
 
@@ -119,8 +138,13 @@ def _historico(message: Message) -> tuple:
     ultima = next((m for m in reversed(respostas) if "- consulta" in fontes[m.pk]), None)
     if ultima is not None:
         fontes[ultima.pk] = _fonte_da_resposta(ultima, com_sql=True)
+    grupo = _em_grupo(message)
     return tuple(
-        HistoryMessage(direction=m.direction, text=m.content, fonte=fontes.get(m.pk, ""))
+        HistoryMessage(
+            direction=m.direction,
+            text=_com_autor(m) if grupo and m.direction == Message.Direction.INBOUND else m.content,
+            fonte=fontes.get(m.pk, ""),
+        )
         for m in mensagens
     )
 
@@ -357,7 +381,7 @@ def _executar_com_correcao(plano, message, provider, executor, catalog, auditori
         tentativa += 1
         plano = provider.plan(
             PlanRequest(
-                question=message.content, history=historico, error_note=erro,
+                question=_pergunta(message), history=historico, error_note=erro,
                 planilha=_planilha(message),
                 # A correção usa o MESMO contexto do plano que está corrigindo.
                 # Antes voltava ao recortado: um plano feito com o documento
@@ -392,7 +416,7 @@ def _verificar_o_vazio(message, provider, executor, catalog, auditoria, historic
     resultado é None quando a verificação também não esclareceu nada."""
     plano = provider.plan(
         PlanRequest(
-            question=message.content, history=historico, empty_note=NOTA_DE_VAZIO,
+            question=_pergunta(message), history=historico, empty_note=NOTA_DE_VAZIO,
             planilha=_planilha(message),
         )
     )
@@ -1174,7 +1198,7 @@ def _investigar(plano, message, provider, executor, catalog, auditoria, historic
             break
         progresso.definir(message.pk, "Lendo o que as consultas mostraram e decidindo o próximo passo")
         seguinte = provider.plan(PlanRequest(
-            question=message.content,
+            question=_pergunta(message),
             history=historico,
             planilha=_planilha(message),
             achados=_achados(passos),
@@ -1502,7 +1526,7 @@ def _corrigir_entrega(plano, indice, passo, erro, message, provider, auditoria, 
     """Uma correção para a consulta de uma entrega. Devolve o SQL novo ou ""."""
     titulo = passo["hipotese"] or f"parte {indice + 1}"
     corrigido = provider.plan(PlanRequest(
-        question=message.content, history=historico, planilha=_planilha(message),
+        question=_pergunta(message), history=historico, planilha=_planilha(message),
         error_note=(
             f"O pedido tem várias entregas. A consulta da entrega «{titulo}» não pôde ser usada: "
             f"{erro}\n\nReescreva só a consulta dessa entrega, em `sql`."
@@ -1577,7 +1601,7 @@ def _autocriticar(plano, resultado, message, provider, executor, catalog, audito
     progresso.definir(message.pk, "O resultado saiu igual ao anterior; revendo a consulta",
                       etapa="conferindo", entendimento=plano.entendimento)
     segundo = provider.plan(PlanRequest(
-        question=message.content, history=historico, planilha=_planilha(message),
+        question=_pergunta(message), history=historico, planilha=_planilha(message),
         autocritica_note=autocritica.nota(plano.entendimento, anterior),
         full_context=_veio_do_documento_inteiro(plano),
     ))
@@ -2064,7 +2088,7 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
 
     plano = provider.plan(
         PlanRequest(
-            question=message.content,
+            question=_pergunta(message),
             history=historico,
             # Só a FORMA da planilha sobe ao modelo; o conteúdo fica aqui.
             planilha=_planilha(message),
@@ -2081,7 +2105,7 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
         logger.info("A IA pediu o documento inteiro: %s", plano.reason)
         plano = provider.plan(
             PlanRequest(
-                question=message.content, history=historico, full_context=True,
+                question=_pergunta(message), history=historico, full_context=True,
                 planilha=_planilha(message), autocritica_note=nota_da_critica,
             )
         )
@@ -2093,7 +2117,7 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
         logger.info("Crítica à resposta anterior respondida com conversa; replanejando")
         plano = provider.plan(
             PlanRequest(
-                question=message.content, history=historico, planilha=_planilha(message),
+                question=_pergunta(message), history=historico, planilha=_planilha(message),
                 autocritica_note=nota_da_critica + (
                     "\n\nVocê já respondeu a esta crítica só com conversa, e isso deixa a "
                     "pessoa sem a correção. Refaça a consulta e o gráfico agora."

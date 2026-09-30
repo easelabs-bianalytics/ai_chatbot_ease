@@ -139,7 +139,8 @@ def test_grupo_liberado_qualquer_membro_chama_e_a_resposta_cita_a_pergunta(grupo
                                    [plano()], [resposta("Foram 777 unidades em ago/2026.")])
 
     assert resultado == "respondida"
-    assert provider.plan_requests[0].question == "vendas por mês"     # sem a menção
+    # sem a menção, e com o nome de quem perguntou (no grupo, 2026-09-30)
+    assert provider.plan_requests[0].question == "[Paulo] vendas por mês"
     conversa = Conversation.objects.get()
     assert conversa.user == grupo.usuario and conversa.whatsapp_jid == GRUPO
     assert Message.objects.get(direction="in").autor_nome == "Paulo"
@@ -290,7 +291,7 @@ def test_webhook_confere_o_segredo_e_a_origem(monkeypatch):
     monkeypatch.setenv("WHATSAPP_WEBHOOK_TOKEN", "segredo")
     enfileirados = []
     monkeypatch.setattr("whatsapp.views.tasks.receber.apply_async",
-                        lambda args, countdown: enfileirados.append((args, countdown)))
+                        lambda args, countdown, kwargs=None: enfileirados.append((args, countdown, kwargs)))
     http = APIClient()
 
     assert http.post("/api/whatsapp/webhook/errado/", {}, format="json").status_code == 404
@@ -300,6 +301,8 @@ def test_webhook_confere_o_segredo_e_a_origem(monkeypatch):
     assert len(enfileirados) == 1
     # Espera sorteada antes de atender, contra o padrão de robô (2026-09-24).
     assert 3 <= enfileirados[0][1] <= 30
+    # A senha guarda a ordem de chegada no chat (2026-09-30).
+    assert enfileirados[0][2] == {"conversa": f"whatsapp:{PAULO}@s.whatsapp.net", "senha": 1}
 
 
 def test_webhook_sem_segredo_configurado_recusa_tudo():
@@ -354,7 +357,7 @@ def test_com_o_lid_configurado_a_mesma_mencao_chama(grupo, cliente, monkeypatch)
                                    cliente, [plano()], [resposta("Foram 777 unidades em ago/2026.")])
 
     assert resultado == "respondida"
-    assert provider.plan_requests[0].question == "vendas por mês"
+    assert provider.plan_requests[0].question == "[Paulo] vendas por mês"
 
 
 def test_contato_cadastrado_com_o_nono_digito_fala_mesmo_se_o_whatsapp_manda_sem(paulo, cliente):

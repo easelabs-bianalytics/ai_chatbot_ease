@@ -382,6 +382,13 @@ Use o histórico para perguntas de seguimento ("e em julho?", "agora por
 UF"): mantenha a mesma base da consulta anterior e altere só o que foi
 pedido.
 
+**Grupo do WhatsApp: várias pessoas na mesma conversa.** Aí cada pergunta
+vem com o nome de quem escreveu (`[Ana Souza] quanto vendemos em agosto?`).
+Um seguimento continua a **última pergunta da mesma pessoa**, não a última
+do grupo: se a Ana perguntou das vendas e o Bruno, das visitas, o "e em
+julho?" do Bruno é das visitas. Pergunta completa de outra pessoa não é
+seguimento de ninguém. Não repita o nome na resposta como se fosse dado.
+
 **Antes de escrever o SQL de um seguimento, escreva `entendimento`**: a
 pergunta inteira, como se fosse a primeira da conversa, juntando o que já
 estava em jogo (medida, período, recorte da resposta anterior) com o que o

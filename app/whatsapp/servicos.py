@@ -39,6 +39,7 @@ from datasource.executors.factory import get_configured_executor
 from datasource.models import QueryRun
 from messaging.channels.base import InboundMessage
 from messaging.channels.whatsapp import WhatsAppChannel
+from messaging import fila
 from messaging.models import Avaliacao, Message
 from messaging.services import ingest_inbound_message
 from whatsapp import audio, config, entrada, saida
@@ -322,11 +323,16 @@ def parar_se_pedido(payload, cliente=None) -> bool:
     if dono is None:
         return True       # não liberado: ignorado, e não segue para a fila
     cliente = cliente or cliente_configurado()
-    paradas = Message.objects.filter(
+    pendentes = Message.objects.filter(
         conversation__user=dono, conversation__whatsapp_jid=recebida.jid,
         direction=Message.Direction.INBOUND,
         status__in=(Message.Status.RECEIVED, Message.Status.PROCESSING),
-    ).update(status=Message.Status.CANCELLED)
+    )
+    if recebida.grupo:
+        # No grupo, cada um para só o que perguntou: o "parar" do Bruno não
+        # pode cancelar a pergunta da Ana (2026-09-30).
+        pendentes = pendentes.filter(autor_externo__in=entrada.formas_do_numero(recebida.numero))
+    paradas = pendentes.update(status=Message.Status.CANCELLED)
     try:
         enviar_texto(cliente, recebida.jid, TEXTO_PAROU if paradas else TEXTO_NADA_A_PARAR,
                      citar=_citacao(recebida) if recebida.grupo else None)
@@ -338,7 +344,7 @@ def parar_se_pedido(payload, cliente=None) -> bool:
 # ------------------------------------------------------------ o caminho todo
 
 
-def receber(payload, cliente=None, provider=None, executor=None, transcritor=None) -> str:
+def receber(payload, cliente=None, provider=None, executor=None, transcritor=None, conversa_na_fila="", senha=0) -> str:
     """Processa um evento. Devolve o que aconteceu (para o log e os testes)."""
     recebida = entrada.ler(payload)
     if recebida is None:
@@ -405,6 +411,9 @@ def receber(payload, cliente=None, provider=None, executor=None, transcritor=Non
     if not criada:
         return "repetida"     # a Evolution reentregou o mesmo evento
     Message.objects.filter(pk=mensagem.pk).update(autor_externo=recebida.numero, autor_nome=recebida.nome)
+    # Também no objeto em memória: é ele que vai ao orquestrador, e sem isto
+    # o nome de quem perguntou não chegava ao planejador no grupo.
+    mensagem.autor_externo, mensagem.autor_nome = recebida.numero, recebida.nome
 
     # Para o aviso "Entendi: …" (whatsapp/aviso.py) saber onde responder.
     cache.set(f"whatsapp:pendente:{mensagem.pk}", {
@@ -421,6 +430,11 @@ def receber(payload, cliente=None, provider=None, executor=None, transcritor=Non
     if not reply.reply_text:
         return "interrompida"
     resposta = mensagem.replies.order_by("-id").first()
+    if citar is None and fila.tem_depois(conversa_na_fila, senha):
+        # No privado a resposta não cita a pergunta; mas, se outra mensagem
+        # já chegou depois desta, cita — senão a pessoa não sabe a qual das
+        # duas perguntas esta resposta é (2026-09-30).
+        citar = _citacao(recebida)
     entregar(resposta, cliente, recebida.jid, citar=citar, executor=executor)
     return "respondida"
 

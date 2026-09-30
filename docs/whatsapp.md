@@ -25,6 +25,8 @@ do deploy.
   cria um usuário técnico para o número, sem login.
 - A resposta vem **direto**, depois de uma espera sorteada de 3 a 30 segundos
   (seção 5), com "digitando…" enquanto o Jarvis consulta.
+- Duas perguntas seguidas são respondidas na ordem, uma de cada vez; a
+  resposta cita a pergunta quando já chegou outra depois dela (ADR-0030).
 - Depois de **8 horas** sem mensagem, a próxima pergunta abre uma conversa
   nova, para o Jarvis não misturar o assunto de ontem com o de hoje.
 
@@ -43,6 +45,11 @@ do deploy.
   do grupo liberado é transcrito pela OpenAI, e o que não chama o Jarvis é
   descartado na hora, sem registro (ADR-0029).
 - A resposta cita a pergunta de quem chamou.
+- **Várias pessoas ao mesmo tempo** (ADR-0030): o Jarvis atende até quatro
+  conversas em paralelo; dentro do mesmo grupo, uma pergunta de cada vez, na
+  ordem em que chegaram. Ele sabe quem perguntou cada coisa: o "e em julho?"
+  do Bruno continua a pergunta do Bruno, não a da Ana. O `parar` de uma
+  pessoa cancela só o que ela perguntou.
 - A cota é **do grupo** (30 por dia e 150 por semana por padrão, ajustável no
   cadastro).
 - ⚠️ **Tudo o que o Jarvis responde num grupo fica visível para todos os
