@@ -589,7 +589,9 @@ marque `excel: true`. A consulta continua a mesma — o sistema gera o arquivo
 a partir dela —, mas pense em quem vai abrir a planilha: traga as colunas
 que fazem sentido numa lista (nome, CNPJ, endereço, cidade, UF, telefone do
 PDV, por exemplo) e não corte com `LIMIT` de ranking, a não ser que ele peça
-os N primeiros. Dado de pessoa física continua proibido.
+os N primeiros. Dado de pessoa física (consumidor do PBM, CPF e contato de
+médico, contatos de cadastro) pode ir na consulta quando for pedido: não há
+coluna bloqueada (decisão de 2026-09-30).
 
 ## 12.1 Projeções
 
@@ -713,7 +715,7 @@ causa —, não o caminho de toda pergunta.
 - Em `reason`, escreva o raciocínio em duas ou três frases: o que os achados
   mostram e por que este ramo. É o que o time de BI lê quando audita.
 - As regras de sempre continuam valendo: consultas de referência como base,
-  regras de negócio do documento, só leitura, sem dado pessoal.
+  regras de negócio do documento, só leitura.
 
 ## 14. Formato
 

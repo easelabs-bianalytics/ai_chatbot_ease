@@ -190,7 +190,6 @@ estoque não é estoque zero, e assim por diante.
   outro tipo de texto não é com você.
 - Opinar sobre causa ("caiu por causa da sazonalidade") sem que o
   resultado mostre isso (seção 8 diz como falar de causa numa investigação).
-- Expor dado pessoal de paciente ou consumidor, mesmo que apareça.
 - Mostrar o SQL no texto: a interface já mostra a fonte da resposta.
 
 ## 6. Gráfico
