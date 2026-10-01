@@ -766,43 +766,56 @@ def _redigir(plano, resultado, message, provider, catalog, auditoria, historico,
         return _tabela(resultado), {"rule": "resposta_sem_narrativa", "excel": plano.excel, "saida_cortada": True}
     auditoria.chamada(AICall.Stage.ANSWER, resposta.usage)
 
-    extras = {"excel": plano.excel}
+    base = {"excel": plano.excel}
     # Ficam no registro para quem audita no Admin: quando a resposta erra o
     # seguimento, a primeira pergunta é se o planejador entendeu o pedido.
     for campo in ("entendimento", "pedido_nao_atendido"):
         if getattr(plano, campo):
-            extras[campo] = getattr(plano, campo)
-    sugestoes = _sugestoes(resposta.followups, message)
-    if sugestoes:
-        extras["sugestoes"] = sugestoes
-    # Verificação não vira gráfico: o resultado é cadastral, e desenhá-lo
-    # daria ao diagnóstico a aparência da resposta que não existe.
-    motivos = []
-    grafico = None if (plano.excel or verificacao) else _grafico(resposta.chart, resultado, message, plano, motivos)
-    if grafico:
-        extras["grafico"] = grafico
-        _guardar_dados_do_grafico(auditoria, resultado)
+            base[campo] = getattr(plano, campo)
 
-    if (resposta.blocos or lista_longa) and not verificacao:
-        # Resposta em blocos (ADR-0025): o gráfico vem de dentro deles, e a
-        # tela desenha tabela e gráfico com os dados da consulta.
-        blocos, dados = _validar_blocos(
-            resposta.blocos, [(resultado, plano.sql)], message, motivos
-        )
-        if so_visual and blocos and grafico and not any(b["tipo"] == "grafico" for b in blocos):
-            # O gráfico veio no formato simples, fora dos blocos: entra
-            # neles, senão sairia só a tabela que ninguém pediu.
-            blocos = [*blocos, {"tipo": "grafico", "consulta": 0, "grafico": grafico}]
-            dados = {**dados, "0": _dados_da_consulta(resultado, inteiro=True, sql=plano.sql)}
-        if so_visual and any(b["tipo"] == "grafico" for b in blocos):
-            blocos = _so_o_visual(blocos)
-        else:
-            blocos, dados = _garantir_a_tabela(blocos, dados, resultado, lista_longa, resposta.reply, plano.sql)
-        if blocos:
-            extras.pop("grafico", None)
-            extras["blocos"] = blocos
-            extras["dados_blocos"] = dados
-    _avisar_grafico_que_caiu(extras, motivos)
+    def montar(versao) -> dict:
+        """Sugestões, gráfico e blocos DESTA versão da redação.
+
+        Conversa 40 (2026-09-28): o rascunho reprovado pela ancoragem dizia
+        "há uma inconsistência no resultado, a comparação deve ser refeita";
+        o texto gravado era o reescrito, mas a tela desenhou os blocos do
+        rascunho — e mostrou o "erro" à pessoa, com a sugestão "Refaz a
+        variação de unidades". Os blocos têm de ser os da versão aprovada."""
+        extras = dict(base)
+        sugestoes = _sugestoes(versao.followups, message)
+        if sugestoes:
+            extras["sugestoes"] = sugestoes
+        # Verificação não vira gráfico: o resultado é cadastral, e desenhá-lo
+        # daria ao diagnóstico a aparência da resposta que não existe.
+        motivos = []
+        grafico = None if (plano.excel or verificacao) else _grafico(versao.chart, resultado, message, plano, motivos)
+        if grafico:
+            extras["grafico"] = grafico
+            _guardar_dados_do_grafico(auditoria, resultado)
+
+        if (versao.blocos or lista_longa) and not verificacao:
+            # Resposta em blocos (ADR-0025): o gráfico vem de dentro deles, e a
+            # tela desenha tabela e gráfico com os dados da consulta.
+            blocos, dados = _validar_blocos(
+                versao.blocos, [(resultado, plano.sql)], message, motivos
+            )
+            if so_visual and blocos and grafico and not any(b["tipo"] == "grafico" for b in blocos):
+                # O gráfico veio no formato simples, fora dos blocos: entra
+                # neles, senão sairia só a tabela que ninguém pediu.
+                blocos = [*blocos, {"tipo": "grafico", "consulta": 0, "grafico": grafico}]
+                dados = {**dados, "0": _dados_da_consulta(resultado, inteiro=True, sql=plano.sql)}
+            if so_visual and any(b["tipo"] == "grafico" for b in blocos):
+                blocos = _so_o_visual(blocos)
+            else:
+                blocos, dados = _garantir_a_tabela(blocos, dados, resultado, lista_longa, versao.reply, plano.sql)
+            if blocos:
+                extras.pop("grafico", None)
+                extras["blocos"] = blocos
+                extras["dados_blocos"] = dados
+        _avisar_grafico_que_caiu(extras, motivos)
+        return extras
+
+    extras = montar(resposta)
 
     conferencia = check_grounding(
         resposta.reply, resultado.columns, resultado.rows, fonte_da_pergunta, plano.sql,
@@ -832,17 +845,19 @@ def _redigir(plano, resultado, message, provider, catalog, auditoria, historico,
             "caveats": list(reescrita.caveats),
             "rascunho_reprovado": rascunhos,
             "motivos_ancoragem": motivos,
-            **extras,
+            **montar(reescrita),
         }
 
     rascunhos.append(reescrita.reply)
     motivos.append(segunda.reason)
     logger.warning("Resposta reprovada duas vezes na ancoragem; enviando a tabela crua")
+    # Sem os blocos e as sugestões de nenhum dos rascunhos: os dois foram
+    # reprovados, e a tela mostraria o texto deles no lugar da tabela crua.
     return _tabela(resultado), {
         "rule": "resposta_sem_narrativa",
         "rascunho_reprovado": rascunhos,
         "motivos_ancoragem": motivos,
-        **extras,
+        **base,
     }
 
 
@@ -1498,6 +1513,7 @@ def _investigar(plano, message, provider, executor, catalog, auditoria, historic
     """
     passos = []
     atual, rodada = plano, 1
+    refeita = False
     while True:
         for passo in atual.investigacao[:MAX_PASSOS_POR_RODADA]:
             # Entre uma hipótese e outra: é aqui que a parada economiza de
@@ -1508,13 +1524,23 @@ def _investigar(plano, message, provider, executor, catalog, auditoria, historic
             passos.append(_testar_hipotese(passo, rodada, message, executor, catalog, auditoria))
         if foi_interrompida(message):
             return _interrompida()
-        if rodada >= MAX_RODADAS or atual.rodada_final:
+        sem_dado = not any(p["resultado"] is not None and p["resultado"].row_count > 0 for p in passos)
+        if rodada >= MAX_RODADAS or (atual.rodada_final and not sem_dado):
             # O próprio planejador disse que estas consultas fecham a
             # investigação: a chamada seguinte só serviria para ele repetir
-            # isso, e ela custa o mesmo que a primeira.
+            # isso, e ela custa o mesmo que a primeira. Mas só se alguma
+            # trouxe dado: áudio do Fernando, 2026-09-29 — as duas consultas
+            # da "rodada final" estouraram o tempo, e a investigação parou
+            # sem tentar de novo.
             break
-        if _passou_do_teto(auditoria, f"rodada {rodada + 1} da investigação"):
+        # A rodada que só existe porque nada trouxe dado não é opcional: sem
+        # ela, tudo o que já foi gasto vira "não consegui". Passa pelo teto
+        # por pergunta uma vez — o planejamento da pergunta do Fernando
+        # sozinho custou US$ 0,20, acima dos US$ 0,15 do teto.
+        refazer = sem_dado and not refeita
+        if not refazer and _passou_do_teto(auditoria, f"rodada {rodada + 1} da investigação"):
             break
+        refeita = refeita or refazer
         progresso.definir(message.pk, "Lendo o que as consultas mostraram e decidindo o próximo passo")
         seguinte = provider.plan(PlanRequest(
             question=_pergunta(message),
@@ -1541,9 +1567,10 @@ def _investigar(plano, message, provider, executor, catalog, auditoria, historic
     com_dado = [p for p in passos if p["resultado"] is not None and p["resultado"].row_count > 0]
     if not com_dado:
         progresso.limpar(message.pk)
+        pesada = any(p.get("tempo") for p in passos)
         return _Decisao(
             decision=AIReply.Decision.UNKNOWN,
-            reply=canned.INVESTIGACAO_SEM_DADO,
+            reply=canned.INVESTIGACAO_PESADA if pesada else canned.INVESTIGACAO_SEM_DADO,
             rule="investigacao_sem_dado",
             raw={"investigacao": registro},
             gap_reason="investigação sem consulta com dado: " + "; ".join(p["erro"] or "vazia" for p in passos),
@@ -1568,7 +1595,7 @@ def _testar_hipotese(passo, rodada, message, executor, catalog, auditoria,
     progresso.definir(message.pk, f"{rotulo}: {hipotese}" if hipotese else "Consultando os dados",
                       etapa=etapa, entendimento=entendimento)
     feito = {"rodada": rodada, "hipotese": hipotese, "sql": passo["sql"], "resultado": None, "erro": "",
-             "falha": ""}
+             "falha": "", "tempo": False}
     registro = {
         "attempt": len(auditoria.consultas) + 1,
         "sql": passo["sql"],
@@ -1597,6 +1624,7 @@ def _testar_hipotese(passo, rodada, message, executor, catalog, auditoria,
             error=str(exc),
         )
         feito["erro"] = str(exc)
+        feito["tempo"] = isinstance(exc, QueryTimeout)
         if isinstance(exc, QueryUnavailable):
             feito["falha"] = "indisponivel"
         elif isinstance(exc, QueryObjectMissing):
@@ -1620,13 +1648,23 @@ def _testar_hipotese(passo, rodada, message, executor, catalog, auditoria,
     return feito
 
 
+# Para a consulta que estourou o tempo do banco. A do Fernando recalculava
+# do zero, sobre fato_cdd, os três representantes que a resposta anterior já
+# tinha listado.
+DICA_DO_TEMPO = (
+    "\nEla estourou o tempo do banco. Reescreva mais leve: o que a conversa já mostrou (os nomes, "
+    "códigos e períodos das respostas anteriores) entra direto, num VALUES, em vez de ser "
+    "recalculado; agregue antes de juntar; e filtre só o período e o recorte pedidos."
+)
+
+
 def _achados(passos) -> str:
     """O que cada consulta mostrou, compacto, para a próxima rodada decidir."""
     partes = []
     for i, p in enumerate(passos):
         cabecalho = f"## Consulta {i} (rodada {p['rodada']}): {p['hipotese'] or 'sem hipótese declarada'}"
         if p["resultado"] is None:
-            partes.append(f"{cabecalho}\nNão rodou: {p['erro']}")
+            partes.append(f"{cabecalho}\nNão rodou: {p['erro']}" + (DICA_DO_TEMPO if p.get("tempo") else ""))
             continue
         r = p["resultado"]
         linhas = [dict(zip(r.columns, linha)) for linha in r.rows[:LINHAS_DOS_ACHADOS]]

@@ -149,9 +149,18 @@ BANCO_INDISPONIVEL = (
 )
 
 INVESTIGACAO_SEM_DADO = (
-    "Tentei investigar, mas nenhuma das consultas trouxe dado para sustentar "
-    "uma explicação. Tente com o período e o recorte mais específicos — por "
-    "exemplo, o mês, o canal ou a regional."
+    "Não encontrei dado que sustente uma explicação nesse recorte. Se me disser "
+    "o mês, o canal ou a regional que quer olhar primeiro, eu sigo por ali."
+)
+
+# A investigação não saiu porque as consultas ficaram pesadas demais para o
+# tempo do banco (áudio do Fernando, 2026-09-29). Não é falta de dado nem
+# pergunta mal feita: a mensagem não culpa a pessoa nem fala em erro, e
+# oferece o caminho que funciona.
+INVESTIGACAO_PESADA = (
+    "Essa análise ficou grande demais para eu fechar de uma vez. Posso fazer por "
+    "partes: me diga por onde começo — um representante, um produto, um mês — que "
+    "eu sigo dali."
 )
 
 RESSALVA_DE_FORECAST = (

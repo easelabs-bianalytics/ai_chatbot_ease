@@ -702,6 +702,12 @@ causa —, não o caminho de toda pergunta.
 - **Rodada 1:** de 2 a 4 hipóteses em `investigacao`, uma consulta por
   hipótese — em geral, confirmar o tamanho do efeito e onde ele está, mais o
   que a própria pergunta já sugerir.
+- **O que a conversa já mostrou não se recalcula.** "Os três representantes
+  com as piores quedas", "esses PDVs", "a rede que caiu mais": os nomes e
+  códigos estão na resposta anterior (e na consulta dela, no histórico) e
+  entram direto num `VALUES`. Recalcular o ranking sobre `cddd.fato_cdd`
+  dentro de cada hipótese estourou o tempo do banco nas duas consultas de uma
+  investigação (Fernando, 2026-09-29), e a pessoa ficou sem resposta.
 - **Consultas enxutas e agregadas:** no máximo umas 30 linhas por consulta
   (agrupe, ordene pela variação, use os N maiores). O resultado vai para a
   próxima rodada e para a redação — lista longa não ajuda ninguém a raciocinar.

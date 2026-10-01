@@ -29,7 +29,7 @@ usa-se fake ou o banco analítico sintético local.
 | O-03 | Comentários livres de visitas (`audit.rx_visitas.comentarios`, Q42) podem ir para o modelo? | Liberar, pois estão na consulta validada | Q42 no catálogo | A confirmar |
 | O-04 | Período padrão quando o usuário não informa | Perguntar o período antes de qualquer número | — | Decidido pelo documento de referência (2026-09-16) |
 | O-05 | Cálculos derivados (crescimento, total, média) | Feitos no SQL, como a Q03 faz com o share; o modelo nunca calcula no texto (ADR-0010, ADR-0014) | — | Decidido em 2026-09-14 |
-| O-06 | Limites padrão | 15000 ms, 500 linhas e 50 linhas para o modelo, já valendo em `app/knowledge/catalog.yaml` | — | Em uso desde a Fase 3; confirmar com o time de BI |
+| O-06 | Limites padrão | **60000 ms** (era 15000), 500 linhas e 50 linhas para o modelo, em `app/knowledge/catalog.yaml`; gunicorn com 120 s para o "Baixar Excel" caber | — | Tempo subido em 2026-10-01: a análise do Fernando (piores quedas × market share do TD) levava 20–21 s e estourava os 15 s; as outras 18 consultas dele rodam em 0,3–6,4 s |
 | O-07 | Quem aprova mudanças de catálogo e prompt | Time de BI | Fluxo de mudança | Pendente |
 | O-08 | Retenção das conversas e da auditoria | Exclusão pelo usuário é lógica (ADR-0018); falta definir por quanto tempo guardar e quem pode apagar de verdade | Produção | Pendente — cresce ~15 a 35 MB/mês a 50 perguntas/dia |
 | O-09 | SSO para login | Fora do MVP | Pós-MVP | Pendente |

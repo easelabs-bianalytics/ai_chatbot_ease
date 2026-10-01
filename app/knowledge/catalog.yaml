@@ -73,7 +73,13 @@ prefixos_de_funcao_bloqueados:
 limites:
   # Padrões propostos em docs/open-decisions.md (O-06).
   max_linhas: 500
-  timeout_ms: 15000
+  # 60 s desde 2026-10-01 (O-06). Com 15 s, a análise de diretor do Fernando
+  # (as 3 piores quedas de CDD x market share do TD) estourou duas vezes —
+  # medidas depois, as consultas levavam 20 e 21 s. No histórico dele, as
+  # outras 18 rodaram em 0,3 a 6,4 s. O "Baixar Excel" refaz a consulta na
+  # requisição web: o gunicorn tem 120 s (Dockerfile) para caber a consulta
+  # e a montagem do arquivo.
+  timeout_ms: 60000
   linhas_para_o_modelo: 50
 
 # As regras de negócio (unidades ×1000, filtros do Sell Out, grupos do TDD)
