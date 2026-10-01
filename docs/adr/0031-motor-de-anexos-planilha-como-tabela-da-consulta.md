@@ -242,3 +242,32 @@ a descrição completa do Racional de Metas (o rascunho caía só por "28,6
 mil"), a aba "Resumo por GR" (barrada pelo falso positivo da conferência), o
 cruzamento das metas com o sell-out real (barrado pelo validador) e o UPDATE
 só das células vazias.
+
+## Revisão — CRM normalizado como coluna interna (2026-10-01)
+
+CRM digitado sem os zeros (`MG104608`) não casa com o `MG0104608` do cadastro,
+e a mesma coluna da planilha mistura os dois jeitos. Pedido do Rubens: o
+Jarvis tem de tomar esse cuidado sempre, sem que isso apareça para a pessoa.
+
+- Quando o perfil reconhece uma coluna de CRM (pelo nome, ou porque quase
+  toda linha tem cara de CRM), `anexo.<aba>` ganha a coluna **interna**
+  `crm_link`: UF + número sem zeros à esquerda, completado até 7 dígitos, sem
+  cortar o que for maior (`planilha.normalizar_crm`, idempotente). CRM só com
+  o número usa a UF de uma coluna "UF"/"Estado" da mesma linha.
+- Ela existe só no SQL: não está no arquivo, não é escrita nele, não entra
+  num `SELECT a.*` (só citada pelo nome) e o prompt manda não mostrá-la, a
+  menos que peçam o CRM normalizado.
+- A regra do CRM LINK no preâmbulo do documento (vale para texto e print)
+  passou a dizer "normalize sempre o lado de fora; compare direto com as
+  colunas do banco", e a fórmula foi corrigida: tira o "CRM" antes de pegar a
+  UF (`CRM-MG` dava `CR`) e não corta número com mais de 7 dígitos.
+- **CREMERJ:** no RJ o número costuma vir com o código do conselho na frente
+  (`52.12345-6`). As bases do banco já vêm sem ele; a planilha, não
+  necessariamente. `normalizar_crm` tira o `52` só quando a UF é RJ e o
+  número tem mais de 7 dígitos; em outra UF o 52 é número.
+- Referências: o CRM do PBM passou a `lpad(ltrim(cod, '0'), 7, '0')` (o texto
+  de `fato_pbm_transacoes` pode trazer zero a mais, e o `lpad` cortaria), e as
+  consultas com `= :crm` dizem que o `:crm` chega normalizado.
+- Validador: comentário depois do `;` na mesma linha (`...; -- nota`) agora é
+  tirado antes do limite de linhas; antes comentava o fecha-parêntese e a
+  consulta virava erro de sintaxe (era o defeito do gabarito E28).

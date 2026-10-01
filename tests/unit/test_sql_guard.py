@@ -351,3 +351,19 @@ def test_funcao_que_devolve_linhas_nao_e_tabela_sem_schema(catalogo):
     )
     assert validate_sql(sql, catalogo).approved
     assert validate_sql("SELECT g FROM generate_series(1, 3) AS g", catalogo).approved
+
+
+def test_comentario_depois_do_ponto_e_virgula_na_mesma_linha(catalogo):
+    """`WHERE ...; -- nota` comentava o fecha-parêntese do limite de linhas:
+    derrubou o gabarito E28 (2026-09-24) e as referências de CRM com nota."""
+    guard = validate_sql("SELECT crm FROM audit.medico WHERE crm = 'MG0000001';  -- normalizado", catalogo)
+
+    assert guard.approved
+    assert "--" not in guard.sql
+    assert guard.sql.endswith("LIMIT 501")
+
+
+def test_traco_duplo_dentro_de_texto_nao_e_comentario(catalogo):
+    guard = validate_sql("SELECT crm FROM audit.medico WHERE nome = 'A -- B'", catalogo)
+
+    assert "'A -- B'" in guard.sql

@@ -163,12 +163,19 @@ def _com_estrela(sql: str) -> bool:
 def _colunas_citadas(pagina, sql: str) -> list:
     """Índices das colunas que a consulta cita. Uma planilha de 20 mil linhas
     e 60 colunas mandaria 1,2 milhão de valores ao banco para a consulta usar
-    três colunas; vão só as citadas (todas, se houver `*`)."""
-    if sql is None or _com_estrela(sql):
+    três colunas; vão só as citadas (todas, se houver `*`).
+
+    A coluna interna (o CRM normalizado) só entra citada pelo nome: um
+    `SELECT a.*` que vira aba nova não pode levá-la ao arquivo da pessoa."""
+    def citada(c):
+        return bool(re.search(rf'(?<![A-Za-z0-9_]){re.escape(c.nome_sql)}(?![A-Za-z0-9_])', sql, re.IGNORECASE))
+
+    if sql is None:
         return list(range(len(pagina.colunas)))
+    estrela = _com_estrela(sql)
     return [
         i for i, c in enumerate(pagina.colunas)
-        if re.search(rf'(?<![A-Za-z0-9_]){re.escape(c.nome_sql)}(?![A-Za-z0-9_])', sql, re.IGNORECASE)
+        if citada(c) or (estrela and not getattr(c, "interna", False))
     ]
 
 

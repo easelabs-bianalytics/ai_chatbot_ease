@@ -31,7 +31,7 @@ def preparar_anexo(nome: str, dados: bytes) -> dict:
         resumo = estrutura.resumo
         tipo = "planilha"
         prazo = SEGUNDOS_DA_PLANILHA_NA_CONVERSA
-        detalhe = {"linhas": estrutura.linhas, "colunas": [c.nome for c in estrutura.colunas]}
+        detalhe = {"linhas": estrutura.linhas, "colunas": [c.nome for c in estrutura.colunas if not c.interna]}
     else:
         preparada = preparar_imagem(dados)
         # Guarda a imagem REDUZIDA, não a original: é ela que vai ao modelo,

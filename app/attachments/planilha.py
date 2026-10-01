@@ -70,6 +70,11 @@ class Coluna:
     formula: str = ""
     # Textos numa coluna de número ("-", "Neo"): no SQL viram NULL.
     intrusos: tuple = ()
+    # Coluna que só existe no SQL, calculada por nós (o CRM normalizado):
+    # não está no arquivo, não é escrita nele e não vai para a resposta.
+    interna: bool = False
+    origem: str = ""
+    sem_uf: int = 0
 
     @property
     def letra(self) -> str:
@@ -128,6 +133,9 @@ class Pagina:
     celulas: tuple = field(default=(), repr=False, compare=False)
     comentarios: tuple = field(default=(), repr=False, compare=False)
     oculta: bool = False
+    # O que o perfil precisa avisar ao modelo antes de ele planejar: CRM sem
+    # UF, por exemplo, que não identifica o médico.
+    avisos: tuple = ()
 
     @property
     def tabela_sql(self) -> str:
@@ -176,6 +184,21 @@ class Pagina:
         quantos = LINHAS_DE_AMOSTRA if coluna.tipo == "texto" else 2
         exemplos = " | ".join(_curto(e) for e in coluna.exemplos[:quantos])
         return texto + (f" · {exemplos}" if exemplos else "")
+
+    def _descrever_interna(self, coluna) -> str:
+        return (
+            f"Coluna interna (só no SQL; não existe no arquivo): {coluna.nome_sql} = o CRM de "
+            f"«{coluna.origem}» normalizado (UF + número com zeros à esquerda até 7 dígitos), "
+            f"reconhecido em {coluna.preenchidas} de {self.linhas} linhas. Case com o banco por ela "
+            f"(`a.{coluna.nome_sql} = m.crm`). Não a escreva na planilha nem a mostre na resposta, a "
+            "menos que a pessoa peça o CRM normalizado."
+            + (
+                f" {coluna.sem_uf} linhas têm o CRM só com o número, sem UF (nem no CRM, nem numa coluna "
+                "de UF): ficam sem CRM LINK. Não as case pelo número; diga na resposta quantas foram e "
+                "que precisam da UF."
+                if coluna.sem_uf else ""
+            )
+        )
 
     def _descrever_fora(self, teto: int) -> str:
         if not self.fora_da_tabela or teto <= 0:
@@ -229,6 +252,7 @@ class Pagina:
         ]
         if self.oculta:
             partes.insert(0, "(aba oculta no Excel)")
+        partes.extend(self.avisos)
         if self.colunas_de_fora:
             partes.insert(0, (
                 f"ATENÇÃO: a aba tem {len(self.colunas) + self.colunas_de_fora} colunas e só as primeiras "
@@ -236,7 +260,8 @@ class Pagina:
                 "nem no preenchimento. Diga isso na resposta."
             ))
         partes.append("Colunas (letra · nome na planilha → coluna no SQL · tipo · preenchimento · fórmula · exemplos):")
-        linhas_das_colunas = [self._descrever_coluna(coluna) for coluna in self.colunas]
+        visiveis = [c for c in self.colunas if not c.interna]
+        linhas_das_colunas = [self._descrever_coluna(coluna) for coluna in visiveis]
         # Com o que está fora da tabela (premissas, totais), as colunas não
         # podem comer o teto inteiro: as que não cabem descritas vão só com
         # letra, nome e fórmula — o nome é o que mais diz.
@@ -244,7 +269,7 @@ class Pagina:
         usado = sum(len(p) + 1 for p in partes)
         for i, linha in enumerate(linhas_das_colunas):
             if usado + len(linha) + 1 > limite and i < len(linhas_das_colunas) - 1:
-                resto = self.colunas[i:]
+                resto = visiveis[i:]
                 partes.append(
                     f"Mais {len(resto)} colunas (letra · nome → SQL · fórmula): " + " | ".join(
                         f"{c.letra} {_curto(c.nome, 30)} → {c.nome_sql}"
@@ -255,6 +280,7 @@ class Pagina:
                 break
             partes.append(linha)
             usado += len(linha) + 1
+        partes.extend(self._descrever_interna(c) for c in self.colunas if c.interna)
         principal = "\n".join(partes)
         # O que sobra do teto vai para o que está fora da tabela e para os
         # comentários; a tabela principal vem primeiro, sempre.
@@ -677,6 +703,117 @@ def _texto_da_formula(valor) -> str:
     return valor if isinstance(valor, str) and valor.startswith("=") else ""
 
 
+UFS = frozenset(
+    "AC AL AM AP BA CE DF ES GO MA MG MS MT PA PB PE PI PR RJ RN RO RR RS SC SE SP TO".split()
+)
+_CABECALHO_DE_CRM = re.compile(r"(?<![a-z])crm(?![a-z])")
+_CABECALHO_DE_UF = re.compile(r"(?<![a-z])(uf|estado)(?![a-z])")
+# CRM escrito com a UF: "MG104608", "mg-0104608", "CRM-MG 104608", "104608/MG".
+_CRM_COM_UF = re.compile(r"^(?:crm)?\W*([a-z]{2})\W*(\d{3,10})$|^(\d{3,10})\W*([a-z]{2})$")
+# O código do CREMERJ, que o CRM do Rio costuma trazer na frente do número.
+PREFIXO_DO_CREMERJ = "52"
+# Parte das linhas que precisa parecer CRM para a coluna sem "CRM" no nome
+# ser tratada como CRM.
+PARTE_QUE_PARECE_CRM = 0.8
+
+
+def normalizar_crm(valor, uf=None) -> str | None:
+    """O CRM no formato do banco: UF + número com zeros à esquerda até 7
+    dígitos ("MG104608" → "MG0104608"). Idempotente: o que já está no
+    formato sai igual. None quando não dá para saber a UF ou o número.
+
+    Uma planilha mistura os dois jeitos na mesma coluna, e o CRM digitado
+    pela pessoa costuma vir sem os zeros: comparado direto, MG104608 não
+    casa com MG0104608 do cadastro (2026-10-01). Os zeros a mais também
+    caem ("MG00104608"); número com mais de 7 dígitos fica inteiro."""
+    if _vazio(valor):
+        return None
+    if isinstance(valor, float) and valor.is_integer():
+        valor = int(valor)
+    texto = normalizar(valor).replace("crm", " ")
+    digitos = re.sub(r"\D", "", texto)
+    if not digitos or len(digitos) > 10:
+        return None
+    siglas = [s.upper() for s in re.findall(r"[a-z]+", texto) if s.upper() in UFS]
+    sigla = siglas[0] if siglas else str(uf or "").strip().upper()
+    if sigla not in UFS:
+        return None
+    numero = digitos.lstrip("0")
+    if sigla == "RJ" and len(numero) > 7 and numero.startswith(PREFIXO_DO_CREMERJ):
+        # No RJ o número costuma vir com o código do conselho (CREMERJ) na
+        # frente — "52.12345-6". As bases do banco já vêm sem ele; a planilha,
+        # não necessariamente. Só no RJ: em outra UF o 52 é número.
+        numero = numero[len(PREFIXO_DO_CREMERJ):].lstrip("0")
+    return sigla + numero.zfill(7)
+
+
+def _parece_crm(valor) -> bool:
+    return bool(_CRM_COM_UF.match(re.sub(r"\s+", " ", normalizar(valor)).strip())) and normalizar_crm(valor) is not None
+
+
+def _coluna_do_crm(colunas, registros, nomes):
+    """(Coluna interna, valores) com o CRM normalizado, ou None.
+
+    É a coluna de CRM da planilha — pelo nome ("CRM", "Nº CRM") ou, sem o
+    nome, porque quase toda linha tem cara de CRM — passada a limpo. CRM só
+    com o número usa a UF de uma coluna "UF"/"Estado" da mesma linha. A
+    coluna existe só na consulta: o arquivo e a resposta não a veem."""
+    if not registros:
+        return None
+    def valores_de(i):
+        return [linha[i] for _, linha in registros]
+    alvo = None
+    for i, c in enumerate(colunas):
+        if c.tipo in ("texto", "número") and _CABECALHO_DE_CRM.search(normalizar(c.nome)):
+            alvo = i
+            break
+    if alvo is None:
+        for i, c in enumerate(colunas):
+            cheios = [v for v in valores_de(i) if not _vazio(v)]
+            if c.tipo == "texto" and cheios and sum(map(_parece_crm, cheios)) >= PARTE_QUE_PARECE_CRM * len(cheios):
+                alvo = i
+                break
+    if alvo is None:
+        return None
+    i_uf = next(
+        (
+            i for i, c in enumerate(colunas)
+            if i != alvo and _CABECALHO_DE_UF.search(normalizar(c.nome))
+            and sum(1 for v in valores_de(i) if str(v or "").strip().upper() in UFS)
+            >= PARTE_QUE_PARECE_CRM * max(1, c.preenchidas)
+        ),
+        None,
+    )
+    valores = [
+        normalizar_crm(linha[alvo], linha[i_uf] if i_uf is not None else None)
+        for _, linha in registros
+    ]
+    # Tem número e não tem UF em lugar nenhum: o CRM 39273 existe em vários
+    # estados, e casar pelo número escolheria um médico qualquer.
+    sem_uf = sum(
+        1 for v, (_, linha) in zip(valores, registros)
+        if v is None and re.search(r"\d", str(linha[alvo] or "")) and normalizar_crm(linha[alvo], "SP") is not None
+    )
+    if not any(valores):
+        if not sem_uf:
+            return None
+        aviso = (
+            f"ATENÇÃO — CRM sem UF: a coluna «{colunas[alvo].nome}» traz só o número ({sem_uf} linhas) e a "
+            "planilha não tem coluna de UF. Sem UF não há CRM LINK: o mesmo número existe em vários estados, "
+            "então NÃO case pelo número. Peça a UF (uma coluna de UF, ou o CRM com a UF, como MG0104608) "
+            "antes de cruzar com o banco."
+        )
+        return None, None, aviso
+    nome = nome_sql("crm_link", nomes)
+    nomes.add(nome)
+    coluna = Coluna(
+        nome="CRM normalizado (interno)", tipo="texto", exemplos=(), nome_sql=nome, indice=colunas[alvo].indice,
+        preenchidas=sum(1 for v in valores if v), distintas=len({v for v in valores if v}),
+        interna=True, origem=colunas[alvo].nome, sem_uf=sem_uf,
+    )
+    return coluna, valores, ""
+
+
 def _pagina(nome_da_aba: str, linhas, extras=None, nome_na_sql: str = "") -> Pagina | None:
     """Perfila uma aba. `extras` (só xlsx): as mesmas linhas com as fórmulas
     como texto, os comentários e se a aba está oculta."""
@@ -726,6 +863,14 @@ def _pagina(nome_da_aba: str, linhas, extras=None, nome_na_sql: str = "") -> Pag
         (numero, tuple(_valor_limpo(linha[c.indice]) if c.indice < len(linha) else None for c in colunas))
         for numero, linha in registros_brutos
     )
+    interna = _coluna_do_crm(colunas, registros, nomes)
+    avisos = ()
+    if interna is not None:
+        coluna, valores, aviso = interna
+        if coluna is not None:
+            colunas.append(coluna)
+            registros = tuple((numero, (*linha, valor)) for (numero, linha), valor in zip(registros, valores))
+        avisos = (aviso,) if aviso else ()
     de_fora = max(0, getattr(linhas, "largura", 0) - MAX_COLUNAS)
     return Pagina(
         nome=nome_da_aba, colunas=tuple(colunas), linhas=len(registros), colunas_de_fora=de_fora,
@@ -734,6 +879,7 @@ def _pagina(nome_da_aba: str, linhas, extras=None, nome_na_sql: str = "") -> Pag
         celulas=_celulas(linhas, formulas) if formulas is not None else (),
         comentarios=tuple(extras.get("comentarios") or ()),
         oculta=bool(extras.get("oculta")),
+        avisos=avisos,
     )
 
 

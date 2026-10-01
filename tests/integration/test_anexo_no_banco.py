@@ -114,3 +114,35 @@ def test_do_banco_ao_arquivo_conferido(executor, tabelas):
     assert feita.vazias_nomes == ("RJ9999999",)
     valores = [l[3] for l in load_workbook(io.BytesIO(feita.dados))["Painel"].iter_rows(min_row=3, values_only=True)]
     assert valores == ["TERRITORIO MG CENTRO", "TERRITORIO SP CAPITAL", None]
+
+
+def test_crm_sem_os_zeros_casa_pela_coluna_interna(executor):
+    """2026-10-01: "MG1" digitado não casava com MG0000001 do cadastro. A
+    coluna interna crm_link normaliza o CRM da planilha — inclusive o número
+    sem UF, que pega a UF da coluna ao lado."""
+    dados = _xlsx([("CRM", "UF"), ("MG1", "MG"), ("2", "SP"), ("RJ9999999", "RJ")])
+    tabelas = anexo_sql.tabelas(ler_estrutura("crms.xlsx", dados))
+
+    resultado = _rodar(executor, tabelas, (
+        "SELECT a._linha, a.crm, m.utc_codigo FROM anexo.painel a "
+        "LEFT JOIN audit.medico m ON m.crm = a.crm_link ORDER BY a._linha"
+    ))
+
+    assert resultado.rows == ((2, "MG1", 101), (3, "2", 202), (4, "RJ9999999", None))
+
+
+@pytest.mark.parametrize("bruto, esperado", [
+    ("MG104608", "MG0104608"),
+    ("CRM-MG 104608", "MG0104608"),
+    ("104608/MG", "MG0104608"),
+    ("MG00104608", "MG0104608"),
+    ("SP12345678", "SP12345678"),
+])
+def test_expressao_da_regra_do_crm_link_no_postgres(executor, bruto, esperado):
+    """A fórmula que o documento de referência ensina ao modelo, rodada de
+    verdade: tira o "CRM", não corta número maior que 7 e tira zero a mais."""
+    sql = (
+        "SELECT substring(x from '([A-Z]{2})') || lpad(ltrim(d, '0'), greatest(7, length(ltrim(d, '0'))), '0') "
+        f"FROM (SELECT replace(upper('{bruto}'), 'CRM', '') AS x, regexp_replace('{bruto}', '\D', '', 'g') AS d) n"
+    )
+    assert executor.run(sql).rows == ((esperado,),)

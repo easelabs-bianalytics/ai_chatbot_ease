@@ -79,14 +79,14 @@ def test_cabecalho_abaixo_do_titulo():
     pagina = estrutura.primeira
 
     assert pagina.linha_do_cabecalho == 3
-    assert [c.nome for c in pagina.colunas] == ["Nome do médico", "CRM", "UF de atendimento", "Potencial"]
+    assert [c.nome for c in pagina.colunas if not c.interna] == ["Nome do médico", "CRM", "UF de atendimento", "Potencial"]
     assert pagina.linhas == 3
 
 
 def test_colunas_ganham_nome_de_sql_sem_acento():
     pagina = ler_estrutura("painel.xlsx", PAINEL).primeira
 
-    assert [c.nome_sql for c in pagina.colunas] == ["nome_do_medico", "crm", "uf_de_atendimento", "potencial"]
+    assert [c.nome_sql for c in pagina.colunas if not c.interna] == ["nome_do_medico", "crm", "uf_de_atendimento", "potencial"]
     assert pagina.tabela_sql == "anexo.painel"
 
 
@@ -179,7 +179,8 @@ def test_expandir_leva_todas_as_colunas_com_estrela():
 
     expandido, params = anexo_sql.expandir("SELECT * FROM (SELECT a.* FROM anexo.painel a) AS q", tabelas)
 
-    assert len(params) == 5  # _linha + 4 colunas
+    assert len(params) == 5  # _linha + 4 colunas; a interna (crm_link) só entra citada
+    assert '"crm_link"' not in expandido
     assert '"uf_de_atendimento"' in expandido
 
 
@@ -566,3 +567,127 @@ def test_update_so_das_vazias_nao_conta_as_ja_preenchidas_como_faltando():
     feita = preencher("painel.xlsx", PAINEL, pedido, resultado.columns, resultado.rows)
 
     assert (feita.preenchidas, feita.total, feita.sem_correspondencia) == (1, 1, 0)
+
+
+# ---------------------------------------------------------------- CRM normalizado (2026-10-01)
+# MG104608 (digitado, sem os zeros) não casava com MG0104608 do cadastro, e a
+# mesma coluna mistura os dois jeitos. O motor normaliza o CRM numa coluna que
+# só existe no SQL: o arquivo e a resposta não a veem.
+
+
+@pytest.mark.parametrize("bruto, uf, esperado", [
+    ("MG104608", None, "MG0104608"),
+    ("MG0104608", None, "MG0104608"),
+    ("mg-0104608", None, "MG0104608"),
+    ("CRM-MG 104608", None, "MG0104608"),
+    ("104608/MG", None, "MG0104608"),
+    ("MG00104608", None, "MG0104608"),
+    (104608.0, "mg", "MG0104608"),
+    ("SP12345678", None, "SP12345678"),
+    # CREMERJ: no RJ o número vem com o código do conselho (52) na frente.
+    ("RJ 52.12345-6", None, "RJ0123456"),
+    ("5212345-6/RJ", None, "RJ0123456"),
+    ("52123456", "rj", "RJ0123456"),
+    ("RJ0123456", None, "RJ0123456"),
+    ("RJ5212345", None, "RJ5212345"),   # 7 dígitos: é o número, não o prefixo
+    ("SP52123456", None, "SP52123456"),  # fora do RJ o 52 é número
+    ("104608", None, None),
+    ("104608", "XX", None),
+    ("", None, None),
+])
+def test_normalizar_crm(bruto, uf, esperado):
+    from attachments.planilha import normalizar_crm
+
+    assert normalizar_crm(bruto, uf) == esperado
+
+
+CRMS_MISTURADOS = _xlsx(
+    [("Nome", "CRM", "UF"), ("Ana", "MG104608", "MG"), ("Bia", "MG0049899", "MG"), ("Caio", 23511, "PR")],
+    titulo="Medicos",
+)
+
+
+def test_coluna_de_crm_ganha_o_crm_link_interno():
+    pagina = ler_estrutura("medicos.xlsx", CRMS_MISTURADOS).primeira
+
+    interna = pagina.colunas[-1]
+    assert (interna.nome_sql, interna.interna, interna.origem) == ("crm_link", True, "CRM")
+    assert [linha[-1] for _, linha in pagina.registros] == ["MG0104608", "MG0049899", "PR0023511"]
+
+
+def test_crm_link_e_descrito_como_interno_e_fora_da_lista_de_colunas():
+    resumo = ler_estrutura("medicos.xlsx", CRMS_MISTURADOS).resumo
+
+    assert "Coluna interna (só no SQL; não existe no arquivo): crm_link" in resumo
+    assert "reconhecido em 3 de 3 linhas" in resumo
+    assert "→ crm_link ·" not in resumo  # não aparece como coluna da planilha
+
+
+def test_crm_link_vai_ao_banco_so_quando_a_consulta_usa():
+    tabelas = anexo_sql.tabelas(ler_estrutura("medicos.xlsx", CRMS_MISTURADOS))
+
+    expandido, params = anexo_sql.expandir("SELECT a._linha FROM anexo.medicos a WHERE a.crm_link = 'x'", tabelas)
+
+    assert '"crm_link"' in expandido
+    assert params[1] == ["MG0104608", "MG0049899", "PR0023511"]
+
+
+def test_coluna_sem_crm_no_nome_mas_com_cara_de_crm():
+    dados = _xlsx([("Médico", "Registro"), ("Ana", "MG-104608"), ("Bia", "SP 0002"), ("Caio", "rj123456")])
+    pagina = ler_estrutura("x.xlsx", dados).primeira
+
+    assert pagina.colunas[-1].interna
+    assert [linha[-1] for _, linha in pagina.registros] == ["MG0104608", "SP0000002", "RJ0123456"]
+
+
+def test_planilha_sem_crm_nao_ganha_coluna_interna():
+    redes = _xlsx([("Rede", "Unidades"), ("Pague Menos", 3), ("Drogasil", 4)])
+    assert not any(c.interna for c in ler_estrutura("redes.xlsx", redes).primeira.colunas)
+
+
+def test_crm_link_nao_e_escrito_no_arquivo():
+    """Preencher pela linha não toca na coluna interna: ela não existe no
+    arquivo, e a conferência barraria qualquer coluna que ninguém pediu."""
+    resultado = make_result(("_linha", "representante"), [(2, "ANA"), (3, "BIA"), (4, "CAIO")])
+    pedido = _pedido(colunas=[{"coluna_destino": "Representante", "valor_no_resultado": "representante"}])
+
+    feita = preencher("medicos.xlsx", CRMS_MISTURADOS, pedido, resultado.columns, resultado.rows)
+
+    assert _linhas_da_aba(feita.dados)[0] == ("Nome", "CRM", "UF", "Representante")
+
+
+# ---------------------------------------------------------------- CRM e UF em colunas separadas (2026-10-01)
+
+
+def test_crm_so_numero_com_coluna_de_uf_ao_lado_e_juntado():
+    """O caso comum de cadastro: CRM numa coluna (só o número, às vezes sem
+    os zeros) e UF em outra. O motor junta as duas antes do JOIN."""
+    dados = _xlsx([("Nome", "CRM", "UF de atendimento"), ("Ana", 104608, "MG"), ("Bia", "0049899", "mg"),
+                   ("Caio", "23511", "PR")])
+    pagina = ler_estrutura("x.xlsx", dados).primeira
+
+    assert [linha[-1] for _, linha in pagina.registros] == ["MG0104608", "MG0049899", "PR0023511"]
+    assert "sem UF" not in pagina.descrever(4000)
+
+
+def test_crm_so_numero_sem_coluna_de_uf_nao_casa_pelo_numero_e_avisa():
+    """Sem UF não há CRM LINK: o número 39273 existe em vários estados. O
+    perfil avisa o planejador, e não há coluna interna para casar errado."""
+    dados = _xlsx([("Nome", "CRM"), ("Ana", 104608), ("Bia", "49899")])
+    pagina = ler_estrutura("x.xlsx", dados).primeira
+
+    assert not any(c.interna for c in pagina.colunas)
+    descricao = pagina.descrever(4000)
+    assert "CRM sem UF" in descricao and "NÃO case pelo número" in descricao
+
+
+def test_crm_misturado_conta_as_linhas_sem_uf():
+    """Parte com a UF no próprio CRM, parte só número e sem coluna de UF: as
+    que têm UF casam; as outras são contadas para a resposta dizer."""
+    dados = _xlsx([("Nome", "CRM"), ("Ana", "MG104608"), ("Bia", "49899"), ("Caio", "PR 23511")])
+    pagina = ler_estrutura("x.xlsx", dados).primeira
+
+    interna = pagina.colunas[-1]
+    assert [linha[-1] for _, linha in pagina.registros] == ["MG0104608", None, "PR0023511"]
+    assert interna.sem_uf == 1
+    assert "1 linhas têm o CRM só com o número, sem UF" in pagina.descrever(4000)

@@ -19,9 +19,14 @@ Pelo perfil, responda para você mesmo:
   respeitá-la.
 - **Qual coluna identifica a linha** (a que "serve de chave": CRM, CNPJ, código,
   nome) e como ela casa com o banco. Identificador escrito de jeitos diferentes
-  (CRM com ou sem UF, com zeros, com traço) se padroniza **dos dois lados** na
-  própria consulta — `upper(regexp_replace(x, '[^A-Za-z0-9]', '', 'g'))` — antes
-  de juntar.
+  (com ou sem zeros à esquerda, com traço, com espaço) se padroniza na própria
+  consulta antes de juntar — e a mesma coluna pode misturar os jeitos.
+- **CRM: use sempre a coluna interna `crm_link`** quando o perfil trouxer uma.
+  É o CRM da planilha já normalizado pelo sistema (UF + número com zeros à
+  esquerda até 7: `MG104608` vira `MG0104608`), e casa direto com
+  `audit.medico.crm`, `crm_link` e `crm_norm` — nunca compare o CRM como foi
+  digitado. Ela não existe no arquivo: não a escreva na planilha nem a mostre
+  na resposta, a menos que a pessoa peça o CRM normalizado.
 - **Quando a pessoa dá mais de uma pista** ("temos cidade, estado, nome e
   CNPJ"), case pela mais forte (o código) e use as outras como **reserva** para
   as linhas que não casaram — `COALESCE(pelo_cnpj, pela_cidade_uf)` —, numa
@@ -87,9 +92,7 @@ SELECT a._linha,
        btrim(fv.desc_territorio) AS representante,
        d.desc_distrito           AS gr
 FROM anexo.painel_medico a
-LEFT JOIN audit.medico m
-       ON upper(regexp_replace(m.crm, '[^A-Za-z0-9]', '', 'g'))
-        = upper(regexp_replace(a.crm, '[^A-Za-z0-9]', '', 'g'))
+LEFT JOIN audit.medico m ON m.crm = a.crm_link
 LEFT JOIN (SELECT DISTINCT cod_utc, cod_territorio, desc_territorio FROM cddd.forca_vendas) fv
        ON fv.cod_utc = m.utc_codigo
 LEFT JOIN cddd.fv_territorio t ON t.cod_territorio = fv.cod_territorio

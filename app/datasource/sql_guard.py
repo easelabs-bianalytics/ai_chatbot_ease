@@ -72,6 +72,15 @@ def _limpar_final(sql: str) -> str:
         if linhas and linhas[-1].lstrip().startswith("--"):
             texto = "\n".join(linhas[:-1]).rstrip()
             continue
+        # Comentário no fim da última linha, depois do código ("...; -- sem
+        # linha = não visitado"): ele comentaria o fecha-parêntese do limite.
+        # Derrubou o gabarito E28 (2026-09-24) e as referências com nota.
+        ultima = linhas[-1] if linhas else ""
+        fora = _fora_de_string(ultima)
+        corte = next((i for i in range(len(ultima) - 1) if ultima.startswith("--", i) and fora[i]), None)
+        if corte is not None:
+            texto = "\n".join([*linhas[:-1], ultima[:corte]]).rstrip()
+            continue
         break
     return texto
 

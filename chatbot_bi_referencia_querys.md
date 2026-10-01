@@ -41,7 +41,8 @@ sempre**: a mesma lista mistura `MG104608` e `MG0104608`. Com `d = regexp_replac
 '\D', '', 'g')`: `upper(<uf>) || lpad(ltrim(d, '0'), greatest(7, length(ltrim(d, '0'))), '0')`.
 Com a UF dentro (`39273/MG`, `CRM-MG 39273`), tire antes o "CRM" (`x = replace(upper(<crm>),
 'CRM', '')`) e pegue a UF com `substring(x from '([A-Z]{2})')`. Só no RJ: mais de 7 dígitos
-começando em `52` (o código do CREMERJ, `52.12345-6`) — tire o 52 antes de completar. O CRM LINK é só para o JOIN; não o mostre, a menos que
+começando em `52` (o código do CREMERJ, `52.12345-6`) — tire o 52 antes de completar. Planilha anexada já traz a coluna
+interna `crm_link` normalizada: use-a. O CRM LINK é só para o JOIN; não o mostre, a menos que
 peçam. Sem UF não há CRM LINK: diga quantos ficaram de fora por isso,
 em vez de casar pelo número. E-mail só serve de reserva quando o CRM falta, e a resposta diz que
 casou por e-mail.
@@ -345,13 +346,16 @@ LEFT JOIN (SELECT DISTINCT cod_utc, cod_territorio, desc_territorio FROM cddd.fo
        ON fv.cod_utc = m.utc_codigo
 LEFT JOIN cddd.fv_territorio t ON t.cod_territorio = fv.cod_territorio
 LEFT JOIN cddd.fv_distrito  d ON d.cod_distrito  = t.cod_distrito
-WHERE upper(regexp_replace(m.crm, '[^A-Za-z0-9]', '', 'g')) = upper(regexp_replace(:crm, '[^A-Za-z0-9]', '', 'g'));
+-- O CRM de fora (MG104608, CRM-MG 104608) se normaliza; a coluna do banco já está no formato.
+WHERE m.crm = (SELECT substring(x FROM '[A-Z]{2}')
+                      || lpad(ltrim(regexp_replace(x, '\D', '', 'g'), '0'), 7, '0')
+               FROM (SELECT replace(upper(:crm), 'CRM', '') AS x) n);
 -- `desc_territorio` = 'SEM REP' (cod_territorio 9999999): a UTC não tem representante hoje.
 ```
 
 Com uma **planilha de médicos anexada**, a mesma consulta parte de `anexo.<aba>` (uma linha por
-linha da planilha, `LEFT JOIN audit.medico` pelo CRM normalizado dos dois lados) — ver as regras
-da planilha.
+linha da planilha, `LEFT JOIN audit.medico m ON m.crm = a.crm_link`, a coluna interna com o CRM
+da planilha já normalizado) — ver as regras da planilha.
 
 O nome do representante está em `desc_territorio`. O usuário escreve o nome de várias formas
 ("Hermes", "Hermes Amorim", "Hermes Bizotto") e todas apontam para o mesmo `desc_territorio`.
