@@ -27,7 +27,9 @@ AGORA = datetime(2026, 10, 1, 5, 0, tzinfo=timezone.utc)
     ("SP123456", "", "SP0123456"),       # UF colada no CRM
     ("123456/RJ", None, "RJ0123456"),    # UF depois da barra
     ("CRM-PR 25111", "", "PR0025111"),   # com a sigla do conselho
-    ("52752479", "RJ", "RJ52752479"),    # mais de 7 dígitos: não corta
+    ("52752479", "RJ", "RJ0752479"),     # RJ com o 52 do CREMERJ: sai o 52
+    ("521027581", "RJ", "RJ1027581"),
+    ("52752479", "SP", "SP52752479"),    # fora do RJ, mais de 7 dígitos: não corta
     ("39273", "ER", ""),                 # UF inválida, e nenhuma no CRM: sem link
     ("PENDENTE", "SP", ""),              # sem número
     ("000000", "SP", ""),                # só zeros

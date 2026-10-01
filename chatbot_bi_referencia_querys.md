@@ -41,8 +41,7 @@ sempre**: a mesma lista mistura `MG104608` e `MG0104608`. Com `d = regexp_replac
 '\D', '', 'g')`: `upper(<uf>) || lpad(ltrim(d, '0'), greatest(7, length(ltrim(d, '0'))), '0')`.
 Com a UF dentro (`39273/MG`, `CRM-MG 39273`), tire antes o "CRM" (`x = replace(upper(<crm>),
 'CRM', '')`) e pegue a UF com `substring(x from '([A-Z]{2})')`. Só no RJ: mais de 7 dígitos
-começando em `52` (o código do CREMERJ, `52.12345-6`) — tire o 52 antes de completar. Planilha anexada já traz a coluna
-interna `crm_link` normalizada: use-a. O CRM LINK é só para o JOIN; não o mostre, a menos que
+começando em `52` (o código do CREMERJ, `52.12345-6`) — tire o 52 antes de completar. O CRM LINK é só para o JOIN; não o mostre, a menos que
 peçam. Sem UF não há CRM LINK: diga quantos ficaram de fora por isso,
 em vez de casar pelo número. E-mail só serve de reserva quando o CRM falta, e a resposta diz que
 casou por e-mail.

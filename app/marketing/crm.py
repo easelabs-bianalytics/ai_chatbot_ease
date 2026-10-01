@@ -18,6 +18,7 @@ UFS = frozenset({
     "PI", "PR", "RJ", "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO",
 })
 DIGITOS_DO_CRM = 7
+PREFIXO_DO_CREMERJ = "52"
 
 _UF_NO_TEXTO = re.compile(r"(?<![A-Z])(" + "|".join(sorted(UFS)) + r")(?![A-Z])")
 
@@ -52,6 +53,10 @@ def crm_link(numero, uf="") -> str:
     estado = uf_valida(uf) or uf_no_crm(numero)
     if not estado:
         return ""
+    if estado == "RJ" and len(digitos) > DIGITOS_DO_CRM and digitos.startswith(PREFIXO_DO_CREMERJ):
+        # "52.12345-6": o 52 é o código do CREMERJ, que o BI não guarda.
+        # Tirá-lo recuperou 55 dos 90 CRMs longos do RJ (2026-10-01).
+        digitos = digitos[len(PREFIXO_DO_CREMERJ):].lstrip("0") or "0"
     return estado + digitos.zfill(DIGITOS_DO_CRM)
 
 
