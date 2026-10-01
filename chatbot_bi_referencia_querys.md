@@ -3555,7 +3555,9 @@ ORDER BY 1;
 ```
 
 *"Dos médicos do painel da Força de Vendas, quais estão na Área Médica? Ranqueie os representantes
-por médicos cadastrados."*
+por médicos cadastrados."* São **duas entregas** (`consultas`): a lista dos médicos (nome, CRM LINK,
+representante, especialidade) e o ranking por representante abaixo — "quais estão" pede os nomes,
+não só a contagem. A lista sai do mesmo `painel` × `area` com as colunas do médico.
 
 ```sql
 -- M04 · Painel da força de vendas × Área Médica, por representante

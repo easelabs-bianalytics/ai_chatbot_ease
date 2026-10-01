@@ -66,7 +66,7 @@ _TERMOS = {
     "forca_vendas": {
         2: ("visit", "painel", "represent", "territorio", "setor", "cobertura", "gerente regional",
             "equipe", "hierarquia", "email do", "e-mail do"),
-        1: ("gr ", " gr", "remota", "forca de vendas", "quem atende", "quem e o", "quem sao"),
+        1: ("gr ", " gr", "remota", "forca_fv", "quem atende", "quem e o", "quem sao"),
     },
     # Índice de Conversão (seção 6). "IC" sozinho é curto demais para buscar
     # solto: vai com espaço e pontuação, como o " mat " do Sell Out.
@@ -100,6 +100,11 @@ def pontuar(pergunta: str) -> dict:
     """Nota de cada tema para a pergunta. Exposto para o teste e para o
     relatório: quando a IA erra a consulta, a primeira suspeita é o tema."""
     texto = " " + re.sub(r"\s+", " ", _sem_acento(pergunta)) + " "
+    # "Força de Vendas" é o nome da área, não venda: com o "vendas" solto, a
+    # pergunta do painel × Área Médica ia para o Sell Out, o Marketing virava
+    # resumo e o modelo pedia o documento inteiro — US$ 0,30 por pergunta
+    # (2026-10-01).
+    texto = texto.replace("forca de vendas", "forca_fv")
     notas = {}
     for chave, pesos in _TERMOS.items():
         nota = sum(peso for peso, termos in pesos.items() for t in termos if t in texto)

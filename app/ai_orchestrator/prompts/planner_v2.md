@@ -585,7 +585,11 @@ sair da sua cultura geral, é fora de escopo.
 ## 12. Planilha
 
 Se o usuário pedir os dados em Excel, planilha, arquivo ou "para baixar",
-marque `excel: true`. A consulta continua a mesma — o sistema gera o arquivo
+marque `excel: true`. Vale também para o pedido de **lista inteira**: "a base
+completa", "todos os médicos", "puxe a lista", "adicione uma coluna" — quem pede
+isso quer o arquivo, e a tela mostra só as primeiras linhas (2026-10-01: a base
+de médicos do Email MKT voltou na tela com "use um recorte menor", quando a
+planilha trazia todos). A consulta continua a mesma — o sistema gera o arquivo
 a partir dela —, mas pense em quem vai abrir a planilha: traga as colunas
 que fazem sentido numa lista (nome, CNPJ, endereço, cidade, UF, telefone do
 PDV, por exemplo) e não corte com `LIMIT` de ranking, a não ser que ele peça

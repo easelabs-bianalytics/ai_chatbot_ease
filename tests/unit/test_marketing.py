@@ -249,3 +249,10 @@ def test_farmaceutico_do_email_mkt_nao_ganha_crm_link():
     linhas = linhas_do_email_mkt(dados, CAMPOS + [{"id": "33", "title": "Qual sua profissão?"}], TAGS, AGORA)
 
     assert linhas[0][12] is None and linhas[0][-1] == "CRF"
+
+
+def test_forca_de_vendas_nao_e_sell_out():
+    """"Força de Vendas" somava ponto para o Sell Out pelo "vendas": o
+    Marketing ia como resumo e o modelo pedia o documento inteiro."""
+    temas = escolher_secoes("Pegue os médicos do painel da Força de Vendas e veja quais estão na Área Médica")
+    assert "sell_out" not in temas and {"forca_vendas", "marketing"} <= set(temas)

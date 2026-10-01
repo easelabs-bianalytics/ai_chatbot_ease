@@ -368,6 +368,8 @@ casos:
     esperado: answer_with_data
     referencia: M01
     sql_deve_conter: ["area_medica_usuarios", "data_cadastro"]
+    comparar_resultado: false
+    nota: Lista longa (centenas de linhas); o que se confere é a consulta.
 
   - id: M02-acessos-area-medica
     grupo: referencia
@@ -408,6 +410,8 @@ casos:
     esperado: answer_with_data
     referencia: M05
     sql_deve_conter: ["email_contatos", "area_medica_usuarios", "crm_link"]
+    comparar_resultado: false
+    nota: Lista longa (centenas de linhas); o que se confere é a consulta.
 
   - id: M06-campanhas-de-email
     grupo: referencia
