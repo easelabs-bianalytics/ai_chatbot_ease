@@ -187,7 +187,10 @@ def test_do_terceiro_tema_em_diante_vai_o_resumo(catalogo):
     # 30,5 mil com a A22 (representante e GR do médico pela UTC, 2026-09-30):
     # ~300 tokens, ~US$ 0,0006. Sem ela o Jarvis foi pelo painel na conversa
     # 37, e a pessoa teve de corrigir.
-    assert contexto.tokens_estimados < 30500
+    # 31 mil com a regra do CRM LINK no preâmbulo (2026-10-01, ADR-0032),
+    # que vai em toda pergunta. A estimativa conta caracteres: no checkout com
+    # CRLF (o worktree do build, no Windows) ela sobe ~400 sem mudar nada.
+    assert contexto.tokens_estimados < 31000
 
 
 def test_schema_vai_filtrado_pelas_tabelas_do_tema(catalogo):
