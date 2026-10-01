@@ -71,9 +71,13 @@ class QueryResult:
 
 class QueryExecutor(ABC):
     @abstractmethod
-    def run(self, sql: str, max_rows: int | None = None) -> QueryResult:
+    def run(self, sql: str, max_rows: int | None = None, params=None) -> QueryResult:
         """Executa a consulta já aprovada pelo validador.
 
         `max_rows` serve para detectar truncamento: o validador pede uma linha
         a mais que o limite, e o que passar disso é cortado aqui.
+
+        `params` só existe para os valores da planilha anexada (ADR-0031):
+        eles entram como parâmetro do driver, nunca colados no SQL. Nenhum
+        outro caminho passa parâmetro.
         """

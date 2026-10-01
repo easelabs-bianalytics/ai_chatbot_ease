@@ -83,7 +83,7 @@ class PostgresReadOnlyExecutor(QueryExecutor):
         campos["port"] = int(campos.get("port") or 5432)
         return {**campos, **comuns}
 
-    def run(self, sql: str, max_rows: int | None = None) -> QueryResult:
+    def run(self, sql: str, max_rows: int | None = None, params=None) -> QueryResult:
         parametros = self._parametros()
 
         try:
@@ -99,7 +99,10 @@ class PostgresReadOnlyExecutor(QueryExecutor):
                 cursor.execute("SET LOCAL statement_timeout = %s", (self._statement_timeout_ms,))
                 inicio = time.monotonic()
                 try:
-                    cursor.execute(sql)
+                    if params is None:
+                        cursor.execute(sql)
+                    else:
+                        cursor.execute(sql, params)
                 except pg_errors.QueryCanceled as exc:
                     raise QueryTimeout(
                         f"a consulta passou de {self._statement_timeout_ms} ms e foi "

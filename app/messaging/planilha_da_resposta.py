@@ -11,6 +11,9 @@ from dataclasses import dataclass
 from django.utils import timezone
 from django.utils.text import slugify
 
+from attachments import anexo_sql, deposito
+from attachments.limites import AnexoRecusado
+from attachments.planilha import ler_estrutura
 from catalog.loader import get_catalog
 from datasource.executors.base import QueryExecutionError
 from datasource.export import montar_planilha
@@ -80,6 +83,19 @@ def _consulta_da_tabela(reply, indice):
     return None, None
 
 
+def _tabelas_da_planilha(reply):
+    """As tabelas `anexo.*` da planilha que a resposta usou, ou None se ela
+    já saiu do depósito."""
+    anexo = (reply.raw_response or {}).get("anexo") or {}
+    dados = deposito.buscar(anexo.get("token", ""))
+    if dados is None:
+        return None
+    try:
+        return anexo_sql.tabelas(ler_estrutura(anexo.get("nome") or "planilha.xlsx", dados))
+    except AnexoRecusado:
+        return None
+
+
 def gerar(resposta, user, executor, consulta=None) -> Planilha:
     """`consulta`: o índice da tabela da resposta em blocos. Sem ele, a
     consulta principal da resposta."""
@@ -96,7 +112,19 @@ def gerar(resposta, user, executor, consulta=None) -> Planilha:
         return Planilha(erro="esta resposta não tem dados para exportar", status=404)
 
     registro = DataExport(user=user, message=resposta, sql=sql)
-    guard = validate_sql(sql, get_catalog(), max_rows=EXPORT_MAX_ROWS)
+    tabelas = {}
+    if anexo_sql.referencias(sql):
+        # A consulta leu a planilha da conversa (ADR-0031): sem ela, não dá
+        # para refazer. Ela fica duas horas depois do último uso.
+        tabelas = _tabelas_da_planilha(reply)
+        if tabelas is None:
+            registro.status, registro.error = DataExport.Status.ERROR, "planilha da conversa expirou"
+            registro.save()
+            return Planilha(
+                erro="a planilha desta conversa expirou; envie o arquivo de novo para gerar o Excel", status=410
+            )
+        executor = anexo_sql.ExecutorComAnexo(executor, tabelas)
+    guard = validate_sql(sql, get_catalog(), max_rows=EXPORT_MAX_ROWS, **({"anexo": tabelas} if tabelas else {}))
     if not guard.approved:
         registro.status, registro.error = DataExport.Status.ERROR, guard.reason
         registro.save()

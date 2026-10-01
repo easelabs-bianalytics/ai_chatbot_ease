@@ -26,9 +26,12 @@ class FakeQueryExecutor(QueryExecutor):
         seja exceção é levantado, o que é como se programa uma falha."""
         self._resultados = list(resultados or [])
         self.executed = []
+        # Parâmetros de cada execução (None sem planilha anexada), na ordem.
+        self.params = []
 
-    def run(self, sql: str, max_rows: int | None = None) -> QueryResult:
+    def run(self, sql: str, max_rows: int | None = None, params=None) -> QueryResult:
         self.executed.append(sql)
+        self.params.append(params)
 
         if not self._resultados:
             return make_result(("valor",), [(1,)])

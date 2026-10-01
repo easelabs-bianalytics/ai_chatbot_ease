@@ -200,11 +200,27 @@ def test_planilha_e_preenchida_com_o_resultado_do_banco(conversa, catalogo):
     assert "sem correspondência no banco:** Sem Venda." in reply.reply_text
 
 
-def test_consulta_do_preenchimento_usa_o_limite_alto(conversa, catalogo):
-    """A consulta que responde traz até 500 linhas (é o que o modelo lê); a
-    do preenchimento precisa de uma chave por linha da planilha."""
+def test_consulta_completa_nao_roda_de_novo_para_preencher(conversa, catalogo):
+    """Conversa 44 (2026-09-29): cada pedido rodava a consulta duas vezes —
+    500 linhas para a resposta e 50 mil para o preenchimento. Quando a
+    primeira já veio inteira, ela mesma preenche."""
     mensagem = _pergunta_com_anexo(conversa, Message.Anexo.PLANILHA, PLANILHA, "redes.xlsx")
-    executor = FakeQueryExecutor([RESULTADO, RESULTADO])
+    executor = FakeQueryExecutor([RESULTADO])
+    provider = ScriptedAIProvider([plano(preenchimento=PREENCHIMENTO)], [resposta("foram 47 unidades")])
+
+    reply = _responder(mensagem, catalogo, provider, executor)
+
+    assert len(executor.executed) == 1
+    assert QueryRun.objects.count() == 1
+    assert "Preenchi **2 de 3 linhas**" in reply.reply_text
+
+
+def test_consulta_cortada_roda_de_novo_com_o_limite_alto(conversa, catalogo):
+    """A consulta que responde traz até 500 linhas (é o que o modelo lê); se
+    ela parou nesse limite, o preenchimento refaz com o limite dele."""
+    mensagem = _pergunta_com_anexo(conversa, Message.Anexo.PLANILHA, PLANILHA, "redes.xlsx")
+    cortado = make_result(RESULTADO.columns, RESULTADO.rows, truncated=True)
+    executor = FakeQueryExecutor([cortado, RESULTADO])
     provider = ScriptedAIProvider([plano(preenchimento=PREENCHIMENTO)], [resposta("foram 47 unidades")])
 
     _responder(mensagem, catalogo, provider, executor)
@@ -216,13 +232,16 @@ def test_consulta_do_preenchimento_usa_o_limite_alto(conversa, catalogo):
     assert QueryRun.objects.count() == 2
 
 
-def test_planilha_de_entrada_e_descartada(conversa, catalogo):
+def test_planilha_de_entrada_fica_na_conversa(conversa, catalogo):
+    """Conversa 44: a planilha era descartada no primeiro preenchimento, e na
+    correção seguinte o Jarvis pedia o arquivo de novo. Ela fica duas horas
+    depois do último uso — no Redis, com prazo, nunca em disco."""
     mensagem = _pergunta_com_anexo(conversa, Message.Anexo.PLANILHA, PLANILHA, "redes.xlsx")
     provider = ScriptedAIProvider([plano(preenchimento=PREENCHIMENTO)], [resposta("foram 47 unidades")])
 
-    _responder(mensagem, catalogo, provider, FakeQueryExecutor([RESULTADO, RESULTADO]))
+    _responder(mensagem, catalogo, provider, FakeQueryExecutor([RESULTADO]))
 
-    assert deposito.buscar(mensagem.anexo_token) is None
+    assert deposito.buscar(mensagem.anexo_token) == PLANILHA
 
 
 def test_sem_casamento_de_colunas_a_resposta_vale_e_nao_ha_arquivo(conversa, catalogo):

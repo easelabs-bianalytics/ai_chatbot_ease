@@ -1,7 +1,11 @@
 # ADR-0024: Anexos — planilha para preencher e imagem para ler, sem guardar o arquivo
 
 ## Status
-Aceito — 2026-09-21.
+Aceito — 2026-09-21. **Revisado pelo ADR-0031 (2026-09-30)** na parte da
+planilha: as linhas agora vão ao banco como a tabela `anexo.<aba>` (nunca ao
+modelo), o casamento é pela linha, a base é preservada e conferida, e a
+planilha acompanha a conversa por duas horas em vez de ser descartada no
+primeiro preenchimento. A regra "só a forma sobe ao modelo" continua valendo.
 
 ## Contexto
 Dois pedidos do time, os dois com o mesmo medo por trás — o custo:

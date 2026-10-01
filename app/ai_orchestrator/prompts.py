@@ -15,6 +15,9 @@ ANSWER_PROMPT_VERSION = "answerer_v2"
 # catálogo, schema nem consultas de referência, porque esse caminho não toca
 # o banco. São ~350 tokens contra os ~15 mil do planejamento.
 IMAGE_PROMPT_VERSION = "leitor_de_imagem_v1"
+# Regras da planilha anexada (ADR-0031): entram no plano só quando há
+# planilha na conversa, depois do perfil dela.
+PLANILHA_PROMPT_VERSION = "planilha_v1"
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 
 

@@ -42,6 +42,11 @@ _RAIZES_PERMITIDAS = tuple(
 
 _SCHEMAS_DO_SISTEMA = {"pg_catalog", "information_schema", "pg_toast"}
 
+# A planilha anexada, como tabela da consulta (ADR-0031). Não é schema do
+# banco: o executor troca `anexo.<aba>` por uma CTE com os valores das
+# células. Só vale quando a conversa tem planilha, e só para as abas dela.
+SCHEMA_DO_ANEXO = "anexo"
+
 ALIAS_DA_CONSULTA = "bi_guard_q"
 
 
@@ -206,12 +211,16 @@ def _aplicar_limite(sql: str, max_rows: int) -> str:
     )
 
 
-def validate_sql(sql: str, catalog: Catalog, max_rows: int | None = None) -> GuardResult:
+def validate_sql(sql: str, catalog: Catalog, max_rows: int | None = None, anexo=()) -> GuardResult:
     """Aprova ou recusa uma consulta, com o motivo em português.
 
     O motivo volta para a IA na correção única (ADR-0014), então ele precisa
     dizer o que fazer diferente, não só que foi recusado.
+
+    `anexo`: os nomes das tabelas da planilha anexada (`anexo.<nome>`), vazio
+    quando a conversa não tem planilha.
     """
+    anexo = {str(nome).lower() for nome in anexo}
     texto = (sql or "").strip()
     if not texto:
         return _recusa("consulta vazia")
@@ -249,6 +258,13 @@ def validate_sql(sql: str, catalog: Catalog, max_rows: int | None = None) -> Gua
     permitidos = catalog.schemas | catalog.future_schemas
     tabelas = set()
     for tabela in arvore.find_all(exp.Table):
+        if isinstance(tabela.this, exp.Func):
+            # Função que devolve linhas — `regexp_split_to_table(...) AS
+            # p(palavra)`, `generate_series(...)` — não é tabela: o sqlglot a
+            # embrulha num Table sem nome, e a consulta era recusada como
+            # "tabela '' sem schema" (planilha de metas, 2026-10-01). O nome
+            # da função continua passando pela lista de bloqueadas, abaixo.
+            continue
         nome = _nome_da_tabela(tabela)
         if "." not in nome:
             if nome in nomes_de_cte:
@@ -261,6 +277,18 @@ def validate_sql(sql: str, catalog: Catalog, max_rows: int | None = None) -> Gua
         schema = nome.split(".", 1)[0]
         if tabela.catalog:
             return _recusa("consulta a outro banco não é permitida")
+        if schema == SCHEMA_DO_ANEXO:
+            if nome.split(".", 1)[1] in anexo:
+                continue
+            if anexo:
+                return _recusa(
+                    f"a planilha anexada não tem a tabela {nome}; as dela são: "
+                    + ", ".join(f"{SCHEMA_DO_ANEXO}.{t}" for t in sorted(anexo))
+                )
+            return _recusa(
+                f"{nome} seria a planilha anexada, e esta conversa não tem planilha; "
+                "peça o arquivo ou use as tabelas do banco"
+            )
         if schema in _SCHEMAS_DO_SISTEMA:
             return _recusa(f"o schema {schema!r} é catálogo do sistema e não pode ser consultado")
         if schema not in permitidos:

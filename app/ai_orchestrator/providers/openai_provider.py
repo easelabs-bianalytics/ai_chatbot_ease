@@ -35,6 +35,7 @@ from ai_orchestrator.context import (
 from ai_orchestrator.prompts import (
     ANSWER_PROMPT_VERSION,
     IMAGE_PROMPT_VERSION,
+    PLANILHA_PROMPT_VERSION,
     PROMPT_VERSION,
     load_prompt,
 )
@@ -115,8 +116,12 @@ MAX_TOKENS_IMAGEM = 1500
 
 
 class ColunaPreenchida(BaseModel):
-    coluna_destino: str = Field(description="cabeçalho da planilha a preencher, exatamente como está")
+    coluna_destino: str = Field(description="cabeçalho da planilha a preencher: o existente, exatamente como está, ou o da coluna nova")
     valor_no_resultado: str = Field(description="coluna do SELECT cujo valor vai para essa coluna")
+    justificativa: str = Field(default="", description="uma frase: o que é o valor e de onde vem")
+    sobrescrever: bool = Field(
+        default=False, description="true só se a pessoa pediu para substituir valores que já estão na coluna"
+    )
 
 
 class PreenchimentoEstruturado(BaseModel):
@@ -124,8 +129,10 @@ class PreenchimentoEstruturado(BaseModel):
     célula é o `openpyxl` com o resultado da consulta (ADR-0024)."""
 
     aba: str = Field(default="", description="nome da aba a preencher; vazio se o arquivo tem uma só")
-    coluna_chave: str = Field(default="", description="cabeçalho da planilha que identifica a linha")
-    chave_no_resultado: str = Field(default="", description="coluna do SELECT que casa com a coluna_chave")
+    coluna_chave: str = Field(default="", description="cabeçalho da planilha que identifica a linha para quem lê (ex.: CRM)")
+    chave_no_resultado: str = Field(
+        default="", description="_linha quando a consulta parte de anexo.<aba>; senão, a coluna do SELECT que casa com a coluna_chave"
+    )
     colunas: list[ColunaPreenchida] = Field(
         default_factory=list, description="uma entrada por coluna da planilha a preencher"
     )
@@ -145,6 +152,8 @@ class ConsultaEstruturada(BaseModel):
         default_factory=PreenchimentoEstruturado,
         description="com planilha de várias abas a preencher: a aba desta consulta e o casamento das colunas",
     )
+    aba_nova: str = Field(default="", description="com planilha: nome da aba nova que recebe este resultado; vazio se não houver")
+    grafico_na_aba: str = Field(default="", description="gráfico do Excel na aba nova: barras, colunas, linha, pizza ou vazio")
 
 
 class PlanoEstruturado(BaseModel):
@@ -183,6 +192,12 @@ class PlanoEstruturado(BaseModel):
         default_factory=PreenchimentoEstruturado,
         description="preencher só quando houver planilha anexada para completar",
     )
+    operacao_da_planilha: str = Field(
+        default="",
+        description="com planilha: descrever, enriquecer, atualizar, analisar, transformar ou relatorio; vazio sem planilha",
+    )
+    aba_nova: str = Field(default="", description="com planilha: nome da aba nova que recebe o resultado do `sql`; vazio se não houver")
+    grafico_na_aba: str = Field(default="", description="gráfico do Excel na aba nova: barras, colunas, linha, pizza ou vazio")
     investigacao: list[PassoEstruturado] = Field(
         default_factory=list, description="em investigate: as hipóteses desta rodada"
     )
@@ -262,6 +277,26 @@ class RespostaEstruturada(BaseModel):
     sugestoes: list[str] = Field(default_factory=list, description="2 a 3 continuações curtas")
     blocos: list[BlocoEstruturado] = Field(
         default_factory=list, description="a resposta em blocos, na ordem de leitura; vazia sem blocos"
+    )
+
+
+def _planilha_devolvida(request) -> str:
+    """A planilha da pessoa já saiu alterada e conferida (ADR-0031).
+
+    A redação fala dela com os números da conferência, e só com eles. Antes
+    a resposta dizia "não é seguro preencher a planilha" logo acima do
+    "Preenchi 84 de 230 linhas" do sistema (conversa 44, 2026-09-29): duas
+    vozes na mesma mensagem, dizendo o contrário."""
+    if not getattr(request, "planilha_devolvida", ""):
+        return ""
+    return (
+        "\n\n# Planilha devolvida à pessoa\n\n"
+        + request.planilha_devolvida
+        + "\n\nA planilha acima JÁ foi alterada, conferida e está no botão \"Baixar planilha "
+        "preenchida\". Fale dela com estes números: o que entrou, em quantas linhas, o valor que "
+        "domina uma coluna quando houver, e o que ficou em branco e por quê. Não diga que não é "
+        "seguro preencher, não peça para refazer e não fale em \"Baixar Excel\". Se houver alerta "
+        "acima, diga-o. O sistema acrescenta no fim a lista do que ficou em branco: não a repita."
     )
 
 
@@ -411,6 +446,8 @@ def _consultas(conteudo, planilha: bool = False) -> tuple:
             preenchimento = _preenchimento(consulta, pedido=planilha)
             if preenchimento:
                 entrega["preenchimento"] = preenchimento
+            if planilha:
+                entrega.update(_aba_nova(consulta))
             entregas.append(entrega)
     # Todas: o orquestrador responde as MAX_ENTREGAS primeiras e diz quais
     # ficaram de fora. Cortar aqui fazia a 5ª sumir sem aviso (2026-09-25).
@@ -439,6 +476,22 @@ def _achado_em_texto(indice: int, consulta: dict) -> str:
     return "\n".join(partes)
 
 
+OPERACOES_DA_PLANILHA = frozenset({"descrever", "enriquecer", "atualizar", "analisar", "transformar", "relatorio"})
+
+
+def _aba_nova(conteudo) -> dict:
+    """A aba nova de uma consulta, quando o modelo pediu uma."""
+    aba = (getattr(conteudo, "aba_nova", "") or "").strip()
+    if not aba:
+        return {}
+    return {"aba_nova": aba, "grafico_na_aba": (getattr(conteudo, "grafico_na_aba", "") or "").strip().lower()}
+
+
+def _operacao(conteudo, planilha: bool) -> str:
+    valor = (getattr(conteudo, "operacao_da_planilha", "") or "").strip().lower()
+    return valor if planilha and valor in OPERACOES_DA_PLANILHA else ""
+
+
 def _preenchimento(conteudo, *, pedido: bool) -> dict:
     """O casamento das colunas, só quando os quatro nomes vieram.
 
@@ -452,14 +505,24 @@ def _preenchimento(conteudo, *, pedido: bool) -> dict:
         return {}
     chave = (bruto.coluna_chave or "").strip()
     chave_no_resultado = (bruto.chave_no_resultado or "").strip()
-    colunas = [
-        {
+    colunas = []
+    for c in bruto.colunas or []:
+        coluna = {
             "coluna_destino": (c.coluna_destino or "").strip(),
             "valor_no_resultado": (c.valor_no_resultado or "").strip(),
         }
-        for c in (bruto.colunas or [])
-    ]
+        # Só quando vieram: o porquê vai para a aba "Notas do Jarvis", e o
+        # sobrescrever é a exceção à regra de preservar a base (ADR-0031).
+        if (getattr(c, "justificativa", "") or "").strip():
+            coluna["justificativa"] = c.justificativa.strip()
+        if getattr(c, "sobrescrever", False):
+            coluna["sobrescrever"] = True
+        colunas.append(coluna)
     colunas = [c for c in colunas if c["coluna_destino"] and c["valor_no_resultado"]]
+    if chave_no_resultado.lower() == "_linha" and not chave:
+        # Casamento pela linha: a coluna que identifica é só para citar quem
+        # ficou em branco; sem ela, a linha é citada pelo número.
+        chave = "_linha"
     if not (chave and chave_no_resultado and colunas):
         return {}
     return {
@@ -636,49 +699,16 @@ class OpenAIProvider(AIProvider):
                 "consultado, ou responda `conclude` se já dá para explicar."
             )
         if request.planilha:
-            # Sobe a FORMA da planilha, nunca o conteúdo (ADR-0024). O
-            # pedido é explícito porque o modelo tende a "responder" a
-            # planilha em texto, e o que queremos dele é o casamento das
-            # colunas: quem escreve nas células é o nosso código.
+            # Sobe o PERFIL da planilha, nunca o conteúdo (ADR-0024): as
+            # linhas vão ao banco como `anexo.<aba>` (ADR-0031). As regras de
+            # como tratar o arquivo moram em prompts/planilha_v1.md e só
+            # entram quando há planilha: o resto das perguntas não paga por
+            # elas.
             entrada += (
-                "\n\n# Planilha anexada pelo usuário\n\n"
+                "\n\n# Perfil da planilha anexada\n\n"
                 + request.planilha
-                + "\n\n**O que a pessoa quer com o arquivo decide o caminho.** Arquivo que chega "
-                "sem pedido (\"Segue o arquivo.\") continua a conversa: se uma mensagem anterior já "
-                "disse o que fazer com ele (\"vou te mandar a planilha, preenche com o sell out\"), "
-                "faça isso. Se ela pergunta o que tem nele, pede um resumo, manda o arquivo sem "
-                "pedido e sem aviso antes, ou pergunta se você conseguiu ver: responda em "
-                "`conversation`, com segurança, a partir do resumo "
-                "acima — quantas abas, o que cada uma traz (as colunas e as linhas-chave, pelo "
-                "nome), o que está vazio para preencher — e ofereça preencher, dizendo com que "
-                "dado. Nunca diga que não consegue ver a planilha: o resumo é ela. Os números e "
-                "nomes do resumo podem ser citados.\n\n"
-                "Se ela pede para preencher ou completar, é ela que a pessoa quer completada. Escreva "
-                "UMA consulta com uma linha por chave, sem repetir chave: uma coluna que case "
-                "com a coluna-chave da planilha (o nome que identifica cada linha) e uma coluna "
-                "para CADA coluna vazia que a pessoa pediu — use CTEs quando os indicadores "
-                "vierem de tabelas diferentes, e calcule variações e participações na própria "
-                "consulta. Em `preenchimento`, diga a coluna-chave dos dois lados e, para cada "
-                "coluna da planilha, a coluna do resultado que a preenche. **Se o resumo disser que a "
-                "amostra traz todas as linhas, filtre a consulta por essas chaves** — é o caso "
-                "comum, e trazer o país inteiro para preencher três linhas é lento (uma consulta "
-                "assim estourou o tempo do banco em 2026-09-22) e caro. Se a planilha tiver mais "
-                "linhas que exemplos, aí sim traga todas as chaves; o casamento é feito depois, "
-                "fora da consulta. Não escreva os "
-                "valores: eles vêm do banco. Se faltar informação para algum indicador (período, "
-                "definição), peça esclarecimento em vez de supor.\n\n"
-                "**Arquivo com mais de uma aba**: o resumo traz todas. Se a pergunta disser qual "
-                "aba é (pelo nome ou pelas colunas que ela descreve), ponha o nome exato em "
-                "`aba` e trabalhe só nela. Se ela pedir mais de uma (\"as duas\", \"todas\"), "
-                "ou pedir para preencher sem dizer qual e houver várias com colunas vazias, "
-                "preencha TODAS: uma consulta por aba em `consultas`, cada uma com o seu "
-                "`preenchimento` (com `aba`) — as abas têm chaves diferentes (rede numa, "
-                "representante na outra), e uma consulta só não serve às duas. Nesse caso o `sql` "
-                "e o `preenchimento` do plano (fora de `consultas`) ficam vazios.\n\n"
-                "**Seja assertivo.** Nome completo na planilha (\"ALEXANDRE CIMINI\") se resolve "
-                "direto no banco, filtrando por todas as partes do nome: não pergunte \"qual "
-                "Alexandre\". Pergunte só o que o documento manda perguntar e o que a planilha não "
-                "diz — e, se precisar perguntar, pergunte tudo de uma vez, numa mensagem só."
+                + "\n\n"
+                + load_prompt(PLANILHA_PROMPT_VERSION)
             )
         entrada += f"\n\n# Pergunta do usuário\n\n{request.question}"
 
@@ -727,6 +757,8 @@ class OpenAIProvider(AIProvider):
             consultas=_consultas(conteudo, planilha=bool(request.planilha)) if intent == Plan.Intent.ANSWER_WITH_DATA else (),
             excel=bool(getattr(conteudo, "excel", False)),
             preenchimento=_preenchimento(conteudo, pedido=bool(request.planilha)),
+            operacao_da_planilha=_operacao(conteudo, bool(request.planilha)),
+            **(_aba_nova(conteudo) if request.planilha else {}),
             investigacao=_investigacao(conteudo) if intent == Plan.Intent.INVESTIGATE else (),
             ressalva_forecast=bool(getattr(conteudo, "ressalva_forecast", False)),
             rodada_final=bool(getattr(conteudo, "rodada_final", False)),
@@ -815,6 +847,7 @@ class OpenAIProvider(AIProvider):
             )
         if request.truncated:
             entrada += "\n\nO resultado foi cortado no limite de linhas: não é o total. A planilha traz a lista completa."
+        entrada += _planilha_devolvida(request)
         if request.revision_note:
             entrada += (
                 "\n\n# Revisão\n\nA sua resposta anterior citou número sem suporte no "
@@ -879,6 +912,7 @@ class OpenAIProvider(AIProvider):
                 "os índices das consultas são os números abaixo.\n\n"
             )
         entrada += "\n\n".join(_achado_em_texto(i, c) for i, c in enumerate(request.consultas))
+        entrada += _planilha_devolvida(request)
         if request.revision_note:
             entrada += (
                 "\n\n# Revisão\n\nA sua resposta anterior citou número sem suporte nas "

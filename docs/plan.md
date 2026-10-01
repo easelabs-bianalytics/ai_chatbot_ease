@@ -1840,6 +1840,77 @@ Decisões do Rubens em 2026-09-23:
 
 ---
 
+## Fase 14 — Jarvis 3.0: motor de anexos, a planilha como tabela (ADR-0031)
+
+Pedido do Rubens (2026-09-30): mudar de forma significativa como o Jarvis
+trata anexo, começando pelo Excel. Diagnóstico nas conversas 37 e 44: o motor
+só lia a forma e preenchia por chave; sem os dados da planilha na consulta, o
+Jarvis varreu `audit.medico` inteiro (84 de 230 preenchidos), inventou
+`:crms_planilha`, pediu o arquivo de novo e se contradisse na mesma mensagem.
+
+### Como ficou
+- **Perfil sem modelo** (`planilha.py`): cabeçalho abaixo do título, nome no
+  SQL de cada coluna, preenchimento, valores diferentes, chave candidata,
+  colunas calculadas e as linhas com o número delas no arquivo.
+- **`anexo.<aba>`** (`anexo_sql.py`): a planilha vira CTE com `unnest` e os
+  valores como parâmetro do driver; o validador só libera as abas da
+  planilha da conversa; o executor ganhou `params`.
+- **Plano de mudança**: `operacao_da_planilha` (descrever, enriquecer,
+  atualizar, analisar, transformar, relatório), `_linha` como chave,
+  justificativa e `sobrescrever` por coluna, `aba_nova` e `grafico_na_aba`.
+  Regras em `prompts/planilha_v1.md`, só quando há planilha.
+- **Workbook**: preenche pela linha, preserva a base (coluna nova no fim,
+  célula com valor só muda com pedido explícito, fórmulas intactas), aba nova
+  com gráfico do Excel, aba "Notas do Jarvis".
+- **Conferência** (`qa.py`): original × devolvido, célula a célula; qualquer
+  alteração fora do pedido ou consulta cortada barra a entrega. Mede a
+  cobertura e o valor que domina cada coluna.
+- **Uma voz**: a planilha sai antes da redação, que recebe o relatório.
+- **Conversa**: a planilha fica 2 h desde o último uso e não é descartada no
+  preenchimento; a consulta completa não roda duas vezes.
+- **Regra de negócio** (A22): o responsável pelo médico é o da UTC do
+  endereço; painel só quando pedirem painel.
+- WhatsApp: planilha CSV devolvida volta com o tipo `text/csv` (antes ia como
+  xlsx).
+
+### Testes
+- `tests/unit/test_motor_de_anexos.py` (45): perfil, `anexo.*`, validador,
+  preenchimento pela linha, preservação, abas novas, notas, conferência.
+- `tests/unit/test_orchestrator_planilha_3.py` (15): as conversas 37 e 44 de
+  ponta a ponta, relatório com abas, análise sem aviso de casamento.
+- `tests/integration/test_anexo_no_banco.py` (4): a CTE com parâmetros no
+  Postgres sintético, READ ONLY, com CRM escrito de jeitos diferentes.
+- Excel da resposta sobre a planilha (2) e o caso A22 no gabarito.
+- [x] Suíte completa verde; gabarito da A22 com 1 linha no banco real
+
+### Testes com planilhas reais (2026-10-01, modelo e RDS reais, ~US$ 1,60)
+
+Painel da Simone, Balcão Seguro e Racional de Metas 2T26 (8 abas). Resultados
+e correções na revisão do ADR-0031. Em resumo:
+
+- Painel: 200 de 230 médicos com representante e GR na primeira mensagem.
+- Balcão: 465–493 de 513 cadastros com representante (CNPJ, e cidade/UF de
+  reserva), com coluna do critério usado.
+- Metas: explica o racional pelas fórmulas (achou o `-8` manual do Hermes),
+  checou a regra "3× o custo incremental", listou as 25 diferenças de nome
+  entre abas.
+- Corrigido a partir dos testes: tabela principal separada das premissas,
+  fórmulas/comentários/aba oculta no perfil, grade `anexo.<aba>_celulas`,
+  teto do resumo por aba (até 32 mil caracteres), ancoragem com milhar,
+  percentual e escala, validador com função que devolve linhas, conferência
+  com tolerância de 1e-12, UPDATE só das vazias, "planilha NÃO alterada" para
+  a redação, cobertura por coluna.
+- Suíte: 1.005 testes verdes. Os testes que usam os arquivos de
+  `jarvis_analise_xslx_csv/` (fora do repositório) são pulados sem eles.
+
+- [ ] Deploy (sem migração, sem variável nova)
+- [ ] Validar no uso: descrição completa do Racional de Metas, aba "Resumo
+  por GR" com gráfico, metas × sell-out real, UPDATE só das vazias
+- [ ] Refazer a conversa 44 em produção com a planilha do Paulo
+- [ ] Próximo passo do 3.0: prints
+
+---
+
 ## Plano de testes
 
 Regra geral: a suíte (`uv run pytest`) nunca acessa rede, OpenAI ou o RDS.

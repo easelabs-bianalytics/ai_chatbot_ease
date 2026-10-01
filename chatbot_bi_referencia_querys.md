@@ -312,10 +312,35 @@ ORDER BY 1 DESC;
 
 ### Médico, painel e representante
 
-O representante do médico sai de `audit.rx_cadastro_mais_recente.setor_cliente` →
-`cddd.forca_vendas.cod_territorio`; o nome está em `desc_territorio`. O usuário escreve o nome de
-várias formas ("Hermes", "Hermes Amorim", "Hermes Bizotto") e todas apontam para o mesmo
-`desc_territorio`. Busque por `ILIKE '%primeiro nome%'` e, se voltar mais de um, pergunte qual.
+**O representante (e o GR) responsável por um médico sai da UTC do endereço dele**, não do
+painel: `audit.medico.utc_codigo` → `cddd.forca_vendas.cod_utc` → `desc_territorio` →
+`cddd.fv_territorio` → `cddd.fv_distrito.desc_distrito` (GR). Uma UTC tem um território só. É o
+padrão para "o representante do médico", "o rep e o GR de cada médico" — sem perguntar. **Painel só
+quando o pedido falar em painel** ("o rep que visita", "o setor do painel"): aí é
+`rx_cadastro_mais_recente.setor_cliente` → `forca_vendas.cod_territorio`. São respostas diferentes
+(decisão de 2026-09-30, conversa 37).
+
+```sql
+-- A22 · Representante e GR responsáveis por um médico, pela UTC do endereço
+SELECT m.crm, m.nome, m.utc_codigo AS cod_utc,
+       fv.cod_territorio, btrim(fv.desc_territorio) AS representante,
+       d.desc_distrito AS gr
+FROM audit.medico m
+LEFT JOIN (SELECT DISTINCT cod_utc, cod_territorio, desc_territorio FROM cddd.forca_vendas) fv
+       ON fv.cod_utc = m.utc_codigo
+LEFT JOIN cddd.fv_territorio t ON t.cod_territorio = fv.cod_territorio
+LEFT JOIN cddd.fv_distrito  d ON d.cod_distrito  = t.cod_distrito
+WHERE upper(regexp_replace(m.crm, '[^A-Za-z0-9]', '', 'g')) = upper(regexp_replace(:crm, '[^A-Za-z0-9]', '', 'g'));
+-- `desc_territorio` = 'SEM REP' (cod_territorio 9999999): a UTC não tem representante hoje.
+```
+
+Com uma **planilha de médicos anexada**, a mesma consulta parte de `anexo.<aba>` (uma linha por
+linha da planilha, `LEFT JOIN audit.medico` pelo CRM normalizado dos dois lados) — ver as regras
+da planilha.
+
+O nome do representante está em `desc_territorio`. O usuário escreve o nome de várias formas
+("Hermes", "Hermes Amorim", "Hermes Bizotto") e todas apontam para o mesmo `desc_territorio`.
+Busque por `ILIKE '%primeiro nome%'` e, se voltar mais de um, pergunte qual.
 
 *"O médico X está sendo visitado?"*
 

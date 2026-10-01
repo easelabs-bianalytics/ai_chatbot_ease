@@ -127,6 +127,22 @@ PLANILHA_SEM_CASAMENTO = (
     "qual coluna devo preencher."
 )
 
+# A consulta da planilha passou do limite de linhas (ADR-0031): o arquivo não
+# sai pela metade. Com `anexo.<aba>` isso quase não acontece — a consulta traz
+# uma linha por linha da planilha.
+PLANILHA_CORTADA = (
+    "Não alterei a planilha: a consulta passou de 50.000 linhas e o arquivo sairia "
+    "pela metade. Peça de novo que eu parto das linhas da própria planilha."
+)
+
+# A conferência encontrou alteração fora do pedido (ADR-0031). É defeito do
+# Jarvis, não da pessoa: o arquivo não sai, e o motivo fica no registro.
+PLANILHA_BARRADA = (
+    "Não entreguei a planilha: a conferência final encontrou uma alteração fora do "
+    "pedido ({motivo}). Prefiro não devolver um arquivo que mexeu no que você não pediu; "
+    "o time de BI foi avisado."
+)
+
 BANCO_INDISPONIVEL = (
     "O banco de dados não respondeu agora. Não é problema na sua pergunta — "
     "tente de novo em alguns minutos. Se continuar, avise o time de BI."

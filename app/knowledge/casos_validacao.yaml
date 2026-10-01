@@ -343,6 +343,18 @@ casos:
       As duas visões foram pedidas: nada de clarify e nada de somar. O painel está dentro do
       território, então a resposta traz cada uma com o seu número.
 
+  - id: A22-rep-e-gr-do-medico-pela-utc
+    grupo: referencia
+    pergunta: Qual o representante e o GR responsáveis pelo médico de CRM MG0049899?
+    esperado: answer_with_data
+    referencia: A22
+    parametros: {crm: "MG0049899"}
+    sql_deve_conter: ["utc_codigo", "forca_vendas", "fv_distrito"]
+    nota: >-
+      Conversa 37 (2026-09-25): o Jarvis foi pelo painel e a pessoa corrigiu — "puxe a UTC do
+      médico pelo CRM dele, não ligue pelo painel". O responsável pelo médico é o do território
+      da UTC do endereço; painel só quando pedirem painel (decisão do Rubens, 2026-09-30).
+
   - id: A19-px-extrato-laboratorio
     grupo: referencia
     pergunta: Quantas prescrições de Extrato cada laboratório teve no último MAT, com o share de PX?

@@ -16,6 +16,7 @@ from openpyxl import load_workbook
 from ai_orchestrator.context import PEDIDO_DE_SECAO
 from ai_orchestrator.models import AIReply
 from attachments import deposito
+from attachments.limites import SEGUNDOS_DA_PLANILHA_NA_CONVERSA
 from datasource.executors.fake import FakeQueryExecutor
 from messaging.models import Message
 from tests.fakes.providers import ScriptedAIProvider, leitura, plano, resposta
@@ -163,7 +164,9 @@ def test_pedido_de_detalhe_renova_o_prazo_da_planilha(conversa, catalogo, monkey
 
     reply = _responder(primeira, catalogo, ScriptedAIProvider([_pede_detalhe()]))
 
-    assert prazos == [30 * 60]
+    # Duas horas, contadas do último uso (ADR-0031): a de receber a mensagem
+    # e a de deixar a planilha à espera da resposta.
+    assert prazos and set(prazos) == {SEGUNDOS_DA_PLANILHA_NA_CONVERSA}
     assert reply.raw_response["planilha_pendente"]["token"] == primeira.anexo_token
 
 

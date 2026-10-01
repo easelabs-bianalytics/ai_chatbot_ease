@@ -340,3 +340,14 @@ def test_round_escrito_dentro_de_texto_nao_e_tocado(catalogo):
     sql = "SELECT 'round(1, 2)' AS nome FROM cddd.pdvs"
 
     assert sql in validate_sql(sql, catalogo).sql
+
+
+def test_funcao_que_devolve_linhas_nao_e_tabela_sem_schema(catalogo):
+    """`regexp_split_to_table(...) AS p(palavra)` era recusada como "tabela ''
+    sem schema" (planilha de metas, 2026-10-01)."""
+    sql = (
+        "SELECT m.crm FROM audit.medico m WHERE NOT EXISTS ("
+        "SELECT 1 FROM regexp_split_to_table(m.nome, ' ') AS p(palavra) WHERE p.palavra = '')"
+    )
+    assert validate_sql(sql, catalogo).approved
+    assert validate_sql("SELECT g FROM generate_series(1, 3) AS g", catalogo).approved

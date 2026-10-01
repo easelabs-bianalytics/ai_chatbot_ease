@@ -140,6 +140,17 @@ class Plan:
     # banco. Formato: {"coluna_chave", "chave_no_resultado",
     # "colunas": [{"coluna_destino", "valor_no_resultado"}, ...]}.
     preenchimento: dict = field(default_factory=dict)
+    # O que o pedido faz com a planilha anexada (ADR-0031): "descrever",
+    # "enriquecer" (mantém a base e acrescenta colunas), "atualizar" (preenche
+    # coluna que já existe), "analisar" (responde sobre os dados dela, sem
+    # escrever), "transformar" (aba nova derivada) ou "relatorio" (aba de
+    # análise, com gráfico). Vazio sem planilha.
+    operacao_da_planilha: str = ""
+    # Com planilha: o resultado da consulta vira uma aba nova no arquivo da
+    # pessoa, com este nome, e opcionalmente um gráfico do Excel ("barras",
+    # "colunas", "linha" ou "pizza"). Nas `consultas`, cada uma tem os seus.
+    aba_nova: str = ""
+    grafico_na_aba: str = ""
     # Em `investigate`: as hipóteses desta rodada, cada uma com a consulta
     # que a testa — ({"hipotese", "sql", "reference_query_id"}, ...).
     investigacao: tuple = ()
@@ -203,6 +214,11 @@ class AnswerRequest:
     # A pessoa pediu só o gráfico ("separe em gráficos", "crie um visual"):
     # a resposta é o gráfico e uma frase, sem tabela (conversa 18).
     so_visual: bool = False
+    # A planilha da pessoa já foi alterada e conferida (ADR-0031): o que
+    # mudou, a cobertura de cada coluna e os alertas da conferência. A
+    # redação fala da planilha com estes números — antes ela dizia "não é
+    # seguro preencher" logo acima de "Preenchi 84 de 230" (conversa 44).
+    planilha_devolvida: str = ""
 
 
 @dataclass(frozen=True)

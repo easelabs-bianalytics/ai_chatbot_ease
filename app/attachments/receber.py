@@ -10,7 +10,13 @@ from pathlib import Path
 
 from attachments import deposito
 from attachments.imagem import preparar as preparar_imagem
-from attachments.limites import EXTENSOES_DE_PLANILHA, MAX_BYTES, AnexoRecusado
+from attachments.limites import (
+    EXTENSOES_DE_PLANILHA,
+    MAX_BYTES,
+    SEGUNDOS_DA_ENTRADA,
+    SEGUNDOS_DA_PLANILHA_NA_CONVERSA,
+    AnexoRecusado,
+)
 from attachments.planilha import ler_estrutura
 
 
@@ -24,6 +30,7 @@ def preparar_anexo(nome: str, dados: bytes) -> dict:
         estrutura = ler_estrutura(nome, dados)
         resumo = estrutura.resumo
         tipo = "planilha"
+        prazo = SEGUNDOS_DA_PLANILHA_NA_CONVERSA
         detalhe = {"linhas": estrutura.linhas, "colunas": [c.nome for c in estrutura.colunas]}
     else:
         preparada = preparar_imagem(dados)
@@ -35,9 +42,10 @@ def preparar_anexo(nome: str, dados: bytes) -> dict:
             + (" (reduzida)" if preparada.reduzida else "")
         )
         tipo = "imagem"
+        prazo = SEGUNDOS_DA_ENTRADA
         detalhe = {
             "largura": preparada.largura,
             "altura": preparada.altura,
             "tokens_estimados": preparada.tokens_estimados,
         }
-    return {"token": deposito.guardar(dados), "tipo": tipo, "nome": nome, "resumo": resumo, "detalhe": detalhe}
+    return {"token": deposito.guardar(dados, segundos=prazo), "tipo": tipo, "nome": nome, "resumo": resumo, "detalhe": detalhe}

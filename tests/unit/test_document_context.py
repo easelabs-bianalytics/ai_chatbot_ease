@@ -184,7 +184,10 @@ def test_do_terceiro_tema_em_diante_vai_o_resumo(catalogo):
     # 30 mil com a 5.4, visitas a PDV (trade_visita, E28–E30, 2026-09-24):
     # ~460 tokens, ~US$ 0,0008 por pergunta que passa pela força de vendas.
     # Sem ela o Jarvis contou PDV pela tabela de visitas a médicos.
-    assert contexto.tokens_estimados < 30000
+    # 30,5 mil com a A22 (representante e GR do médico pela UTC, 2026-09-30):
+    # ~300 tokens, ~US$ 0,0006. Sem ela o Jarvis foi pelo painel na conversa
+    # 37, e a pessoa teve de corrigir.
+    assert contexto.tokens_estimados < 30500
 
 
 def test_schema_vai_filtrado_pelas_tabelas_do_tema(catalogo):

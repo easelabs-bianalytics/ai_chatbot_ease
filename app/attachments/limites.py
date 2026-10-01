@@ -32,6 +32,12 @@ LINHAS_DE_AMOSTRA = 8
 # na entrada do modelo de planejamento). É o limite que garante que o anexo
 # não muda a ordem de grandeza do custo da pergunta.
 MAX_CARACTERES_DO_RESUMO = 4_000
+# Pasta de trabalho com várias abas ganha mais espaço por aba, até um teto.
+# Com 4.000 para oito abas, cada uma chegava ao modelo com ~475 caracteres,
+# cortada no meio (Racional Metas 2T26, 2026-10-01). 32.000 caracteres são
+# ~8.000 tokens: ~US$ 0,016 no planejador, só em planilha desse tamanho.
+CARACTERES_POR_ABA_A_MAIS = 4_000
+MAX_CARACTERES_DO_RESUMO_TOTAL = 32_000
 
 # Maior lado da imagem depois de reduzida. Medido em 2026-09-21 contra a API:
 # um print de 1920×1080 custa 2.461 tokens de entrada; reduzido para 1024 de
@@ -47,3 +53,11 @@ EXTENSOES_DE_PLANILHA = {".xlsx", ".xlsm", ".csv"}
 # baixar. Depois disso, o anexo deixa de existir — de propósito.
 SEGUNDOS_DA_ENTRADA = 15 * 60
 SEGUNDOS_DA_SAIDA = 30 * 60
+
+# A planilha acompanha a conversa (ADR-0031): a pessoa manda o arquivo e vai
+# corrigindo o pedido em várias mensagens ("não ligue pelo painel", "use só
+# os CRMs da planilha"). Com 15 minutos, e descartada depois do primeiro
+# preenchimento, o Jarvis pedia o arquivo de novo no meio da conversa
+# (conversa 44, 2026-09-29). O prazo conta do último uso e é renovado a cada
+# mensagem que a usa; continua sendo Redis com prazo, nunca disco nem banco.
+SEGUNDOS_DA_PLANILHA_NA_CONVERSA = 2 * 60 * 60

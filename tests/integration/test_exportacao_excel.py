@@ -239,3 +239,54 @@ def test_planilha_completa_nao_avisa(cliente, resposta, monkeypatch):
 
     assert "X-Jarvis-Aviso" not in r
     assert load_workbook(io.BytesIO(r.content)).sheetnames == ["Dados", "Informações"]
+
+
+# ------------------------------------------------ consulta sobre a planilha (ADR-0031)
+
+SQL_DO_ANEXO = "SELECT a._linha, a.rede FROM anexo.planilha1 a"
+
+
+def _planilha_anexada() -> bytes:
+    from openpyxl import Workbook
+
+    livro = Workbook()
+    livro.active.title = "Planilha1"
+    livro.active.append(["Rede"])
+    livro.active.append(["Pague Menos"])
+    buffer = io.BytesIO()
+    livro.save(buffer)
+    return buffer.getvalue()
+
+
+@pytest.fixture
+def resposta_da_planilha(resposta):
+    from attachments import deposito
+
+    reply = resposta.in_reply_to.ai_reply
+    reply.query_runs.update(sql=SQL_DO_ANEXO)
+    reply.raw_response = {"anexo": {"token": deposito.guardar(_planilha_anexada()), "nome": "redes.xlsx"}}
+    reply.save()
+    return resposta
+
+
+def test_excel_de_consulta_sobre_a_planilha_leva_as_linhas_dela(cliente, resposta_da_planilha, monkeypatch):
+    executor = _executor(monkeypatch, FakeQueryExecutor([make_result(("_linha", "rede"), [(2, "Pague Menos")])]))
+
+    r = cliente.get(_url(resposta_da_planilha))
+
+    assert r.status_code == 200
+    assert "anexo__planilha1" in executor.executed[0]
+    assert executor.params[0] == [[2], ["Pague Menos"]]
+
+
+def test_excel_de_planilha_que_expirou_avisa(cliente, resposta_da_planilha, monkeypatch):
+    from attachments import deposito
+
+    deposito.descartar(resposta_da_planilha.in_reply_to.ai_reply.raw_response["anexo"]["token"])
+    executor = _executor(monkeypatch, FakeQueryExecutor([]))
+
+    r = cliente.get(_url(resposta_da_planilha))
+
+    assert r.status_code == 410
+    assert executor.executed == []
+    assert DataExport.objects.get().status == DataExport.Status.ERROR
