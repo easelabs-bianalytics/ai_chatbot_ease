@@ -1987,6 +1987,27 @@ começando pelo Marketing, e cruzar as áreas pelo **CRM LINK (UF + CRM)**.
 | Base do Email MKT com coluna "está na Área Médica" | lista com a coluna (pelo CRM, ou pelo e-mail como reserva), apontando a planilha completa | US$ 0,04 |
 | Campanhas de setembro, abertura e clique | 5 campanhas; maior abertura 29,3%, maior clique 2,6% | US$ 0,03 |
 
+### Segunda rodada (2026-10-01, imagem `0db4d0b`, task `:34`)
+- **Custo:** "PRECISO DA SEÇÃO: <tema>" leva só esse tema completo, não o
+  documento inteiro (81 mil tokens, US$ 0,17 a chamada); a correção mantém o
+  mesmo recorte. Teto por pergunta `AI_MAX_COST_PER_QUESTION` (padrão US$ 0,15):
+  passado dele, não rodam a rodada extra da investigação, a segunda chance da
+  autocrítica, a verificação do vazio nem o documento inteiro.
+- **Pedido que nomeia e agrega** ("quais estão… e elenque") vira lista e
+  agregado, como regra geral do planejador.
+- **`ultimo_acesso`** da Área Médica gravado (a API passou a devolver; vazio em
+  todos os cadastros no dia). "Ativo no período" = `ultimo_acesso` ou retratos
+  diários (M02).
+- **CRM LINK do Marketing igual ao da planilha anexada:** UF escrita no CRM
+  vence a do campo; mais de 10 dígitos não é CRM. Comparado com o
+  `normalizar_crm` da planilha em 15 formatos: igual em todos, menos `000000`
+  (o Marketing não gera link; a planilha gera `SP0000000`).
+- **Sincronização:** baixa as APIs antes de abrir a conexão de escrita (uma
+  conexão parada 3 min caiu) e trata o 511 do ActiveCampaign como passageiro.
+- `marketing/ATUALIZACAO_DAS_BASES_NO_JARVIS.md` explica o schedule.
+- Gabaritos M01 e M05 ficam sem comparação de resultado (listas de centenas de
+  linhas): o que se confere é a consulta.
+
 Corrigido no caminho: "Força de Vendas" somava ponto para o Sell Out (pelo
 "vendas"), o Marketing ia como resumo e o modelo pedia o documento inteiro —
 US$ 0,30 a pergunta, agora US$ 0,06. Pedido de "base completa" / "adicione

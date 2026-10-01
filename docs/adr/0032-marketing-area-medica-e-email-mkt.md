@@ -94,6 +94,13 @@ especialidade e da profissão, e só `conselho = 'CRM'` ganha `crm_link`. E o
 CRM do RJ perde o `52` do CREMERJ quando vem com ele (`52.12345-6`): tirá-lo
 recuperou 55 dos 90 CRMs longos do RJ.
 
+### 7. Custo da pergunta que cruza áreas
+Pergunta de Marketing com BI cruza três temas, e o terceiro ia resumido; o
+planejador pedia a seção ("PRECISO DA SEÇÃO: marketing") e o sistema mandava
+o documento inteiro — US$ 0,30 a pergunta. Agora vai só o tema pedido, e um
+teto por pergunta (`AI_MAX_COST_PER_QUESTION`) corta as chamadas opcionais.
+"Força de Vendas" também deixou de pontuar para o Sell Out no roteamento.
+
 ## O que foi considerado e ficou de fora
 - **Consultar as APIs na hora** (como a planilha anexada, ADR-0031): lento
   para o Email MKT e sem como fazer JOIN com o BI no banco.
