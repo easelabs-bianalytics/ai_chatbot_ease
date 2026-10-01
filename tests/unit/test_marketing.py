@@ -224,3 +224,26 @@ def test_perguntas_do_marketing_levam_o_tema(pergunta, temas):
 
 def test_campanha_sozinha_continua_do_pbm():
     assert escolher_secoes("Quantos vouchers da campanha de agosto foram usados?")[0] == "pbm"
+
+
+def test_dentista_e_veterinario_nao_ganham_crm_link():
+    """Dentista de CRO PR 33262 não é o médico de CRM PR 33262: o número do
+    conselho dele casaria por coincidência com audit.medico (2026-10-01)."""
+    usuarios = [
+        {"email": "d@x.com", "crm_cro": "33262", "uf": "PR", "especialidade": "Cirurgião Dentista"},
+        {"email": "v@x.com", "crm_cro": "1234", "uf": "SP", "especialidade": "Veterinária"},
+        {"email": "m@x.com", "crm_cro": "1234", "uf": "SP", "especialidade": "Psiquiatria"},
+    ]
+
+    linhas = linhas_da_area_medica(usuarios, AGORA)
+
+    assert [(l[11], l[13]) for l in linhas] == [(None, "CRO"), (None, "CRMV"), ("SP0001234", "CRM")]
+
+
+def test_farmaceutico_do_email_mkt_nao_ganha_crm_link():
+    dados = _contatos()
+    dados["fieldValues"].append({"contact": "8993", "field": "33", "value": "Farmacêutico"})
+
+    linhas = linhas_do_email_mkt(dados, CAMPOS + [{"id": "33", "title": "Qual sua profissão?"}], TAGS, AGORA)
+
+    assert linhas[0][12] is None and linhas[0][-1] == "CRF"

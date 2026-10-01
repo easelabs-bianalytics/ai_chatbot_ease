@@ -40,7 +40,8 @@ elas, sem função em volta. **Qualquer outra fonte — planilha, texto, base no
 sempre**: a mesma lista mistura `MG104608` e `MG0104608`. Com `d = regexp_replace(<numero>,
 '\D', '', 'g')`: `upper(<uf>) || lpad(ltrim(d, '0'), greatest(7, length(ltrim(d, '0'))), '0')`.
 Com a UF dentro (`39273/MG`, `CRM-MG 39273`), tire antes o "CRM" (`x = replace(upper(<crm>),
-'CRM', '')`) e pegue a UF com `substring(x from '([A-Z]{2})')`. Planilha anexada já traz a coluna
+'CRM', '')`) e pegue a UF com `substring(x from '([A-Z]{2})')`. Só no RJ: mais de 7 dígitos
+começando em `52` (o código do CREMERJ, `52.12345-6`) — tire o 52 antes de completar. Planilha anexada já traz a coluna
 interna `crm_link` normalizada: use-a. O CRM LINK é só para o JOIN; não o mostre, a menos que
 peçam. Sem UF não há CRM LINK: diga quantos ficaram de fora por isso,
 em vez de casar pelo número. E-mail só serve de reserva quando o CRM falta, e a resposta diz que
@@ -305,7 +306,7 @@ SELECT m.crm,
        c.px_3m
 FROM audit.medico m
 LEFT JOIN audit.vw_cat_ult_trim_movel c ON c.cdgmedico = m.cdgmedico
-WHERE m.crm = :crm;
+WHERE m.crm = :crm;  -- :crm normalizado (regras gerais): MG104608 → MG0104608
 -- Sem linha = CRM não encontrado no cadastro. Com linha e 'SEM CAT' = médico sem categoria no período.
 ```
 
@@ -364,7 +365,7 @@ Busque por `ILIKE '%primeiro nome%'` e, se voltar mais de um, pergunte qual.
 SELECT r.crm_link, r.nome, r.setor, r.setor_cliente, r.frequencia, r.freq_numerica,
        r.dias_sem_visita, r.categoria, r.potencial, r.classificacao
 FROM audit.rx_cadastro_mais_recente r
-WHERE r.crm_link = :crm;
+WHERE r.crm_link = :crm;  -- :crm normalizado (regras gerais): MG104608 → MG0104608
 -- Sem linha = não está em nenhum painel atual.
 ```
 
@@ -2419,7 +2420,7 @@ O PBM tem três visões. **Identifique qual o usuário quer:**
 
 - **Pergunte o período** antes de qualquer número.
 - **Transação válida = `"STATUS_TRN" = 'CONFIRMADA'`.** Os outros status (`PRE`, `PEN`, `ANU`, `CAN`, `CANCELADA`) não são venda e vêm com data `1900-01-01`.
-- **CRM:** `"UF_PROFISSIONAL" || lpad("COD_PROFISSIONAL"::text, 7, '0')`. Código `0` = profissional não informado: exclua em rankings por médico.
+- **CRM:** `"UF_PROFISSIONAL" || lpad(ltrim("COD_PROFISSIONAL"::text, '0'), 7, '0')` — o `ltrim` tira o zero a mais que o texto de `fato_pbm_transacoes` pode trazer (sem ele, `lpad` corta `00104608` em `0010460`). Código `0` = profissional não informado: exclua em rankings por médico.
 - **`"MARCA"`** varia de caixa (`ExtratoCannabs` / `EXTRATOCANNABS`): compare com `upper("MARCA")`. `CANABIDIOL` = Isolados; `EXTRATOCANNABS` = Extrato. Para SKU, use `"EAN"`.
 - **`"DESC_ADM"`** é o % de desconto em texto (`'25'`, `'25.00'`, `'99.99'`): converta com `::numeric`.
 - **Nunca exponha dados do consumidor** (`CPF_CONS`, `NOME_CONS`, `E_MAIL`, `CELULAR`, `TELEFONE`, `DATA_NASC`, endereço do consumidor). Conte pacientes por `"ID_CONSUMIDOR"`.
@@ -2445,7 +2446,7 @@ ORDER BY 1 DESC, 2;
 ```sql
 -- D02 · CRMs adesores por mês
 SELECT date_trunc('month', "DATA_ADESAO")::date AS mes,
-       COUNT(DISTINCT "UF_PROFISSIONAL" || lpad("COD_PROFISSIONAL"::text, 7, '0')) AS crms_adesores,
+       COUNT(DISTINCT "UF_PROFISSIONAL" || lpad(ltrim("COD_PROFISSIONAL"::text, '0'), 7, '0')) AS crms_adesores,
        COUNT(*) AS adesoes
 FROM pbm.fato_pbm_adesoes
 WHERE "COD_PROFISSIONAL" <> 0
@@ -2458,7 +2459,7 @@ ORDER BY 1 DESC;
 
 ```sql
 -- D03 · Ranking de médicos por adesões
-SELECT "UF_PROFISSIONAL" || lpad("COD_PROFISSIONAL"::text, 7, '0') AS crm,
+SELECT "UF_PROFISSIONAL" || lpad(ltrim("COD_PROFISSIONAL"::text, '0'), 7, '0') AS crm,
        MAX("NOME_PROFISSIONAL") AS nome,
        COUNT(*) AS adesoes,
        COUNT(DISTINCT "ID_CONSUMIDOR") AS pacientes
@@ -2478,7 +2479,7 @@ SELECT date_trunc('month', "DATA_ADESAO")::date AS mes,
        upper("MARCA") AS marca,
        COUNT(*) AS adesoes
 FROM pbm.fato_pbm_adesoes
-WHERE "UF_PROFISSIONAL" || lpad("COD_PROFISSIONAL"::text, 7, '0') = :crm
+WHERE "UF_PROFISSIONAL" || lpad(ltrim("COD_PROFISSIONAL"::text, '0'), 7, '0') = :crm  -- :crm normalizado (regras gerais): MG104608 → MG0104608
 GROUP BY 1, 2
 ORDER BY 1 DESC, 2;
 ```
@@ -2553,7 +2554,7 @@ SELECT "NOME_FANTASIA", "CNPJ_PDV", "CIDADE_PDV", "UF_PDV",
        MAX("DATA_REF") AS ultima_transacao
 FROM pbm.fato_pbm_transacoes
 WHERE "STATUS_TRN" = 'CONFIRMADA'
-  AND "UF_PROFISSIONAL" || lpad("COD_PROFISSIONAL", 7, '0') = :crm
+  AND "UF_PROFISSIONAL" || lpad(ltrim("COD_PROFISSIONAL", '0'), 7, '0') = :crm  -- :crm normalizado (regras gerais): MG104608 → MG0104608
 GROUP BY 1, 2, 3, 4
 ORDER BY unidades DESC
 LIMIT 20;
@@ -2565,7 +2566,7 @@ LIMIT 20;
 
 ```sql
 -- D14 · Ranking de médicos por unidades PBM
-SELECT "UF_PROFISSIONAL" || lpad("COD_PROFISSIONAL", 7, '0') AS crm,
+SELECT "UF_PROFISSIONAL" || lpad(ltrim("COD_PROFISSIONAL", '0'), 7, '0') AS crm,
        MAX("NOME_PROFISSIONAL") AS nome,
        SUM("QTDE"::int - "QTDE_DEVOLVIDA"::int) AS unidades
 FROM pbm.fato_pbm_transacoes
@@ -2690,9 +2691,8 @@ ORDER BY 1 DESC, 3 DESC;
   território na força de vendas.
 - `tipo_visita` vazio = **não informado**; não assuma visita presencial.
 - **Painel é foto de hoje; visitas são histórico.** Ao cruzar os dois, deixe isso claro na resposta.
-- **CRM:** as tabelas do banco já estão no formato UF + 7 dígitos (`MG0039273`). Em listas externas,
-  normalize antes de cruzar: só dígitos, sem zeros à esquerda, completar com zeros até 7; no RJ,
-  número com mais de 7 dígitos começando em `52` traz o prefixo do conselho, que deve ser retirado.
+- **CRM:** as tabelas do banco já estão no formato UF + 7 dígitos (`MG0039273`), sem o `52` do
+  CREMERJ. Lista externa se normaliza antes de cruzar, pela regra do CRM LINK (regras gerais).
 - Não existe data planejada de próxima visita em nenhuma tabela.
 
 ### 5.1 Representantes e hierarquia
@@ -2903,7 +2903,7 @@ LEFT JOIN (SELECT DISTINCT cod_territorio, desc_territorio FROM cddd.forca_venda
 LEFT JOIN cddd.scd_ct_territorio s
        ON s.cod_territorio::text = r.setor_cliente AND s.data_saida_territorio IS NULL
 LEFT JOIN cddd.dim_ct ct ON ct.cod_ct = s.cod_ct
-WHERE r.crm_link = :crm;
+WHERE r.crm_link = :crm;  -- :crm normalizado (regras gerais): MG104608 → MG0104608
 -- Sem linha = o médico não está em nenhum painel hoje. Mais de uma linha = está em mais de um painel.
 ```
 
@@ -2975,7 +2975,7 @@ SELECT data_da_visita::date AS data,
        COALESCE(tipo_visita, 'Não informado') AS tipo,
        comentarios
 FROM audit.rx_visitas
-WHERE crm_norm = :crm
+WHERE crm_norm = :crm  -- :crm normalizado (regras gerais): MG104608 → MG0104608
   AND visita_efetiva = 'S'
 ORDER BY data_da_visita DESC, id_visita DESC
 LIMIT 5;
@@ -3453,9 +3453,9 @@ GROUP BY 1;
 
 | Tabela | O que é | Colunas principais |
 |---|---|---|
-| `marketing.area_medica_usuarios` | **Área Médica**: o portal da Ease Labs para profissionais de saúde (conteúdo científico, prescrição, pedido de visita técnica). Um registro por cadastro | `nome`, `email`, `telefone`, `crm_cro` (como veio), `uf`, `cidade`, `especialidade`, `tipo_visita_tecnica`, `data_cadastro`, `quantidade_acessos`, **`crm_link`** |
+| `marketing.area_medica_usuarios` | **Área Médica**: o portal da Ease Labs para profissionais de saúde (conteúdo científico, prescrição, pedido de visita técnica). Um registro por cadastro | `nome`, `email`, `telefone`, `crm_cro` (como veio), `uf`, `cidade`, `especialidade`, `tipo_visita_tecnica`, `data_cadastro`, `quantidade_acessos`, `conselho`, **`crm_link`** |
 | `marketing.area_medica_acessos_diarios` | Retrato diário da quantidade de logins de cada cadastro | `data`, `email`, `crm_link`, `quantidade_acessos` |
-| `marketing.email_contatos` | **Email MKT** (ActiveCampaign): a base de contatos do canal de e-mail — campanhas, newsletters, jornadas. Um registro por contato | `email`, `nome`, `criado_em` (entrada na base), `ultima_abertura`, `ultimo_clique`, `bounces_hard`, `crm_numero`, `uf_conselho`, **`crm_link`**, `profissao`, `especialidade`, `categoria`, `potencial`, `representante`, `ultima_visita`, `ja_prescreve_ease`, `ja_prescreve_cannabis`, `participa_mais_alivio`, `e_medico`, `inativo`, `campos` (jsonb com todos os campos, pelo título) |
+| `marketing.email_contatos` | **Email MKT** (ActiveCampaign): a base de contatos do canal de e-mail — campanhas, newsletters, jornadas. Um registro por contato | `email`, `nome`, `criado_em` (entrada na base), `ultima_abertura`, `ultimo_clique`, `bounces_hard`, `crm_numero`, `uf_conselho`, **`crm_link`**, `profissao`, `especialidade`, `categoria`, `potencial`, `representante`, `ultima_visita`, `ja_prescreve_ease`, `ja_prescreve_cannabis`, `participa_mais_alivio`, `e_medico`, `inativo`, `conselho`, `campos` (jsonb com todos os campos, pelo título) |
 | `marketing.email_listas` / `marketing.email_listas_do_contato` | Listas (jornadas Conscientização, Consideração, Decisão e Fidelização, eventos, "Área Médica", "Prescritores 660"...) e quem está em cada uma | `lista_id`, `nome`; `contato_id`, `lista_id`, `status`, **`inscrito`**, `inscrito_em` |
 | `marketing.email_tags` / `marketing.email_tags_do_contato` | Tags de segmentação e engajamento ("é-médico", "Inativo", "Engajado", "Visita-Médica", material convertido, régua finalizada) | `tag_id`, `tag`; `contato_id`, `tag_id`, `aplicada_em` |
 | `marketing.email_campanhas` | Campanhas enviadas, com os totais | `nome`, `enviada_em`, `enviados`, `aberturas_unicas`, `cliques_unicos`, `descadastros`, `bounces_hard` |
@@ -3471,8 +3471,10 @@ GROUP BY 1;
   prescreve" — diga isso quando a comparação depender dele.
 - **Área Médica sem CRM válido**: `crm_cro` como `PENDENTE`, `000000` ou UF `ER` ficam sem
   `crm_link` (174 cadastros). Diga quantos ficaram de fora.
-- **`crm_cro` pode ser CRM, CRO, CRMV ou CRF** (dentista, veterinário, farmacêutico). O que não é
-  médico não casa com `audit.medico`, e está certo que não case.
+- **Nem todo cadastro é de médico.** `conselho` diz o registro de cada um, pela especialidade ou
+  pela profissão: `CRM` (médico), `CRO` (dentista), `CRMV` (veterinário), `CRF` (farmacêutico,
+  balconista). **Só quem tem `conselho = 'CRM'` ganha `crm_link`** — o CRO PR 33262 de um dentista
+  não é o CRM PR 33262 de um médico. Pergunta sobre "médicos" filtra `conselho = 'CRM'`.
 - **Último login da Área Médica: a API não tem.** `quantidade_acessos` conta logins desde que a
   contagem começou (recente: em 01/10/2026, 3.819 dos 3.849 estavam em zero). "Acessou no período"
   é a contagem ter subido entre dois retratos de `area_medica_acessos_diarios`, que começam em
@@ -3495,6 +3497,7 @@ SELECT a.nome, a.crm_link, a.especialidade, a.uf, a.cidade, a.data_cadastro::dat
        a.quantidade_acessos, a.tipo_visita_tecnica
 FROM marketing.area_medica_usuarios a
 WHERE a.data_cadastro >= DATE '2026-01-01'
+  AND a.conselho = 'CRM'
 ORDER BY a.data_cadastro DESC;
 ```
 
@@ -3589,7 +3592,7 @@ SELECT e.nome, e.email, e.crm_link, e.especialidade, e.criado_em::date AS cadast
                          WHERE a.email = e.email) THEN 'sim, pelo e-mail'
             ELSE 'não' END AS na_area_medica
 FROM marketing.email_contatos e
-WHERE e.e_medico OR e.crm_link IS NOT NULL
+WHERE (e.e_medico OR e.crm_link IS NOT NULL) AND e.conselho = 'CRM'
 ORDER BY e.criado_em DESC;
 ```
 

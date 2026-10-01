@@ -12,7 +12,7 @@ from datetime import date, datetime, timezone
 
 from psycopg2.extras import execute_values
 
-from marketing.crm import crm_link, numero_do_crm, uf_valida
+from marketing.crm import conselho, crm_link, numero_do_crm, uf_valida
 
 # Campos do ActiveCampaign que viram coluna, pelo título (o id muda de conta
 # para conta; o título é o que a equipe de Marketing reconhece). Em ordem de
@@ -80,18 +80,20 @@ def linhas_da_area_medica(usuarios, agora) -> list:
         if not email or email.lower() in vistos:
             continue
         vistos.add(email.lower())
+        do_conselho = conselho(u.get("especialidade"))
         linhas.append((
             email.lower(), _texto(u.get("nome")), _texto(u.get("telefone")), _texto(u.get("crm_cro")),
             uf_valida(u.get("uf")) or _texto(u.get("uf")), _texto(u.get("cidade")), _texto(u.get("especialidade")),
             _texto(u.get("tipo_visita_tecnica")), _data(u.get("data_cadastro")), _inteiro(u.get("quantidade_acessos")),
-            numero_do_crm(u.get("crm_cro")) or None, crm_link(u.get("crm_cro"), u.get("uf")) or None, agora,
+            numero_do_crm(u.get("crm_cro")) or None,
+            (crm_link(u.get("crm_cro"), u.get("uf")) or None) if do_conselho == "CRM" else None, agora, do_conselho,
         ))
     return linhas
 
 
 COLUNAS_AREA_MEDICA = (
     "email", "nome", "telefone", "crm_cro", "uf", "cidade", "especialidade", "tipo_visita_tecnica",
-    "data_cadastro", "quantidade_acessos", "crm_numero", "crm_link", "sincronizado_em",
+    "data_cadastro", "quantidade_acessos", "crm_numero", "crm_link", "sincronizado_em", "conselho",
 )
 
 
@@ -147,19 +149,20 @@ def linhas_do_email_mkt(dados, campos, tags, agora) -> list:
         marcadas = {nomes_das_tags.get(str(t.get("tag")), "") for t in tags_do_contato.get(cid, [])}
         nome = " ".join(p for p in (_texto(contato.get("firstName")), _texto(contato.get("lastName"))) if p) or None
         uf = uf_valida(coluna["uf_conselho"])
+        do_conselho = conselho(coluna["profissao"], coluna["especialidade"])
         linhas.append((
             int(cid), (_texto(contato.get("email")) or "").lower() or None, nome, _texto(contato.get("phone")),
             _data(contato.get("cdate")), _data(contato.get("udate")),
             _data(contato.get("last_open_date")), _data(contato.get("last_click_date")),
             _inteiro(contato.get("bounced_hard")), _inteiro(contato.get("bounced_soft")),
             numero_do_crm(coluna["crm_numero"]) or None, uf or coluna["uf_conselho"],
-            crm_link(coluna["crm_numero"], uf) or None,
+            (crm_link(coluna["crm_numero"], uf) or None) if do_conselho == "CRM" else None,
             coluna["profissao"], coluna["especialidade"], coluna["categoria"], coluna["potencial"],
             coluna["representante"], _data(coluna["ultima_visita"]), coluna["ja_prescreve_cannabis"],
             coluna["ja_prescreve_ease"], coluna["participa_mais_alivio"], coluna["tipo_visita"],
             coluna["cidade_estado"], coluna["estado_atuacao"],
             TAG_MEDICO in marcadas, TAG_INATIVO in marcadas,
-            json.dumps(por_titulo, ensure_ascii=False), agora,
+            json.dumps(por_titulo, ensure_ascii=False), agora, do_conselho,
         ))
     return linhas
 
@@ -169,7 +172,7 @@ COLUNAS_EMAIL = (
     "bounces_hard", "bounces_soft", "crm_numero", "uf_conselho", "crm_link", "profissao", "especialidade",
     "categoria", "potencial", "representante", "ultima_visita", "ja_prescreve_cannabis", "ja_prescreve_ease",
     "participa_mais_alivio", "tipo_visita", "cidade_estado", "estado_atuacao", "e_medico", "inativo", "campos",
-    "sincronizado_em",
+    "sincronizado_em", "conselho",
 )
 
 

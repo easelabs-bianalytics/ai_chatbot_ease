@@ -53,3 +53,23 @@ def crm_link(numero, uf="") -> str:
     if not estado:
         return ""
     return estado + digitos.zfill(DIGITOS_DO_CRM)
+
+
+# Profissional de saúde que não é médico: o número do conselho dele (CRO,
+# CRMV, CRF) não é CRM, e virar CRM LINK faria um dentista de CRO PR 33262
+# casar com o médico de CRM PR 33262 (Área Médica, 2026-10-01: ~100 dentistas
+# e veterinários). Reconhecido pela especialidade ou pela profissão.
+_CONSELHOS = (
+    ("CRO", ("dentist", "odonto", "bucomaxilo")),
+    ("CRMV", ("veterin",)),
+    ("CRF", ("farmac", "balconist")),
+)
+
+
+def conselho(*descricoes) -> str:
+    """CRM, salvo quando a especialidade ou a profissão dizem outro conselho."""
+    texto = " ".join(str(d or "") for d in descricoes).lower()
+    for sigla, pistas in _CONSELHOS:
+        if any(p in texto for p in pistas):
+            return sigla
+    return "CRM"

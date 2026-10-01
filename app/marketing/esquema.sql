@@ -37,6 +37,9 @@ CREATE TABLE IF NOT EXISTS marketing.area_medica_usuarios (
     sincronizado_em      timestamptz NOT NULL
 );
 CREATE INDEX IF NOT EXISTS area_medica_usuarios_crm_link ON marketing.area_medica_usuarios (crm_link);
+-- CRM, CRO, CRMV ou CRF, pela especialidade: só quem tem CRM ganha crm_link
+-- (dentista com CRO PR 33262 não é o médico de CRM PR 33262).
+ALTER TABLE marketing.area_medica_usuarios ADD COLUMN IF NOT EXISTS conselho text;
 
 -- Retrato diário da quantidade de acessos. A API não tem a data do último
 -- login: "acessou no período" é a contagem ter subido entre dois retratos
@@ -83,6 +86,7 @@ CREATE TABLE IF NOT EXISTS marketing.email_contatos (
 );
 CREATE INDEX IF NOT EXISTS email_contatos_crm_link ON marketing.email_contatos (crm_link);
 CREATE INDEX IF NOT EXISTS email_contatos_email ON marketing.email_contatos (lower(email));
+ALTER TABLE marketing.email_contatos ADD COLUMN IF NOT EXISTS conselho text;
 
 CREATE TABLE IF NOT EXISTS marketing.email_listas (
     lista_id    bigint PRIMARY KEY,
