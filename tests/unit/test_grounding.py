@@ -136,3 +136,51 @@ def test_valor_negativo_com_ruido_de_ponto_flutuante_arredondado_passa():
 
 def test_valor_absoluto_nao_abre_brecha_para_numero_inventado():
     assert not _checar("Vendas extras recuaram 62 unidades.", linhas=LINHAS_DA_QUEDA).ok
+
+
+# ------------------------------------------- explicação de planilha (2026-10-01)
+# Racional Metas 2T26: a explicação certa da meta do Hermes foi reprovada
+# duas vezes e virou tabela crua. Nenhum dos três casos abaixo é número novo.
+
+
+def test_arredondamento_com_milhar_vale():
+    """8634,52 dito como "8.635 unidades": o ponto é milhar, não decimal."""
+    assert check_grounding("Meta total de aproximadamente 8.635 unidades.", ("meta",), ((8634.518498,),), "", "").ok
+
+
+def test_fracao_dita_em_percentual_vale():
+    assert check_grounding("A participação dele é de 6,60%.", ("part",), ((0.0659568115,),), "", "").ok
+
+
+def test_numeracao_de_lista_nao_e_dado():
+    texto = "Passo a passo:\n1. Meta do 1T: 515 unidades.\n2. Participação: 6,60%.\n3. Resultado: 569,51."
+    assert check_grounding(texto, ("a", "b", "c"), ((515, 0.0659568, 569.5053),), "", "").ok
+
+
+def test_mesmo_numero_com_menos_casas_vale():
+    assert check_grounding("participação registrada de 0,0659568115", ("p",), ((0.06595681152099932,),), "", "").ok
+
+
+def test_diferenca_calculada_no_texto_continua_barrada():
+    """569,51 − 561,51 = 8: conta feita pelo modelo, fora do resultado."""
+    resultado = check_grounding("A diferença é de 8 unidades.", ("calc", "gravado"), ((569.505, 561.505),), "", "")
+    assert not resultado.ok and "8" in resultado.unsupported
+
+
+def test_percentual_inventado_continua_barrado():
+    """0,0659 é 6,6%, não 7,5%: a conversão de unidade não abre a porta."""
+    assert not check_grounding("A participação é de 7,5%.", ("p",), ((0.0659568,),), "", "").ok
+
+
+def test_milhar_errado_continua_barrado():
+    assert not check_grounding("Meta de 8.700 unidades.", ("meta",), ((8634.52,),), "", "").ok
+
+
+def test_numero_em_escala_vale():
+    """"28,6 mil unidades" a partir de 28.606,8 (planilha de metas)."""
+    assert check_grounding("São cerca de 28,6 mil unidades.", ("t",), ((28606.776,),), "", "").ok
+    assert check_grounding("Meta de 12,1 milhões.", ("t",), ((12128300.52,),), "", "").ok
+
+
+def test_escala_inventada_continua_barrada():
+    assert not check_grounding("São cerca de 31 mil unidades.", ("t",), ((28606.776,),), "", "").ok

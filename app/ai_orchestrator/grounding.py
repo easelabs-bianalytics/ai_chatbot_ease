@@ -17,7 +17,15 @@ import sqlglot
 from sqlglot import exp
 
 _NUMERO = re.compile(r"\d[\d.,]*\d|\d")
-_MAX_CASAS_DECIMAIS = 6
+# Até quantas casas o arredondamento é conferido. A resposta pode copiar
+# 0,0659568115 de um 0,06595681152099932 (Racional Metas, 2026-10-01): é o
+# mesmo número com menos casas, não um número novo.
+_MAX_CASAS_DECIMAIS = 12
+# "1." "2." "3." no começo de um passo a passo: é a numeração da lista, não
+# dado. Contá-la derrubou a explicação certa da meta do Hermes (2026-10-01).
+_MARCADOR_DE_LISTA = re.compile(r"(?m)^[ \t]*(?:[-*][ \t]+)?\d{1,2}[.)][ \t]")
+# Separador de milhar no padrão brasileiro: "8.635", "12.128.301".
+_MILHAR = re.compile(r"^\d{1,3}(?:\.\d{3})+(?:,\d+)?$")
 _MAT = re.compile(r"\bMAT\b", re.I)
 _DOSE_NO_NOME = re.compile(r"(\d+)\s*(?:ml|mg)\b", re.I)
 
@@ -66,9 +74,46 @@ def _casas_decimais(token: str) -> int:
     return len(token) - separador - 1
 
 
+def _casas_de(token: str, candidato: float) -> int:
+    """Casas decimais do token NA LEITURA que deu este candidato. "8.635"
+    lido como oito mil seiscentos e trinta e cinco não tem casa nenhuma:
+    contar três fazia o arredondamento de 8634,52 não valer."""
+    token = token.strip().rstrip(".,")
+    if _MILHAR.match(token) and candidato == float(token.replace(".", "").replace(",", ".")):
+        return len(token.split(",", 1)[1]) if "," in token else 0
+    return _casas_decimais(token)
+
+
 def numeros_do_texto(texto: str) -> list:
     """[(token, candidatos)] de tudo que parece número no texto."""
-    return [(t, _candidatos(t)) for t in _NUMERO.findall(texto or "")]
+    return [(t, _candidatos(t)) for t in _NUMERO.findall(_MARCADOR_DE_LISTA.sub("", texto or ""))]
+
+
+# "28,6 mil unidades", "12,1 milhões": o número dito em escala.
+_ESCALAS = (
+    (re.compile(r"^\s?(?:mil)\b", re.I), 1_000),
+    (re.compile(r"^\s?(?:milh[õo]es|milh[ãa]o|mi)\b", re.I), 1_000_000),
+    (re.compile(r"^\s?(?:bilh[õo]es|bilh[ãa]o|bi)\b", re.I), 1_000_000_000),
+)
+
+
+def _escalas(texto: str) -> dict:
+    """{token: fator} dos números ditos em escala ("28,6 mil" → 1.000)."""
+    texto = _MARCADOR_DE_LISTA.sub("", texto or "")
+    escalas = {}
+    for m in _NUMERO.finditer(texto):
+        depois = texto[m.end():m.end() + 12]
+        for padrao, fator in _ESCALAS:
+            if padrao.match(depois):
+                escalas[m.group(0)] = fator
+                break
+    return escalas
+
+
+def _percentuais(texto: str) -> set:
+    """Os tokens escritos como percentual ("6,60%", "13,4 %")."""
+    texto = _MARCADOR_DE_LISTA.sub("", texto or "")
+    return {m.group(0) for m in _NUMERO.finditer(texto) if re.match(r"\s?%", texto[m.end():m.end() + 2])}
 
 
 def _numeros_de(valor) -> set:
@@ -152,17 +197,34 @@ def numeros_suportados(columns, rows, question: str, sql: str, row_count=None) -
     return suportados
 
 
-def _tem_suporte(token: str, candidatos: set, suportados: set) -> bool:
-    casas = _casas_decimais(token)
+def _tem_suporte(token: str, candidatos: set, suportados: set, percentual: bool = False, escala: int = 1) -> bool:
+    if percentual:
+        # Participação gravada como fração (0,0659) e dita como percentual
+        # (6,60%): é o mesmo dado em outra unidade, não conta nova.
+        suportados = suportados | {s * 100 for s in suportados if abs(s) <= 10}
+    if escala != 1:
+        # "28,6 mil" a partir de 28.606,8: o mesmo número, dito em escala.
+        suportados = suportados | {s / escala for s in suportados if abs(s) >= escala}
     for candidato in candidatos:
         if candidato in suportados:
             return True
+        casas = min(_casas_de(token, candidato), _MAX_CASAS_DECIMAIS)
         for suportado in suportados:
-            # A resposta pode arredondar o que veio do banco (1,3512 → 1,35),
-            # mas não inventar.
-            if round(suportado, min(casas, _MAX_CASAS_DECIMAIS)) == candidato:
+            # A resposta pode arredondar o que veio do banco (1,3512 → 1,35;
+            # 8634,52 → 8.635), mas não inventar.
+            if round(suportado, casas) == candidato:
                 return True
     return False
+
+
+def _sem_suporte(reply: str, suportados: set) -> tuple:
+    percentuais = _percentuais(reply)
+    escalas = _escalas(reply)
+    return tuple(
+        token
+        for token, candidatos in numeros_do_texto(reply)
+        if candidatos and not _tem_suporte(token, candidatos, suportados, token in percentuais, escalas.get(token, 1))
+    )
 
 
 def check_grounding_varias(reply: str, consultas, question: str) -> GroundingResult:
@@ -176,20 +238,12 @@ def check_grounding_varias(reply: str, consultas, question: str) -> GroundingRes
     for columns, rows, sql, row_count in consultas:
         suportados |= numeros_suportados(columns, rows, question, sql, row_count)
 
-    sem_suporte = tuple(
-        token
-        for token, candidatos in numeros_do_texto(reply)
-        if candidatos and not _tem_suporte(token, candidatos, suportados)
-    )
+    sem_suporte = _sem_suporte(reply, suportados)
     return GroundingResult(ok=not sem_suporte, unsupported=sem_suporte)
 
 
 def check_grounding(reply: str, columns, rows, question: str, sql: str, row_count=None) -> GroundingResult:
     suportados = numeros_suportados(columns, rows, question, sql, row_count)
 
-    sem_suporte = tuple(
-        token
-        for token, candidatos in numeros_do_texto(reply)
-        if candidatos and not _tem_suporte(token, candidatos, suportados)
-    )
+    sem_suporte = _sem_suporte(reply, suportados)
     return GroundingResult(ok=not sem_suporte, unsupported=sem_suporte)
