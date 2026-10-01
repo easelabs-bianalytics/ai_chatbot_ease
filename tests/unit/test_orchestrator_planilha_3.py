@@ -321,3 +321,41 @@ def test_sem_nenhuma_celula_escrita_nao_ha_arquivo(conversa, catalogo):
     assert mensagem.anexo_resposta_token == ""
     assert "Não alterei a planilha: a consulta não trouxe valor para nenhuma das 3 linhas pedidas." in reply.reply_text
     assert "NÃO foi alterada" in provider.answer_requests[0].planilha_devolvida
+
+
+# ------------------------------------------- tabela com a planilha entregue (2026-10-01)
+# Conversa 52: a planilha saiu certa e a tela mostrou 100 de 230 linhas de
+# `_linha · representante · gr`. Com o arquivo devolvido, a tabela só aparece
+# se couber inteira — e com o identificador da planilha no lugar do `_linha`.
+
+
+def _com_blocos(texto="Preenchi a planilha."):
+    from tests.fakes.providers import resposta as r
+
+    return r(texto, blocos=({"tipo": "texto", "texto": texto}, {"tipo": "tabela", "consulta": 0, "colunas": []}))
+
+
+def test_tabela_que_nao_cabe_sai_quando_a_planilha_foi_entregue(conversa, catalogo):
+    linhas = [("Médico %d" % i, "MG%07d" % i) for i in range(150)]
+    dados = _xlsx([("Nome do médico", "CRM"), *linhas])
+    mensagem = _com_planilha(conversa, dados=dados)
+    resultado = make_result(("_linha", "representante"), [(i + 2, "HERMES") for i in range(150)])
+    provider = ScriptedAIProvider([plano(SQL_DO_ANEXO, preenchimento=PREENCHIMENTO)], [_com_blocos()])
+
+    reply = _responder(mensagem, catalogo, provider, FakeQueryExecutor([resultado]))
+
+    assert [b["tipo"] for b in reply.raw_response["blocos"]] == ["texto"]
+    assert "Preenchi **150 de 150 linhas**" in reply.reply_text
+
+
+def test_tabela_que_cabe_mostra_o_crm_no_lugar_do_numero_da_linha(conversa, catalogo):
+    mensagem = _com_planilha(conversa)
+    provider = ScriptedAIProvider([plano(SQL_DO_ANEXO, preenchimento=PREENCHIMENTO)], [_com_blocos()])
+
+    reply = _responder(mensagem, catalogo, provider, FakeQueryExecutor([RESULTADO]))
+
+    tabela = next(b for b in reply.raw_response["blocos"] if b["tipo"] == "tabela")
+    dados = reply.raw_response["dados_blocos"][str(tabela["consulta"])]
+    assert dados["columns"][0] == "CRM"
+    assert [linha[0] for linha in dados["rows"]] == ["MG0104608", "MG0049899", "PR0023511"]
+    assert "_linha" not in tabela["colunas"]

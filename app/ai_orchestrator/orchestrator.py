@@ -1356,6 +1356,75 @@ def _relatorio_sem_alteracao(motivo: str) -> str:
     )
 
 
+def _identificadores(message, preenchimentos) -> tuple:
+    """(nome da coluna que identifica a linha, {_linha: valor}) da planilha
+    da pessoa — o CRM de cada linha, por exemplo. Vazio se não houver."""
+    for bruto in preenchimentos or []:
+        chave = (bruto or {}).get("coluna_chave") or ""
+        if not chave or planilha_anexada.normalizar(chave) == COLUNA_DA_LINHA:
+            continue
+        aba = planilha_anexada.normalizar((bruto or {}).get("aba") or "")
+        for pagina in (getattr(message, "tabelas_do_anexo", None) or {}).values():
+            if aba and planilha_anexada.normalizar(pagina.nome) != aba:
+                continue
+            i = next((k for k, c in enumerate(pagina.colunas)
+                      if not c.interna and planilha_anexada.normalizar(c.nome) == planilha_anexada.normalizar(chave)), None)
+            if i is not None:
+                return pagina.colunas[i].nome, {numero: linha[i] for numero, linha in pagina.registros}
+    return "", {}
+
+
+def _tabelas_com_a_planilha_entregue(raw, message, preenchimentos) -> None:
+    """A tabela da resposta quando a planilha da pessoa já foi devolvida.
+
+    Conversa 52 (2026-10-01): o preenchimento saiu certo, e a tela mostrou
+    100 de 230 linhas de `_linha · representante · gr` — números de linha do
+    Excel e nomes soltos, sem dizer de que médico. Quem tem o arquivo não
+    ganha nada com isso. Regra do Rubens: se a tabela não cabe inteira na
+    mensagem, ela sai, e ficam o texto e o botão da planilha preenchida. Se
+    cabe, o `_linha` vira o identificador da planilha (o CRM de cada linha),
+    ou some quando não há identificador."""
+    blocos = raw.get("blocos") or []
+    dados = raw.get("dados_blocos") or {}
+    if not blocos:
+        return
+    com_grafico = {str(b.get("consulta")) for b in blocos if b["tipo"] == "grafico"}
+    nome, por_linha = _identificadores(message, preenchimentos)
+    novos = []
+    for bloco in blocos:
+        if bloco["tipo"] != "tabela":
+            novos.append(bloco)
+            continue
+        chave = str(bloco.get("consulta"))
+        d = dados.get(chave) or {}
+        total = d.get("total") or len(d.get("rows") or [])
+        if d.get("truncado") or total > len(d.get("rows") or []):
+            continue  # não cabe: o arquivo é a tabela
+        colunas = d.get("columns") or []
+        if COLUNA_DA_LINHA in colunas:
+            i = colunas.index(COLUNA_DA_LINHA)
+            if nome and chave not in com_grafico:
+                dados[chave] = {
+                    **d,
+                    "columns": [nome if c == COLUNA_DA_LINHA else c for c in colunas],
+                    "rows": [[por_linha.get(v, v) if k == i else v for k, v in enumerate(linha)] for linha in d["rows"]],
+                }
+                trocada = nome
+            else:
+                trocada = None
+            pedidas = bloco.get("colunas") or colunas
+            bloco = {**bloco, "colunas": [trocada if c == COLUNA_DA_LINHA else c for c in pedidas
+                                          if c != COLUNA_DA_LINHA or trocada]}
+        novos.append(bloco)
+    if not novos:
+        # Só havia a tabela: sem blocos, a tela mostra o texto da resposta.
+        raw.pop("blocos", None)
+        raw.pop("dados_blocos", None)
+        return
+    raw["blocos"] = novos
+    raw["dados_blocos"] = dados
+
+
 def _dominantes(conferencia) -> list:
     return [
         f"**{c.dominante}** aparece em {c.vezes_do_dominante} das {c.com_valor} linhas preenchidas de `{c.coluna}`"
@@ -1776,6 +1845,8 @@ def _entregar_varias(plano, message, provider, executor, catalog, auditoria, his
         texto += alteracao.texto
         raw.update(alteracao.registro)
         raw["preenchimento"] = [c["preenchimento"] for c in plano.consultas if c.get("preenchimento")]
+        if alteracao.relatorio:
+            _tabelas_com_a_planilha_entregue(raw, message, raw["preenchimento"])
     if plano.operacao_da_planilha:
         raw["operacao_da_planilha"] = plano.operacao_da_planilha
     return _Decisao(
@@ -2612,6 +2683,8 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
             raw.update(alteracao.registro)
             if plano.preenchimento:
                 raw["preenchimento"] = plano.preenchimento
+            if alteracao.relatorio:
+                _tabelas_com_a_planilha_entregue(raw, message, [plano.preenchimento] if plano.preenchimento else [])
         elif not getattr(message, "planilha_da_conversa", False) and not _usa_a_planilha(plano):
             # A consulta respondeu, mas o modelo não disse como casar as
             # colunas: a resposta em texto vale, e a planilha volta vazia.
