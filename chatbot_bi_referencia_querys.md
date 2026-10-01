@@ -12,7 +12,7 @@ ainda não está disponível na base e encerre o assunto. Exemplo: *"Ainda não 
 informação de meta dos representantes na base. Posso ajudar com o resultado de vendas?"*
 
 **As tabelas listadas são as principais de cada tema, não a lista completa.** Qualquer tabela ou
-view dos schemas `audit`, `cddd`, `td`, `tdd`, `pbm` e `estoque_redes` pode ser usada
+view dos schemas `audit`, `cddd`, `td`, `tdd`, `pbm`, `estoque_redes` e `marketing` pode ser usada
 quando a pergunta exigir. Consulte `information_schema.columns` antes de usar uma tabela que não
 esteja aqui.
 
@@ -30,6 +30,21 @@ encontrou e pergunte qual**; não escolha por conta própria.
 `cod_territorio` (texto na `forca_vendas`, inteiro na `vw_sell_out`: `s.cod_territorio::text`).
 `nome_abreviado_ct` e `dim_ct` não são o nome do representante; a `dim_ct` serve para saber se ele
 foi desligado.
+
+**O médico se liga entre bases pelo CRM LINK — UF + CRM — e só por ele.** No BI ele é `UF` +
+7 dígitos, com nove caracteres: `MG0039273` em `audit.medico.crm` e em
+`audit.rx_cadastro_mais_recente.crm_link`. O número sozinho não identifica ninguém (o CRM 39273
+existe em vários estados): **nunca ligue médico só pelo número, nem só pelo nome**. As tabelas do
+schema `marketing` já trazem a coluna `crm_link` pronta, no mesmo formato: compare direto com
+elas, sem função em volta. **Qualquer outra fonte — planilha, texto, base nova — se normaliza
+sempre**: a mesma lista mistura `MG104608` e `MG0104608`. Com `d = regexp_replace(<numero>,
+'\D', '', 'g')`: `upper(<uf>) || lpad(ltrim(d, '0'), greatest(7, length(ltrim(d, '0'))), '0')`.
+Com a UF dentro (`39273/MG`, `CRM-MG 39273`), tire antes o "CRM" (`x = replace(upper(<crm>),
+'CRM', '')`) e pegue a UF com `substring(x from '([A-Z]{2})')`. Planilha anexada já traz a coluna
+interna `crm_link` normalizada: use-a. O CRM LINK é só para o JOIN; não o mostre, a menos que
+peçam. Sem UF não há CRM LINK: diga quantos ficaram de fora por isso,
+em vez de casar pelo número. E-mail só serve de reserva quando o CRM falta, e a resposta diz que
+casou por e-mail.
 
 **Nenhuma linha não é zero.** Consulta que volta vazia quase nunca significa "não houve venda":
 na maioria das vezes o nome não casou, a pessoa não estava ativa no período, ou o período não tem
@@ -3419,3 +3434,187 @@ ORDER BY s.mes;
 
 Gabarito (GR Gabriel Bastos, Ease, jun a ago/26): **0,78 · 0,76 · 0,81**, com share de PX de ~16% e
 share de sell out de ~12% no distrito.
+
+## 7. Marketing — Área Médica e Email MKT
+
+Duas bases do Marketing, as duas com **o médico como usuário final**, no schema `marketing`. Não
+são consultadas na hora: uma sincronização diária, de madrugada, grava as duas aqui. **Toda resposta
+com `marketing.*` diz de quando é o dado**: traga na consulta a data da última carga que deu certo
+(`marketing.sincronizacoes`) e cite-a ("dados da Área Médica de 01/10, 05:00"). Se a última carga
+de uma fonte falhou, o dado é o da carga anterior — diga isso.
+
+```sql
+-- M00 · De quando é o dado de cada fonte
+SELECT fonte, MAX(terminada_em) AS atualizado_em
+FROM marketing.sincronizacoes
+WHERE status = 'ok'
+GROUP BY 1;
+```
+
+| Tabela | O que é | Colunas principais |
+|---|---|---|
+| `marketing.area_medica_usuarios` | **Área Médica**: o portal da Ease Labs para profissionais de saúde (conteúdo científico, prescrição, pedido de visita técnica). Um registro por cadastro | `nome`, `email`, `telefone`, `crm_cro` (como veio), `uf`, `cidade`, `especialidade`, `tipo_visita_tecnica`, `data_cadastro`, `quantidade_acessos`, **`crm_link`** |
+| `marketing.area_medica_acessos_diarios` | Retrato diário da quantidade de logins de cada cadastro | `data`, `email`, `crm_link`, `quantidade_acessos` |
+| `marketing.email_contatos` | **Email MKT** (ActiveCampaign): a base de contatos do canal de e-mail — campanhas, newsletters, jornadas. Um registro por contato | `email`, `nome`, `criado_em` (entrada na base), `ultima_abertura`, `ultimo_clique`, `bounces_hard`, `crm_numero`, `uf_conselho`, **`crm_link`**, `profissao`, `especialidade`, `categoria`, `potencial`, `representante`, `ultima_visita`, `ja_prescreve_ease`, `ja_prescreve_cannabis`, `participa_mais_alivio`, `e_medico`, `inativo`, `campos` (jsonb com todos os campos, pelo título) |
+| `marketing.email_listas` / `marketing.email_listas_do_contato` | Listas (jornadas Conscientização, Consideração, Decisão e Fidelização, eventos, "Área Médica", "Prescritores 660"...) e quem está em cada uma | `lista_id`, `nome`; `contato_id`, `lista_id`, `status`, **`inscrito`**, `inscrito_em` |
+| `marketing.email_tags` / `marketing.email_tags_do_contato` | Tags de segmentação e engajamento ("é-médico", "Inativo", "Engajado", "Visita-Médica", material convertido, régua finalizada) | `tag_id`, `tag`; `contato_id`, `tag_id`, `aplicada_em` |
+| `marketing.email_campanhas` | Campanhas enviadas, com os totais | `nome`, `enviada_em`, `enviados`, `aberturas_unicas`, `cliques_unicos`, `descadastros`, `bounces_hard` |
+
+**Regras e armadilhas:**
+
+- **O médico liga pelo `crm_link`** (regras gerais). Área Médica com BI, Email MKT com BI,
+  Área Médica com Email MKT, e qualquer uma delas com planilha anexada: sempre `crm_link`. O e-mail
+  só entra como reserva, quando o contato não tem CRM, e a resposta diz que casou por e-mail.
+- **Nem todo CRM da Área Médica está em `audit.medico`**: em 01/10/2026, 1.988 dos 3.354 CRMs
+  válidos (59%); no Email MKT, 3.660 de 9.815. `audit.medico` só tem quem aparece na auditoria de
+  prescrição. Médico que não está lá **não aparece na auditoria**, o que não é o mesmo que "não
+  prescreve" — diga isso quando a comparação depender dele.
+- **Área Médica sem CRM válido**: `crm_cro` como `PENDENTE`, `000000` ou UF `ER` ficam sem
+  `crm_link` (174 cadastros). Diga quantos ficaram de fora.
+- **`crm_cro` pode ser CRM, CRO, CRMV ou CRF** (dentista, veterinário, farmacêutico). O que não é
+  médico não casa com `audit.medico`, e está certo que não case.
+- **Último login da Área Médica: a API não tem.** `quantidade_acessos` conta logins desde que a
+  contagem começou (recente: em 01/10/2026, 3.819 dos 3.849 estavam em zero). "Acessou no período"
+  é a contagem ter subido entre dois retratos de `area_medica_acessos_diarios`, que começam em
+  **01/10/2026** — para período anterior não há como saber: diga isso em `pedido_nao_atendido` e
+  ofereça "teve pelo menos um login desde o início da contagem" (`quantidade_acessos > 0`).
+- **Email MKT não é só médico**: há paciente, PDV, investidor, colaborador. Médico é `e_medico`
+  (tag "é-médico") ou `crm_link IS NOT NULL`; `profissao` diz o resto.
+- **Inscrito numa lista** é `inscrito = true` (status 1). Status 2 é descadastrado, 3 é
+  descadastrado por bounce. "Está na lista" sem esse filtro conta quem já saiu.
+- **"Inativo"** (`inativo = true`) é a tag do ActiveCampaign para contato sem engajamento recente —
+  não é cadastro desativado. Engajamento por contato: `ultima_abertura` e `ultimo_clique`.
+- Taxa de abertura e de clique de campanha: `aberturas_unicas` e `cliques_unicos` sobre `enviados`,
+  calculadas na consulta.
+
+*"Quais médicos da Área Médica se cadastraram em 2026?"*
+
+```sql
+-- M01 · Cadastros da Área Médica num período
+SELECT a.nome, a.crm_link, a.especialidade, a.uf, a.cidade, a.data_cadastro::date AS cadastro,
+       a.quantidade_acessos, a.tipo_visita_tecnica
+FROM marketing.area_medica_usuarios a
+WHERE a.data_cadastro >= DATE '2026-01-01'
+ORDER BY a.data_cadastro DESC;
+```
+
+*"Quem acessou a Área Médica no último mês?"*
+
+```sql
+-- M02 · Logins no período, pelos retratos diários (só a partir de 01/10/2026)
+SELECT d.email, d.crm_link,
+       MAX(d.quantidade_acessos) - MIN(d.quantidade_acessos) AS logins_no_periodo,
+       MIN(d.data) AS primeiro_retrato, MAX(d.data) AS ultimo_retrato
+FROM marketing.area_medica_acessos_diarios d
+WHERE d.data BETWEEN :data_ini AND :data_fim
+GROUP BY 1, 2
+HAVING MAX(d.quantidade_acessos) > MIN(d.quantidade_acessos)
+ORDER BY 3 DESC;
+```
+
+*"Os médicos da Área Médica cadastrados em 2026 prescrevem mais Ease, em média, que os prescritores
+Ease fora da Área Médica, no último mês de prescrição?"*
+
+```sql
+-- M03 · Média de PX Ease no último mês: Área Médica (cadastro em 2026) × fora da Área Médica
+WITH ultimo_mes AS (
+  SELECT MAX(p.data) AS mes FROM audit.prescricao p WHERE p.cdglaboratorio = 'EAS'
+),
+area_toda AS (
+  SELECT DISTINCT crm_link FROM marketing.area_medica_usuarios WHERE crm_link IS NOT NULL
+),
+area_2026 AS (
+  SELECT DISTINCT crm_link FROM marketing.area_medica_usuarios
+  WHERE crm_link IS NOT NULL AND data_cadastro >= DATE '2026-01-01'
+),
+prescritores AS (
+  SELECT m.crm AS crm_link, SUM(p.px1) AS px
+  FROM audit.prescricao p
+  JOIN audit.medico m ON m.cdgmedico = p.cdgmedico
+  JOIN ultimo_mes u ON p.data = u.mes
+  WHERE p.cdglaboratorio = 'EAS'
+  GROUP BY 1
+  HAVING SUM(p.px1) > 0
+)
+SELECT CASE WHEN a26.crm_link IS NOT NULL THEN 'Área Médica (cadastro em 2026)'
+            WHEN at.crm_link IS NULL THEN 'Fora da Área Médica'
+            ELSE 'Área Médica (cadastro antes de 2026)' END AS grupo,
+       (SELECT mes FROM ultimo_mes) AS mes,
+       COUNT(*) AS prescritores_ease,
+       SUM(pr.px) AS px_ease,
+       ROUND(AVG(pr.px)::numeric, 2) AS px_media_por_prescritor
+FROM prescritores pr
+LEFT JOIN area_2026 a26 ON a26.crm_link = pr.crm_link
+LEFT JOIN area_toda at  ON at.crm_link = pr.crm_link
+GROUP BY 1
+ORDER BY 1;
+-- A média é só entre quem prescreveu Ease no mês (PX > 0). "Ativos com último login no
+-- trimestre" exige os retratos de M02, que só existem a partir de 01/10/2026.
+```
+
+*"Dos médicos do painel da Força de Vendas, quais estão na Área Médica? Ranqueie os representantes
+por médicos cadastrados."*
+
+```sql
+-- M04 · Painel da força de vendas × Área Médica, por representante
+WITH painel AS (
+  SELECT DISTINCT r.crm_link, r.setor_cliente
+  FROM audit.rx_cadastro_mais_recente r
+),
+area AS (
+  SELECT DISTINCT crm_link FROM marketing.area_medica_usuarios WHERE crm_link IS NOT NULL
+)
+SELECT btrim(fv.desc_territorio) AS representante,
+       COUNT(DISTINCT p.crm_link) AS medicos_no_painel,
+       COUNT(DISTINCT p.crm_link) FILTER (WHERE a.crm_link IS NOT NULL) AS na_area_medica,
+       ROUND(100.0 * COUNT(DISTINCT p.crm_link) FILTER (WHERE a.crm_link IS NOT NULL)
+             / NULLIF(COUNT(DISTINCT p.crm_link), 0), 1) AS pct_na_area_medica
+FROM painel p
+LEFT JOIN area a ON a.crm_link = p.crm_link
+LEFT JOIN (SELECT DISTINCT cod_territorio, desc_territorio FROM cddd.forca_vendas) fv
+       ON fv.cod_territorio = p.setor_cliente
+GROUP BY 1
+ORDER BY na_area_medica DESC, medicos_no_painel DESC;
+```
+
+*"Puxe os médicos da base do Email MKT com a data de cadastro e diga se cada um está na Área
+Médica."*
+
+```sql
+-- M05 · Base de médicos do Email MKT × Área Médica
+SELECT e.nome, e.email, e.crm_link, e.especialidade, e.criado_em::date AS cadastro_email_mkt,
+       CASE WHEN EXISTS (SELECT 1 FROM marketing.area_medica_usuarios a
+                         WHERE a.crm_link = e.crm_link) THEN 'sim, pelo CRM'
+            WHEN e.crm_link IS NULL AND EXISTS (SELECT 1 FROM marketing.area_medica_usuarios a
+                         WHERE a.email = e.email) THEN 'sim, pelo e-mail'
+            ELSE 'não' END AS na_area_medica
+FROM marketing.email_contatos e
+WHERE e.e_medico OR e.crm_link IS NOT NULL
+ORDER BY e.criado_em DESC;
+```
+
+*"Como foram as campanhas de e-mail do último mês?"*
+
+```sql
+-- M06 · Desempenho das campanhas enviadas num período
+SELECT c.nome, c.enviada_em::date AS enviada, c.enviados,
+       ROUND(100.0 * c.aberturas_unicas / NULLIF(c.enviados, 0), 1) AS taxa_abertura_pct,
+       ROUND(100.0 * c.cliques_unicos / NULLIF(c.enviados, 0), 1) AS taxa_clique_pct,
+       c.descadastros, c.bounces_hard
+FROM marketing.email_campanhas c
+WHERE c.enviada_em >= :data_ini AND c.enviada_em < :data_fim AND c.enviados > 0
+ORDER BY c.enviada_em DESC;
+```
+
+*"Quantos médicos estão em cada jornada do e-mail?"*
+
+```sql
+-- M07 · Médicos inscritos em cada lista (jornadas, eventos)
+SELECT l.nome AS lista, COUNT(*) AS medicos_inscritos
+FROM marketing.email_listas_do_contato lc
+JOIN marketing.email_listas l   ON l.lista_id = lc.lista_id
+JOIN marketing.email_contatos e ON e.contato_id = lc.contato_id
+WHERE lc.inscrito AND (e.e_medico OR e.crm_link IS NOT NULL)
+GROUP BY 1
+ORDER BY 2 DESC;
+```

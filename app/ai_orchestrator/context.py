@@ -79,6 +79,15 @@ _TERMOS = {
         2: (" ic ", " ic?", " ic.", " ic,"),
         1: ("conversao", "converte"),
     },
+    # Marketing (seção 7, ADR-0032): Área Médica e Email MKT. "Campanha"
+    # sozinha continua sendo do PBM; "campanha de e-mail" é daqui.
+    "marketing": {
+        2: ("area medica", "email marketing", "e-mail marketing", "email mkt", "e-mail mkt", "activecampaign",
+            "active campaign", "newsletter", "campanha de email", "campanha de e-mail", "campanhas de e-mail",
+            "campanhas de email", "disparo", "jornada", "opt-in", "optin", "descadastr", "taxa de abertura",
+            "taxa de clique"),
+        1: ("marketing", "cadastrad", "cadastro", "login", "acessos", "abertura", "clique", "lista", "tag "),
+    },
 }
 
 

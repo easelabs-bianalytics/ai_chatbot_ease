@@ -135,6 +135,7 @@ INSTALLED_APPS = [
     "reporting",
     "web",
     "whatsapp",
+    "marketing",
 ]
 
 MIDDLEWARE = [

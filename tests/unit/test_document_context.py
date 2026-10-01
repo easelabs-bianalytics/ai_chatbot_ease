@@ -211,7 +211,10 @@ def test_sem_tema_reconhecido_vai_so_o_nucleo(catalogo):
     # para pergunta sem consulta pronta (~1,1 mil tokens, ~US$ 0,002 por
     # pergunta): é o único lugar que chega à IA em todo tema.
     # 3,7 mil com a regra do nome do representante no preâmbulo (2026-09-24).
-    assert contexto.tokens_estimados < 3700
+    # 4 mil com a regra do CRM LINK (2026-10-01, ADR-0032): ~250 tokens, no
+    # prefixo que o cache reaproveita. É pedido do Rubens que ela vá em toda
+    # pergunta: o médico liga entre bases por UF + CRM, nunca pelo número.
+    assert contexto.tokens_estimados < 4000
 
 
 def test_segunda_tentativa_pede_o_documento_inteiro(catalogo):
@@ -230,7 +233,8 @@ def test_contexto_da_resposta_nao_leva_o_documento(catalogo):
 
     assert "```sql" not in contexto.texto
     # Era 1,5 mil; subiu com o preâmbulo (ver o teste do núcleo acima).
-    assert contexto.tokens_estimados < 2000
+    # 2,3 mil com a regra do CRM LINK (2026-10-01).
+    assert contexto.tokens_estimados < 2300
     assert "ainda não está disponível" in contexto.texto
 
 

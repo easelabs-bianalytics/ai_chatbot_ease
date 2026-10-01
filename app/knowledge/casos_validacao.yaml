@@ -355,6 +355,75 @@ casos:
       médico pelo CRM dele, não ligue pelo painel". O responsável pelo médico é o do território
       da UTC do endereço; painel só quando pedirem painel (decisão do Rubens, 2026-09-30).
 
+  - id: M00-frescor-do-marketing
+    grupo: referencia
+    pergunta: De quando são os dados da Área Médica e do Email Marketing que você tem?
+    esperado: answer_with_data
+    referencia: M00
+    sql_deve_conter: ["sincronizacoes"]
+
+  - id: M01-cadastros-area-medica-2026
+    grupo: referencia
+    pergunta: Quais médicos se cadastraram na Área Médica em 2026?
+    esperado: answer_with_data
+    referencia: M01
+    sql_deve_conter: ["area_medica_usuarios", "data_cadastro"]
+
+  - id: M02-acessos-area-medica
+    grupo: referencia
+    pergunta: Quem acessou a Área Médica desde 1º de outubro de 2026?
+    esperado: answer_with_data
+    referencia: M02
+    parametros: {data_ini: "2026-10-01", data_fim: "2026-10-31"}
+    sql_deve_conter: ["area_medica_acessos_diarios"]
+    comparar_resultado: false
+    nota: Os retratos diários começam em 2026-10-01; antes disso não há como saber quem logou.
+
+  - id: M03-area-medica-x-prescritores
+    grupo: referencia
+    pergunta: >-
+      Os médicos da Área Médica cadastrados em 2026 prescrevem mais Ease, em média, que os
+      prescritores Ease fora da Área Médica, no último mês de prescrição?
+    esperado: answer_with_data
+    referencia: M03
+    sql_deve_conter: ["area_medica_usuarios", "crm_link", "prescricao", "eas"]
+    nota: >-
+      Pedido do Rubens (2026-10-01): cruzar Marketing e BI pelo CRM LINK. A versão com "ativos com
+      último login no trimestre" depende dos retratos diários (a API não tem o último login).
+
+  - id: M04-painel-x-area-medica-por-rep
+    grupo: referencia
+    pergunta: >-
+      Pegue os médicos do painel da Força de Vendas, veja quais estão na Área Médica e ranqueie os
+      representantes por mais médicos cadastrados.
+    esperado: answer_with_data
+    referencia: M04
+    sql_deve_conter: ["rx_cadastro_mais_recente", "area_medica_usuarios", "crm_link", "desc_territorio"]
+
+  - id: M05-email-mkt-x-area-medica
+    grupo: referencia
+    pergunta: >-
+      Puxe os médicos da base do email marketing com a data de cadastro e diga se cada um também
+      está na Área Médica.
+    esperado: answer_with_data
+    referencia: M05
+    sql_deve_conter: ["email_contatos", "area_medica_usuarios", "crm_link"]
+
+  - id: M06-campanhas-de-email
+    grupo: referencia
+    pergunta: Como foram as campanhas de e-mail marketing de setembro de 2026?
+    esperado: answer_with_data
+    referencia: M06
+    parametros: {data_ini: "2026-09-01", data_fim: "2026-10-01"}
+    sql_deve_conter: ["email_campanhas"]
+
+  - id: M07-jornadas-de-email
+    grupo: referencia
+    pergunta: Quantos médicos estão inscritos em cada jornada do email marketing?
+    esperado: answer_with_data
+    referencia: M07
+    sql_deve_conter: ["email_listas_do_contato", "inscrito"]
+
   - id: A19-px-extrato-laboratorio
     grupo: referencia
     pergunta: Quantas prescrições de Extrato cada laboratório teve no último MAT, com o share de PX?

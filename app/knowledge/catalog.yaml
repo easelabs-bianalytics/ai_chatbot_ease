@@ -18,6 +18,9 @@ schemas_permitidos:
   - tdd
   - pbm
   - estoque_redes
+  # Área Médica e Email MKT, sincronizados todo dia (ADR-0032). Escrito pela
+  # role jarvis_mkt_sync; o bi_chatbot_ro só lê.
+  - marketing
 
 # Previstos, mas ainda não criados no banco (2026-09-16). Ficam liberados no
 # validador para a consulta rodar e o banco responder que o objeto não existe
