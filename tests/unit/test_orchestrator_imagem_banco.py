@@ -99,7 +99,7 @@ def test_precisa_do_banco_sem_tabela_nem_pergunta_fica_na_leitura(conversa, cata
     assert provider.plan_requests == []
 
 
-def test_planilha_acompanha_a_chamada_do_documento_inteiro(conversa, catalogo):
+def test_planilha_acompanha_a_chamada_do_tema_pedido(conversa, catalogo):
     mensagem = _pergunta_com_anexo(conversa, Message.Anexo.PLANILHA, PLANILHA, "redes.xlsx")
     pede_secao = plano(sql="", intent="unknown", reason=f"{PEDIDO_DE_SECAO}: sell_out")
     provider = ScriptedAIProvider(
@@ -108,7 +108,7 @@ def test_planilha_acompanha_a_chamada_do_documento_inteiro(conversa, catalogo):
 
     _responder(mensagem, catalogo, provider, FakeQueryExecutor([RESULTADO, RESULTADO]))
 
-    assert provider.plan_requests[1].full_context is True
+    assert provider.plan_requests[1].secoes_pedidas == ("sell_out",)
     assert provider.plan_requests[1].planilha == mensagem.anexo_resumo
 
 

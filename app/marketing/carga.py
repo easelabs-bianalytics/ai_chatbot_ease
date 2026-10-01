@@ -87,13 +87,14 @@ def linhas_da_area_medica(usuarios, agora) -> list:
             _texto(u.get("tipo_visita_tecnica")), _data(u.get("data_cadastro")), _inteiro(u.get("quantidade_acessos")),
             numero_do_crm(u.get("crm_cro")) or None,
             (crm_link(u.get("crm_cro"), u.get("uf")) or None) if do_conselho == "CRM" else None, agora, do_conselho,
+            _data(u.get("ultimo_acesso")),
         ))
     return linhas
 
 
 COLUNAS_AREA_MEDICA = (
     "email", "nome", "telefone", "crm_cro", "uf", "cidade", "especialidade", "tipo_visita_tecnica",
-    "data_cadastro", "quantidade_acessos", "crm_numero", "crm_link", "sincronizado_em", "conselho",
+    "data_cadastro", "quantidade_acessos", "crm_numero", "crm_link", "sincronizado_em", "conselho", "ultimo_acesso",
 )
 
 

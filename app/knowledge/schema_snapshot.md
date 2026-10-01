@@ -1,6 +1,6 @@
 # Schema do banco de negócio
 
-> Gerado por `manage.py catalog_snapshot` em 2026-10-01 15:12, com o usuário
+> Gerado por `manage.py catalog_snapshot` em 2026-10-01 15:46, com o usuário
 > somente leitura. Não edite à mão: rode o comando de novo.
 >
 > Tabelas e colunas bloqueadas pelo catálogo não aparecem aqui de propósito.
@@ -146,7 +146,7 @@
 ## marketing
 
 - `marketing.area_medica_acessos_diarios` (tabela): data date, email text, crm_link text, quantidade_acessos integer
-- `marketing.area_medica_usuarios` (tabela): email text, nome text, telefone text, crm_cro text, uf text, cidade text, especialidade text, tipo_visita_tecnica text, data_cadastro timestamp with time zone, quantidade_acessos integer, crm_numero text, crm_link text, sincronizado_em timestamp with time zone, conselho text
+- `marketing.area_medica_usuarios` (tabela): email text, nome text, telefone text, crm_cro text, uf text, cidade text, especialidade text, tipo_visita_tecnica text, data_cadastro timestamp with time zone, quantidade_acessos integer, crm_numero text, crm_link text, sincronizado_em timestamp with time zone, conselho text, ultimo_acesso timestamp with time zone
 - `marketing.email_campanhas` (tabela): campanha_id bigint, nome text, tipo text, status integer, enviada_em timestamp with time zone, enviados integer, aberturas integer, aberturas_unicas integer, cliques integer, cliques_unicos integer, descadastros integer, bounces_hard integer, bounces_soft integer, automacao_id bigint
 - `marketing.email_contatos` (tabela): contato_id bigint, email text, nome text, telefone text, criado_em timestamp with time zone, atualizado_em timestamp with time zone, ultima_abertura timestamp with time zone, ultimo_clique timestamp with time zone, bounces_hard integer, bounces_soft integer, crm_numero text, uf_conselho text, crm_link text, profissao text, especialidade text, categoria text, potencial text, representante text, ultima_visita timestamp with time zone, ja_prescreve_cannabis text, ja_prescreve_ease text, participa_mais_alivio text, tipo_visita text, cidade_estado text, estado_atuacao text, e_medico boolean, inativo boolean, campos jsonb, sincronizado_em timestamp with time zone, conselho text
 - `marketing.email_listas` (tabela): lista_id bigint, nome text, criada_em timestamp with time zone

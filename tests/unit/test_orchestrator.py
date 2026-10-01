@@ -475,9 +475,11 @@ def test_mensagem_sem_dado_com_numero_vira_texto_padrao(conversa, catalogo):
     assert CatalogGap.objects.count() == 1
 
 
-def test_ia_pode_pedir_o_documento_inteiro_quando_o_recorte_nao_basta(conversa, catalogo):
+def test_ia_pode_pedir_o_tema_quando_o_recorte_nao_basta(conversa, catalogo):
     """O contexto vai recortado por tema (ADR-0015). Sem esta saída, uma
-    pergunta que cruza áreas faria a IA inventar a regra que faltou."""
+    pergunta que cruza áreas faria a IA inventar a regra que faltou. Desde
+    2026-10-01 vai o tema pedido completo, não o documento inteiro (que
+    custava US$ 0,17 a chamada; ver test_custo_por_pergunta.py)."""
     provider = ScriptedAIProvider(
         [
             plano(intent=Plan.Intent.UNKNOWN, sql="", reason="PRECISO DA SEÇÃO: sell_out"),
@@ -490,7 +492,8 @@ def test_ia_pode_pedir_o_documento_inteiro_quando_o_recorte_nao_basta(conversa, 
                        catalogo, provider=provider)
 
     assert reply.decision == AIReply.Decision.ANSWERED
-    assert provider.plan_requests[1].full_context is True
+    assert provider.plan_requests[1].secoes_pedidas == ("sell_out",)
+    assert provider.plan_requests[1].full_context is False
     assert [c.stage for c in reply.calls.all()] == [
         AICall.Stage.PLAN, AICall.Stage.FIX, AICall.Stage.ANSWER
     ]

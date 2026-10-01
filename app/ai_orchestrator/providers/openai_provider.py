@@ -660,6 +660,7 @@ class OpenAIProvider(AIProvider):
             # prescrição (ADR-0025): os três vão completos desde a primeira
             # rodada, e continuam iguais nas seguintes — o cache agradece.
             investigacao=e_pergunta_de_porque(request.question),
+            secoes_pedidas=request.secoes_pedidas,
         )
 
         # O tema fica no seu próprio bloco, com ponto de cache: é o que duas
@@ -737,6 +738,8 @@ class OpenAIProvider(AIProvider):
 
         usage.request["secoes"] = list(contexto.secoes)
         usage.request["contexto_completo"] = contexto.completo
+        if request.secoes_pedidas:
+            usage.request["secoes_pedidas"] = list(request.secoes_pedidas)
         intent = (conteudo.intent or "").strip()
         if intent not in _INTENCOES:
             raise AIProviderError(f"intenção desconhecida devolvida pelo modelo: {intent!r}")

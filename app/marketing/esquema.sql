@@ -40,6 +40,9 @@ CREATE INDEX IF NOT EXISTS area_medica_usuarios_crm_link ON marketing.area_medic
 -- CRM, CRO, CRMV ou CRF, pela especialidade: só quem tem CRM ganha crm_link
 -- (dentista com CRO PR 33262 não é o médico de CRM PR 33262).
 ALTER TABLE marketing.area_medica_usuarios ADD COLUMN IF NOT EXISTS conselho text;
+-- Último login, que a API passou a devolver em 2026-10-01 (vazio em todos
+-- os cadastros nesse dia: enche a partir dos logins seguintes).
+ALTER TABLE marketing.area_medica_usuarios ADD COLUMN IF NOT EXISTS ultimo_acesso timestamptz;
 
 -- Retrato diário da quantidade de acessos. A API não tem a data do último
 -- login: "acessou no período" é a contagem ter subido entre dois retratos

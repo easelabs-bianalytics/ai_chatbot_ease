@@ -82,6 +82,9 @@ class PlanRequest:
     # Autocrítica do seguimento (`autocritica.py`): o plano anterior disse
     # que mudava o dado e devolveu os mesmos números da resposta anterior.
     autocritica_note: str = ""
+    # Os temas que o planejador pediu ("PRECISO DA SEÇÃO: marketing"): vão
+    # completos no lugar do documento inteiro (ver `context.secoes_do_pedido`).
+    secoes_pedidas: tuple = ()
 
 
 @dataclass(frozen=True)

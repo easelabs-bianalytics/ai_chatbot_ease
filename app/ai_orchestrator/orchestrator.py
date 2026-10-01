@@ -24,7 +24,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from ai_orchestrator import ajuste_grafico, autocritica, budget, canned, limites, progresso, resumo
-from ai_orchestrator.context import MAX_PASSOS_POR_RODADA, MAX_RODADAS, PEDIDO_DE_SECAO
+from ai_orchestrator.context import MAX_PASSOS_POR_RODADA, MAX_RODADAS, PEDIDO_DE_SECAO, secoes_do_pedido
 from ai_orchestrator.grounding import _tem_suporte, check_grounding, check_grounding_varias, numeros_do_texto
 from ai_orchestrator.models import AICall, AIReply, CatalogGap
 from ai_orchestrator.providers.base import (
@@ -427,7 +427,7 @@ def _executar_com_correcao(plano, message, provider, executor, catalog, auditori
                 # Antes voltava ao recortado: um plano feito com o documento
                 # inteiro e recusado pelo validador era "corrigido" sem as
                 # regras que o produziram, e o modelo desistia (2026-09-21).
-                full_context=_veio_do_documento_inteiro(plano),
+                full_context=_veio_do_documento_inteiro(plano), secoes_pedidas=_secoes_pedidas(plano),
             )
         )
         auditoria.chamada(AICall.Stage.FIX, plano.usage)
@@ -1444,6 +1444,8 @@ def _investigar(plano, message, provider, executor, catalog, auditoria, historic
             # investigação: a chamada seguinte só serviria para ele repetir
             # isso, e ela custa o mesmo que a primeira.
             break
+        if _passou_do_teto(auditoria, f"rodada {rodada + 1} da investigação"):
+            break
         progresso.definir(message.pk, "Lendo o que as consultas mostraram e decidindo o próximo passo")
         seguinte = provider.plan(PlanRequest(
             question=_pergunta(message),
@@ -1793,7 +1795,7 @@ def _corrigir_entrega(plano, indice, passo, erro, message, provider, auditoria, 
             f"O pedido tem várias entregas. A consulta da entrega «{titulo}» não pôde ser usada: "
             f"{erro}\n\nReescreva só a consulta dessa entrega, em `sql`."
         ),
-        full_context=_veio_do_documento_inteiro(plano),
+        full_context=_veio_do_documento_inteiro(plano), secoes_pedidas=_secoes_pedidas(plano),
     ))
     auditoria.chamada(AICall.Stage.FIX, corrigido.usage)
     if corrigido.sql:
@@ -1859,13 +1861,15 @@ def _autocriticar(plano, resultado, message, provider, executor, catalog, audito
     if not autocritica.mesmo_resultado(resultado, anterior):
         return plano, resultado
 
+    if _passou_do_teto(auditoria, "segunda chance da autocrítica"):
+        return _sem_mudanca(plano), resultado
     logger.info("Seguimento com mudança de dado devolveu o resultado anterior; segunda chance")
     progresso.definir(message.pk, "O resultado saiu igual ao anterior; revendo a consulta",
                       etapa="conferindo", entendimento=plano.entendimento)
     segundo = provider.plan(PlanRequest(
         question=_pergunta(message), history=historico, planilha=_planilha(message),
         autocritica_note=autocritica.nota(plano.entendimento, anterior),
-        full_context=_veio_do_documento_inteiro(plano),
+        full_context=_veio_do_documento_inteiro(plano), secoes_pedidas=_secoes_pedidas(plano),
     ))
     auditoria.chamada(AICall.Stage.SELF_CHECK, segundo.usage)
     registro = {"motivo": "mesmos números da resposta anterior", "refeita": False, "mudou": False}
@@ -2124,6 +2128,39 @@ def _vazou_instrucoes(texto: str) -> bool:
     return bool(_MARCAS_DO_PROMPT.search(texto or ""))
 
 
+# Teto de custo de UMA pergunta, em dólares (AI_MAX_COST_PER_QUESTION).
+# Passou dele, as chamadas opcionais param: rodada a mais de investigação,
+# segunda chance da autocrítica, verificação do resultado vazio e o documento
+# inteiro. A pergunta comum custa US$ 0,03 a 0,07; o teto é contra o caso
+# que dispara — uma de US$ 0,30 em 2026-10-01 quebrava a conta do mês.
+TETO_PADRAO_POR_PERGUNTA = 0.15
+
+
+def _teto_por_pergunta() -> float:
+    try:
+        valor = float(os.environ.get("AI_MAX_COST_PER_QUESTION", "").strip())
+    except ValueError:
+        return TETO_PADRAO_POR_PERGUNTA
+    return valor if valor > 0 else TETO_PADRAO_POR_PERGUNTA
+
+
+def _passou_do_teto(auditoria, etapa: str) -> bool:
+    """A pergunta já custou o teto: a etapa opcional não roda, e fica no
+    registro qual foi cortada."""
+    gasto = auditoria.totais["cost_estimate"]
+    if gasto < _teto_por_pergunta():
+        return False
+    logger.warning("Teto por pergunta atingido (US$ %.3f): %s não roda", gasto, etapa)
+    auditoria.extras.setdefault("teto_por_pergunta", []).append(etapa)
+    return True
+
+
+def _secoes_pedidas(plano) -> tuple:
+    """As seções que um plano recebeu por pedido, para a correção dele usar
+    as mesmas — senão ela voltava ao recorte que não bastou."""
+    return tuple((plano.usage.request or {}).get("secoes_pedidas") or ())
+
+
 def _pediu_o_documento_inteiro(plano) -> bool:
     return plano.intent == Plan.Intent.UNKNOWN and (plano.reason or "").strip().upper().startswith(
         PEDIDO_DE_SECAO
@@ -2371,12 +2408,18 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
 
     if _pediu_o_documento_inteiro(plano):
         # O contexto vai recortado por tema (ADR-0015). Quando o recorte não
-        # basta, a IA avisa em vez de inventar a regra que faltou.
-        logger.info("A IA pediu o documento inteiro: %s", plano.reason)
+        # basta, a IA avisa em vez de inventar a regra que faltou — e diz qual
+        # tema faltou: vai esse tema completo, não o documento inteiro (81 mil
+        # tokens e US$ 0,17 por "PRECISO DA SEÇÃO: marketing", 2026-10-01). O
+        # documento inteiro fica para quando não der para saber qual tema é.
+        pedidas = secoes_do_pedido(plano.reason)
+        logger.info("A IA pediu %s: %s", pedidas or "o documento inteiro", plano.reason)
+        if not pedidas and _passou_do_teto(auditoria, "documento inteiro"):
+            pedidas = tuple((plano.usage.request or {}).get("secoes") or ())
         plano = provider.plan(
             PlanRequest(
-                question=_pergunta(message), history=historico, full_context=True,
-                planilha=_planilha(message), autocritica_note=nota_da_critica,
+                question=_pergunta(message), history=historico, full_context=not pedidas,
+                secoes_pedidas=pedidas, planilha=_planilha(message), autocritica_note=nota_da_critica,
             )
         )
         auditoria.chamada(AICall.Stage.FIX, plano.usage)
@@ -2500,8 +2543,9 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
         # "Nenhuma linha" não é "não houve venda": na maioria das vezes o nome
         # não casou com o cadastro ou o período não tem dado. Uma consulta de
         # verificação procura o motivo antes de responder.
-        diagnostico, plano_da_verificacao = _verificar_o_vazio(
-            message, provider, executor, catalog, auditoria, historico
+        diagnostico, plano_da_verificacao = (
+            (None, plano) if _passou_do_teto(auditoria, "verificação do resultado vazio")
+            else _verificar_o_vazio(message, provider, executor, catalog, auditoria, historico)
         )
         if diagnostico is None:
             return _Decisao(

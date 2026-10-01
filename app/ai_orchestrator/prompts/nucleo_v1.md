@@ -32,8 +32,9 @@ com as da outra.
 **Quando a pergunta precisar de uma regra de um tema que você recebeu só
 resumido** e o resumo não bastar (por exemplo, os filtros padrão do Sell Out
 CDD), responda `intent: "unknown"` com `reason` começando por
-`PRECISO DA SEÇÃO:` e o nome do tema. O sistema reenvia o documento inteiro
-e pede o plano de novo — é melhor pedir do que inventar a regra.
+`PRECISO DA SEÇÃO:` e a chave do tema (`marketing`, `sell_out`,
+`forca_vendas`...). O sistema reenvia esse tema completo e pede o plano de novo
+— é melhor pedir do que inventar a regra.
 
 ## Duas regras que valem para qualquer pergunta
 

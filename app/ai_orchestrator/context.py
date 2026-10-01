@@ -169,6 +169,35 @@ def escolher_secoes(pergunta: str, historico=()) -> tuple:
     return tuple(chave for chave, _ in ordenadas[:MAX_SECOES])
 
 
+# Como o planejador nomeia o tema que faltou ("PRECISO DA SEÇÃO: marketing",
+# "...: Sell Out CDD", "...: Força de Vendas"). A chave vale, e também as
+# palavras do título de cada tema.
+_NOMES_DAS_SECOES = {
+    "prescricao": ("prescricao", "auditoria", "prescri"),
+    "sell_out": ("sell_out", "sell out", "sellout", "dispensa"),
+    "estoque": ("estoque", "ruptura", "categoria de pdv"),
+    "pbm": ("pbm", "beneficio", "voucher"),
+    "forca_vendas": ("forca_vendas", "forca de vendas", "painel", "visita"),
+    "ic": (" ic", "indice de conversao"),
+    "marketing": ("marketing", "area medica", "email mkt", "email marketing"),
+}
+
+
+def secoes_do_pedido(texto: str) -> tuple:
+    """Os temas que o planejador pediu depois de "PRECISO DA SEÇÃO:".
+
+    Com eles, a segunda chamada leva só essas seções completas, e não o
+    documento inteiro: em 2026-10-01 "PRECISO DA SEÇÃO: marketing" mandou 81
+    mil tokens (US$ 0,17) para trazer uma seção de 5 mil. Vazio quando não dá
+    para saber — aí, e só aí, vai o documento inteiro."""
+    corpo = _sem_acento(texto or "")
+    marca = _sem_acento(PEDIDO_DE_SECAO)
+    if marca in corpo:
+        corpo = corpo.split(marca, 1)[1]
+    corpo = " " + corpo.split(".")[0] + " "
+    return tuple(chave for chave, nomes in _NOMES_DAS_SECOES.items() if any(n in corpo for n in nomes))
+
+
 def filtrar_schema(schema_text: str, tabelas) -> str:
     """Só as linhas do snapshot das tabelas pedidas, mantendo os títulos de
     schema. Uma pergunta de estoque não precisa das 170 relações do banco."""
@@ -230,7 +259,7 @@ def _prefixo_fixo(documento) -> str:
 
 def montar_contexto_do_plano(
     catalog, pergunta: str, historico=(), completo: bool = False, temas_completos: int = MAX_COMPLETAS,
-    investigacao: bool = False,
+    investigacao: bool = False, secoes_pedidas=(),
 ) -> Contexto:
     """Contexto da chamada que escreve o SQL.
 
@@ -248,6 +277,11 @@ def montar_contexto_do_plano(
         temas_completos = MAX_SECOES
     else:
         escolhidas = escolher_secoes(pergunta, historico)
+    if secoes_pedidas and not completo:
+        # O planejador disse qual tema faltou: ele entra primeiro, completo,
+        # junto dos que já iam — todos completos (ver `secoes_do_pedido`).
+        escolhidas = tuple(dict.fromkeys([*secoes_pedidas, *escolhidas]))[:MAX_SECOES + 1]
+        temas_completos = len(escolhidas)
 
     if completo:
         texto = (

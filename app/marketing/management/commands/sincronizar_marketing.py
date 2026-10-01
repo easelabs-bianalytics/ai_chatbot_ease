@@ -27,11 +27,7 @@ class Command(BaseCommand):
         fontes = tuple(options["fonte"] or FONTES)
         area_medica = AreaMedica.do_ambiente() if "area_medica" in fontes else None
         email_mkt = EmailMkt.do_ambiente() if "email_mkt" in fontes else None
-        conexao = conectar()
-        try:
-            resultado = sincronizar(conexao, area_medica, email_mkt, fontes)
-        finally:
-            conexao.close()
+        resultado = sincronizar(conectar, area_medica, email_mkt, fontes)
         for fonte, item in resultado.items():
             detalhe = item.get("linhas") if item["status"] == "ok" else item.get("erro")
             self.stdout.write(f"{fonte}: {item['status']} {detalhe}")

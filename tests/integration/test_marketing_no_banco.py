@@ -54,6 +54,10 @@ def escrita():
     conexao.close()
 
 
+def _conectar():
+    return psycopg2.connect(ESCRITA, connect_timeout=5)
+
+
 def _ler(sql):
     with psycopg2.connect(LEITURA) as conexao, conexao.cursor() as cursor:
         cursor.execute(sql)
@@ -61,7 +65,7 @@ def _ler(sql):
 
 
 def test_carga_grava_as_duas_fontes_e_o_jarvis_le(escrita):
-    resultado = sincronizar(escrita, AreaMedicaFake(USUARIOS), EMAIL)
+    resultado = sincronizar(_conectar, AreaMedicaFake(USUARIOS), EMAIL)
 
     assert resultado["area_medica"] == {"status": "ok", "linhas": {"usuarios": 2, "com_crm_link": 1}}
     assert resultado["email_mkt"]["status"] == "ok"
@@ -81,17 +85,17 @@ def test_carga_grava_as_duas_fontes_e_o_jarvis_le(escrita):
 
 
 def test_carregar_de_novo_substitui_sem_duplicar(escrita):
-    sincronizar(escrita, AreaMedicaFake(USUARIOS), EMAIL)
-    sincronizar(escrita, AreaMedicaFake(USUARIOS[:1]), EMAIL)
+    sincronizar(_conectar, AreaMedicaFake(USUARIOS), EMAIL)
+    sincronizar(_conectar, AreaMedicaFake(USUARIOS[:1]), EMAIL)
 
     assert _ler("SELECT count(*) FROM marketing.area_medica_usuarios") == [(1,)]
     assert _ler("SELECT count(*) FROM marketing.email_contatos") == [(1,)]
 
 
 def test_fonte_que_falha_nao_apaga_o_que_estava(escrita):
-    sincronizar(escrita, AreaMedicaFake(USUARIOS), EMAIL)
+    sincronizar(_conectar, AreaMedicaFake(USUARIOS), EMAIL)
 
-    resultado = sincronizar(escrita, AreaMedicaFake(USUARIOS[:1]),
+    resultado = sincronizar(_conectar, AreaMedicaFake(USUARIOS[:1]),
                             EmailMktFake(erro=FonteIndisponivel("/api/3/contacts: HTTP 503")))
 
     assert resultado["email_mkt"]["status"] == "falhou"

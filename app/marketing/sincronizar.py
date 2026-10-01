@@ -70,31 +70,60 @@ def _registrar_fim(conexao, identificador, status, linhas=None, erro="") -> None
     conexao.commit()
 
 
-def _carregar(fonte, conexao, area_medica, email_mkt) -> dict:
+def _baixar(fonte, area_medica, email_mkt) -> dict:
+    """Tudo o que a fonte devolve, ANTES de abrir conexão de escrita. Baixar o
+    Email MKT leva minutos, e uma conexão parada esse tempo cai (o túnel e o
+    `idle_in_transaction_session_timeout` da role derrubaram a carga em
+    2026-10-01)."""
     if fonte == "area_medica":
-        return carga.gravar_area_medica(conexao, area_medica.usuarios())
-    campos, listas, tags, campanhas = email_mkt.campos(), email_mkt.listas(), email_mkt.tags(), email_mkt.campanhas()
-    return carga.gravar_email_mkt(conexao, email_mkt.contatos(), campos, listas, tags, campanhas)
+        return {"usuarios": area_medica.usuarios()}
+    return {"campos": email_mkt.campos(), "listas": email_mkt.listas(), "tags": email_mkt.tags(),
+            "campanhas": email_mkt.campanhas(), "dados": email_mkt.contatos()}
 
 
-def sincronizar(conexao, area_medica, email_mkt, fontes=FONTES) -> dict:
-    """{fonte: {"status", "linhas" | "erro"}}. Cada fonte numa transação:
-    tudo chega e é gravado, ou nada muda."""
-    preparar(conexao)
+def _gravar(fonte, conexao, baixado) -> dict:
+    if fonte == "area_medica":
+        return carga.gravar_area_medica(conexao, baixado["usuarios"])
+    return carga.gravar_email_mkt(conexao, baixado["dados"], baixado["campos"], baixado["listas"],
+                                  baixado["tags"], baixado["campanhas"])
+
+
+def _com_conexao(conectar, acao):
+    conexao = conectar()
+    try:
+        return acao(conexao)
+    finally:
+        conexao.close()
+
+
+def sincronizar(conectar, area_medica, email_mkt, fontes=FONTES) -> dict:
+    """{fonte: {"status", "linhas" | "erro"}}. `conectar` abre uma conexão
+    nova a cada etapa que escreve. Cada fonte numa transação: tudo chega e é
+    gravado, ou nada muda."""
+    _com_conexao(conectar, preparar)
     resultado = {}
     for fonte in fontes:
-        identificador = _registrar_inicio(conexao, fonte)
+        identificador = _com_conexao(conectar, lambda c: _registrar_inicio(c, fonte))
         try:
-            linhas = _carregar(fonte, conexao, area_medica, email_mkt)
-            conexao.commit()
+            baixado = _baixar(fonte, area_medica, email_mkt)
+
+            def gravar(conexao):
+                try:
+                    linhas = _gravar(fonte, conexao, baixado)
+                    conexao.commit()
+                except Exception:
+                    conexao.rollback()
+                    raise
+                return linhas
+
+            linhas = _com_conexao(conectar, gravar)
         except Exception as exc:  # noqa: BLE001 — a outra fonte segue; esta fica registrada
-            conexao.rollback()
             erro = f"{type(exc).__name__}: {exc}"
             logger.error("%s fonte=%s erro=%s", MARCA_DE_FALHA, fonte, erro)
-            _registrar_fim(conexao, identificador, "falhou", erro=erro)
+            _com_conexao(conectar, lambda c: _registrar_fim(c, identificador, "falhou", erro=erro))
             resultado[fonte] = {"status": "falhou", "erro": erro}
             continue
-        _registrar_fim(conexao, identificador, "ok", linhas)
+        _com_conexao(conectar, lambda c: _registrar_fim(c, identificador, "ok", linhas))
         logger.info("Marketing sincronizado: fonte=%s %s", fonte, linhas)
         resultado[fonte] = {"status": "ok", "linhas": linhas}
     return resultado

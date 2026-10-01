@@ -19,6 +19,9 @@ UFS = frozenset({
 })
 DIGITOS_DO_CRM = 7
 PREFIXO_DO_CREMERJ = "52"
+# Acima disto não é CRM: é telefone, CPF ou lixo de digitação. Mesmo teto do
+# normalizar_crm da planilha anexada (attachments/planilha.py).
+MAX_DIGITOS_DO_CRM = 10
 
 _UF_NO_TEXTO = re.compile(r"(?<![A-Z])(" + "|".join(sorted(UFS)) + r")(?![A-Z])")
 
@@ -44,13 +47,15 @@ def uf_no_crm(valor) -> str:
 def crm_link(numero, uf="") -> str:
     """UF + número com zeros à esquerda até 7 dígitos, ou vazio.
 
-    A UF do campo próprio vale primeiro; se ele estiver vazio ou inválido,
-    vale a que estiver escrita no campo do CRM. Sem UF não há CRM LINK —
-    número solto não identifica médico, e chutar a UF seria inventar."""
+    A mesma regra do CRM de fora do banco em todo o Jarvis (planilha anexada,
+    documento de referência): a UF escrita junto do número ("CRM-MG 12345")
+    vale primeiro — é a do conselho —, e só sem ela vale a do campo separado,
+    que pode ser a do endereço. Sem UF não há CRM LINK: número solto não
+    identifica médico, e chutar a UF seria inventar."""
     digitos = numero_do_crm(numero)
-    if not digitos or digitos == "0":
+    if not digitos or digitos == "0" or len(digitos) > MAX_DIGITOS_DO_CRM:
         return ""
-    estado = uf_valida(uf) or uf_no_crm(numero)
+    estado = uf_no_crm(numero) or uf_valida(uf)
     if not estado:
         return ""
     if estado == "RJ" and len(digitos) > DIGITOS_DO_CRM and digitos.startswith(PREFIXO_DO_CREMERJ):

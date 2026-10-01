@@ -41,8 +41,29 @@ def test_crm_link(numero, uf, esperado):
     assert crm_link(numero, uf) == esperado
 
 
-def test_uf_do_campo_vale_antes_da_escrita_no_crm():
-    assert crm_link("SP123456", "MG") == "MG0123456"
+def test_uf_escrita_no_crm_vale_antes_do_campo():
+    """A UF colada no número é a do conselho; o campo separado pode ser a do
+    endereço. Mesma regra da planilha anexada."""
+    assert crm_link("SP123456", "MG") == "SP0123456"
+
+
+@pytest.mark.parametrize("numero, uf, esperado", [
+    # Os cinco formatos conferidos no Postgres para a planilha (2026-10-01).
+    ("MG104608", "", "MG0104608"),
+    ("CRM-MG 104608", "", "MG0104608"),   # o "CRM" sai antes de achar a UF
+    ("104608/MG", "", "MG0104608"),
+    ("MG00104608", "", "MG0104608"),      # zeros a mais caem, sem cortar
+    ("SP12345678", "", "SP12345678"),     # mais de 7 dígitos fica inteiro
+    # CREMERJ: só RJ, mais de 7 dígitos e começando em 52.
+    ("RJ 52.12345-6", "", "RJ0123456"),
+    ("5212345-6/RJ", "", "RJ0123456"),
+    ("52123456", "RJ", "RJ0123456"),
+    ("RJ5212345", "", "RJ5212345"),       # 7 dígitos: o 52 é número
+    ("SP52123456", "", "SP52123456"),     # fora do RJ, o 52 é número
+    ("12345678901", "SP", ""),            # mais de 10 dígitos não é CRM
+])
+def test_mesma_normalizacao_da_planilha(numero, uf, esperado):
+    assert crm_link(numero, uf) == esperado
 
 
 def test_pecas_do_crm():
@@ -72,6 +93,14 @@ def test_linhas_da_area_medica():
     assert linhas[0][8] == datetime(2026, 9, 25, 14, 30, tzinfo=timezone.utc)
     assert linhas[0][11] == "SP0012345"
     assert linhas[1][11] is None
+    assert linhas[0][14] is None  # ultimo_acesso: a API devolve vazio por enquanto
+
+
+def test_ultimo_acesso_da_area_medica_e_gravado():
+    linhas = linhas_da_area_medica(
+        [{"email": "a@x.com", "crm_cro": "1", "uf": "SP", "ultimo_acesso": "2026-10-02T09:15:00-03:00"}], AGORA
+    )
+    assert linhas[0][14].isoformat() == "2026-10-02T09:15:00-03:00"
 
 
 # ---------------------------------------------------------------- Email MKT
@@ -181,6 +210,13 @@ def test_email_mkt_espera_e_tenta_de_novo_no_429(monkeypatch):
 
     assert listas == [{"id": "3"}] and 2.0 in esperas
     assert sessao.headers["Api-Token"] == "t"
+
+
+def test_511_no_meio_da_carga_tenta_de_novo(monkeypatch):
+    monkeypatch.setattr("marketing.fontes.time.sleep", lambda s: None)
+    sessao = _Sessao([_Resposta({}, status=511), _Resposta({"campaigns": [], "meta": {"total": "0"}})])
+
+    assert EmailMkt("https://ac", "t", sessao).campanhas() == []
 
 
 def test_token_errado_falha_sem_tentar_de_novo(monkeypatch):

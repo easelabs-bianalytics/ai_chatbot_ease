@@ -14,7 +14,11 @@ import requests
 logger = logging.getLogger(__name__)
 
 TEMPO_LIMITE = (10, 60)
-MAX_TENTATIVAS = 4
+MAX_TENTATIVAS = 5
+# Respostas que passam: limite de taxa, servidor ocupado e os códigos do
+# Cloudflare na frente da API. O ActiveCampaign devolveu 511 no meio da carga
+# de 2026-10-01 — e 200 para a mesma chamada logo depois.
+PASSAGEIROS = frozenset({408, 429, 500, 502, 503, 504, 511, 520, 521, 522, 523, 524})
 
 
 class FonteIndisponivel(Exception):
@@ -45,7 +49,7 @@ class _Cliente:
                 if resposta.status_code in (401, 403):
                     raise FonteIndisponivel(f"{caminho}: acesso negado ({resposta.status_code}); confira o token")
                 motivo = f"HTTP {resposta.status_code}"
-                if resposta.status_code not in (429, 500, 502, 503, 504):
+                if resposta.status_code not in PASSAGEIROS:
                     raise FonteIndisponivel(f"{caminho}: {motivo}")
             if tentativa == MAX_TENTATIVAS:
                 raise FonteIndisponivel(f"{caminho}: {motivo} depois de {MAX_TENTATIVAS} tentativas")

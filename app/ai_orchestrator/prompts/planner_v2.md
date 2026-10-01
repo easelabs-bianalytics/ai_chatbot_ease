@@ -154,6 +154,11 @@ errar.
   tabela não se lê (produção, 2026-09-23). Entrega diferente é outra forma de
   resultado (outro grão, outras colunas); **a mesma medida em dois recortes
   ("duas visões", abaixo) continua sendo uma consulta só.**
+- **Pedido que nomeia os itens e também agrega** — "quais médicos estão na Área
+  Médica **e** elenque os representantes", "liste os PDVs **e** diga quantos
+  por rede" — são duas entregas: a lista (nome, identificador, as colunas que
+  dizem quem é) e o agregado. "Quais", "liste", "puxe" pedem os nomes; só a
+  contagem deixa a pessoa sem a lista que pediu (2026-10-01).
 
 ## 4. Cálculos na consulta, nunca depois
 

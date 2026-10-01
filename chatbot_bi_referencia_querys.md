@@ -3452,7 +3452,7 @@ GROUP BY 1;
 
 | Tabela | O que é | Colunas principais |
 |---|---|---|
-| `marketing.area_medica_usuarios` | **Área Médica**: o portal da Ease Labs para profissionais de saúde (conteúdo científico, prescrição, pedido de visita técnica). Um registro por cadastro | `nome`, `email`, `telefone`, `crm_cro` (como veio), `uf`, `cidade`, `especialidade`, `tipo_visita_tecnica`, `data_cadastro`, `quantidade_acessos`, `conselho`, **`crm_link`** |
+| `marketing.area_medica_usuarios` | **Área Médica**: o portal da Ease Labs para profissionais de saúde (conteúdo científico, prescrição, pedido de visita técnica). Um registro por cadastro | `nome`, `email`, `telefone`, `crm_cro` (como veio), `uf`, `cidade`, `especialidade`, `tipo_visita_tecnica`, `data_cadastro`, `quantidade_acessos`, `ultimo_acesso`, `conselho`, **`crm_link`** |
 | `marketing.area_medica_acessos_diarios` | Retrato diário da quantidade de logins de cada cadastro | `data`, `email`, `crm_link`, `quantidade_acessos` |
 | `marketing.email_contatos` | **Email MKT** (ActiveCampaign): a base de contatos do canal de e-mail — campanhas, newsletters, jornadas. Um registro por contato | `email`, `nome`, `criado_em` (entrada na base), `ultima_abertura`, `ultimo_clique`, `bounces_hard`, `crm_numero`, `uf_conselho`, **`crm_link`**, `profissao`, `especialidade`, `categoria`, `potencial`, `representante`, `ultima_visita`, `ja_prescreve_ease`, `ja_prescreve_cannabis`, `participa_mais_alivio`, `e_medico`, `inativo`, `conselho`, `campos` (jsonb com todos os campos, pelo título) |
 | `marketing.email_listas` / `marketing.email_listas_do_contato` | Listas (jornadas Conscientização, Consideração, Decisão e Fidelização, eventos, "Área Médica", "Prescritores 660"...) e quem está em cada uma | `lista_id`, `nome`; `contato_id`, `lista_id`, `status`, **`inscrito`**, `inscrito_em` |
@@ -3474,11 +3474,14 @@ GROUP BY 1;
   pela profissão: `CRM` (médico), `CRO` (dentista), `CRMV` (veterinário), `CRF` (farmacêutico,
   balconista). **Só quem tem `conselho = 'CRM'` ganha `crm_link`** — o CRO PR 33262 de um dentista
   não é o CRM PR 33262 de um médico. Pergunta sobre "médicos" filtra `conselho = 'CRM'`.
-- **Último login da Área Médica: a API não tem.** `quantidade_acessos` conta logins desde que a
-  contagem começou (recente: em 01/10/2026, 3.819 dos 3.849 estavam em zero). "Acessou no período"
-  é a contagem ter subido entre dois retratos de `area_medica_acessos_diarios`, que começam em
-  **01/10/2026** — para período anterior não há como saber: diga isso em `pedido_nao_atendido` e
-  ofereça "teve pelo menos um login desde o início da contagem" (`quantidade_acessos > 0`).
+- **Último login da Área Médica: `ultimo_acesso`**, que a API passou a devolver em 01/10/2026 —
+  vazio em todos os cadastros nesse dia, e enche a partir dos logins seguintes. "Ativo" ou "acessou
+  no período" é `ultimo_acesso` dentro do período **ou** a contagem ter subido entre dois retratos
+  de `area_medica_acessos_diarios` (que também começam em 01/10/2026) — a M02 junta os dois. Antes
+  de 01/10/2026 não há como saber quem logou: se o período pedido começa antes, diga isso em
+  `pedido_nao_atendido`, responda com o que há a partir de 01/10 e diga quantos cadastros ainda
+  estão sem `ultimo_acesso`. `quantidade_acessos` conta logins desde que a contagem começou
+  (recente: em 01/10/2026, 3.819 dos 3.849 estavam em zero).
 - **Email MKT não é só médico**: há paciente, PDV, investidor, colaborador. Médico é `e_medico`
   (tag "é-médico") ou `crm_link IS NOT NULL`; `profissao` diz o resto.
 - **Inscrito numa lista** é `inscrito = true` (status 1). Status 2 é descadastrado, 3 é
@@ -3500,18 +3503,25 @@ WHERE a.data_cadastro >= DATE '2026-01-01'
 ORDER BY a.data_cadastro DESC;
 ```
 
-*"Quem acessou a Área Médica no último mês?"*
+*"Quem acessou a Área Médica no último mês?"* / *"médicos ativos no trimestre"*
 
 ```sql
--- M02 · Logins no período, pelos retratos diários (só a partir de 01/10/2026)
-SELECT d.email, d.crm_link,
-       MAX(d.quantidade_acessos) - MIN(d.quantidade_acessos) AS logins_no_periodo,
-       MIN(d.data) AS primeiro_retrato, MAX(d.data) AS ultimo_retrato
-FROM marketing.area_medica_acessos_diarios d
-WHERE d.data BETWEEN :data_ini AND :data_fim
-GROUP BY 1, 2
-HAVING MAX(d.quantidade_acessos) > MIN(d.quantidade_acessos)
-ORDER BY 3 DESC;
+-- M02 · Quem acessou no período: ultimo_acesso, ou a contagem subindo entre retratos
+-- (os dois só existem a partir de 01/10/2026)
+WITH pelos_retratos AS (
+  SELECT d.email, MAX(d.quantidade_acessos) - MIN(d.quantidade_acessos) AS logins_no_periodo
+  FROM marketing.area_medica_acessos_diarios d
+  WHERE d.data BETWEEN :data_ini AND :data_fim
+  GROUP BY 1
+  HAVING MAX(d.quantidade_acessos) > MIN(d.quantidade_acessos)
+)
+SELECT a.nome, a.crm_link, a.especialidade, a.ultimo_acesso, r.logins_no_periodo,
+       CASE WHEN a.ultimo_acesso >= :data_ini THEN 'último acesso' ELSE 'retratos diários' END AS como_sei
+FROM marketing.area_medica_usuarios a
+LEFT JOIN pelos_retratos r ON r.email = a.email
+WHERE a.conselho = 'CRM'
+  AND (a.ultimo_acesso >= :data_ini OR r.email IS NOT NULL)
+ORDER BY a.ultimo_acesso DESC NULLS LAST;
 ```
 
 *"Os médicos da Área Médica cadastrados em 2026 prescrevem mais Ease, em média, que os prescritores
@@ -3551,7 +3561,8 @@ LEFT JOIN area_toda at  ON at.crm_link = pr.crm_link
 GROUP BY 1
 ORDER BY 1;
 -- A média é só entre quem prescreveu Ease no mês (PX > 0). "Ativos com último login no
--- trimestre" exige os retratos de M02, que só existem a partir de 01/10/2026.
+-- trimestre": filtre area_2026 pelo critério da M02 (ultimo_acesso ou retratos), que só
+-- existe a partir de 01/10/2026 — diga isso se o trimestre começa antes.
 ```
 
 *"Dos médicos do painel da Força de Vendas, quais estão na Área Médica? Ranqueie os representantes
