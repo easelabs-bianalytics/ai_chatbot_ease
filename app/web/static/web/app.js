@@ -1228,7 +1228,7 @@
         <div class="cartao-ia-corpo">
           ${tipo.rotulo ? `<div class="cartao-ia-rotulo">${ICONES[tipo.icone] || ''}${esc(tipo.rotulo)}</div>` : ''}
           ${fonte.blocos?.length
-            ? corpoEmBlocos(fonte, m.id)
+            ? corpoEmBlocos(fonte, m.id, modoDeBaixar(fonte, !!m.planilha_preenchida))
             : `<div class="md">${semNarrativa ? tabelaCrua(m.text) : markdown(m.text)}</div>`}
           ${m.planilha_preenchida ? `
             <button class="planilha-preenchida" type="button" data-planilha="${m.planilha_preenchida.pergunta}">${ICONES.planilha}<span>Baixar planilha preenchida</span></button>` : ''}
@@ -1268,7 +1268,22 @@
     return String(v);
   };
 
-  const blocoTabela = (bloco, dados, id) => {
+  // Um botão de baixar por resposta, nunca dois (2026-10-01: a resposta a
+  // uma planilha anexada mostrava "Baixar Excel desta tabela" e "Baixar
+  // Excel" lado a lado, com o mesmo dado). A ordem decide qual fica:
+  // - "planilha": a planilha da pessoa, preenchida — é O arquivo;
+  // - "por-tabela": várias tabelas, cada uma com a sua consulta;
+  // - "geral": uma tabela só (ou nenhuma), o "Baixar Excel" do rodapé.
+  const modoDeBaixar = (fonte, temPlanilha) => {
+    if (temPlanilha) return 'planilha';
+    const consultas = new Set((fonte.blocos || []).filter((b) => b.tipo === 'tabela')
+      .map((b) => Number(b.consulta) || 0));
+    if (consultas.size > 1) return 'por-tabela';
+    if (fonte.excel) return 'geral';
+    return consultas.size ? 'por-tabela' : 'nenhum';
+  };
+
+  const blocoTabela = (bloco, dados, id, modo = 'por-tabela') => {
     if (!dados) return '';
     const indices = (bloco.colunas?.length ? bloco.colunas : dados.columns)
       .map((c) => dados.columns.indexOf(c)).filter((i) => i >= 0);
@@ -1281,19 +1296,23 @@
     // também nas respostas com várias consultas, onde a nota antes apontava
     // para um botão que não aparecia (2026-09-25).
     const cortada = total > linhas.length || dados.truncado;
-    const botao = cortada && id
+    const botao = modo === 'por-tabela' && cortada && id
       ? ` <button class="fonte-excel" type="button" data-excel="${id}" data-consulta="${Number(bloco.consulta) || 0}">${ICONES.planilha}<span>Baixar Excel desta tabela</span></button>`
       : '';
+    const onde = {
+      planilha: 'a lista inteira está na planilha preenchida.',
+      geral: 'a lista inteira está no botão Baixar Excel, abaixo.',
+    }[modo] || 'a lista inteira está na planilha.';
     const nota = cortada
-      ? `<div class="grafico-nota">Mostrando ${fmtNum(linhas.length)} de ${fmtNum(total)} linhas${dados.truncado ? ' (a consulta parou no limite: o total é maior)' : ''}; a lista inteira está na planilha.${botao}</div>`
+      ? `<div class="grafico-nota">Mostrando ${fmtNum(linhas.length)} de ${fmtNum(total)} linhas${dados.truncado ? ' (a consulta parou no limite: o total é maior)' : ''}; ${onde}${botao}</div>`
       : '';
     return `<div class="md bloco bloco-tabela">${titulo}${tabelaHtml(cabecalho, linhas)}${nota}</div>`;
   };
 
-  const corpoEmBlocos = (fonte, id) => fonte.blocos.map((bloco, k) => {
+  const corpoEmBlocos = (fonte, id, modo) => fonte.blocos.map((bloco, k) => {
     const dados = fonte.dados_blocos?.[String(bloco.consulta)];
     if (bloco.tipo === 'texto') return `<div class="md bloco">${markdown(bloco.texto)}</div>`;
-    if (bloco.tipo === 'tabela') return blocoTabela(bloco, dados, id);
+    if (bloco.tipo === 'tabela') return blocoTabela(bloco, dados, id, modo);
     if (bloco.tipo === 'grafico' && dados) {
       const chave = `${id}-b${k}`;
       GRAFICOS.set(chave, { grafico: bloco.grafico, dados });
@@ -1965,7 +1984,7 @@
       <div class="fonte">
         <div class="fonte-barra">
           <button class="fonte-toggle" type="button" aria-expanded="false">${ICONES.banco}<span class="fonte-toggle-texto">Ver fonte e consulta</span><span class="chevron">${ICONES.chevron}</span></button>
-          ${fonte.excel && !temPlanilha ? `<button class="fonte-excel${fonte.excel_pedido ? ' destaque' : ''}" type="button" data-excel="${id}">${ICONES.planilha}<span>Baixar Excel</span></button>` : ''}
+          ${modoDeBaixar(fonte, temPlanilha) === 'geral' ? `<button class="fonte-excel${fonte.excel_pedido ? ' destaque' : ''}" type="button" data-excel="${id}">${ICONES.planilha}<span>Baixar Excel</span></button>` : ''}
         </div>
         <div class="fonte-detalhe">
           <div class="fonte-detalhe-inner">

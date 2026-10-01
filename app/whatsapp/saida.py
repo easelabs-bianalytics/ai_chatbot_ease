@@ -24,6 +24,7 @@ from whatsapp import formato, graficos
 logger = logging.getLogger(__name__)
 
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+CSV = "text/csv"
 # Acima disto a tabela não cabe no celular: vai resumida no texto e inteira no arquivo.
 LINHAS_NA_CONVERSA = formato.MAX_LINHAS_NA_TABELA
 ROTULO_DA_IMAGEM = "_Leitura da imagem — não veio do banco._\n\n"
@@ -43,6 +44,10 @@ def montar(resposta, executor=None) -> list:
     fonte = fonte_da_resposta.montar(resposta) or {}
     textos, imagens, arquivos = [], [], []
     tabela_enviada = False
+    # Um arquivo por resposta (2026-10-01): com a planilha da pessoa
+    # preenchida, ela é O arquivo — a tabela longa vai só no texto, sem
+    # planilha própria ao lado. Antes chegavam dois xlsx com o mesmo dado.
+    preenchida = _planilha_preenchida(resposta)
 
     if fonte.get("blocos"):
         dados_blocos = fonte.get("dados_blocos") or {}
@@ -52,7 +57,8 @@ def montar(resposta, executor=None) -> list:
                 textos.append(formato.de_markdown(bloco.get("texto", "")))
             elif bloco["tipo"] == "tabela" and dados.get("rows"):
                 tabela_enviada = True
-                textos.append(_tabela(bloco, dados, arquivos, resposta, executor=executor))
+                textos.append(_tabela(bloco, dados, arquivos, resposta, executor=executor,
+                                      sem_arquivo=preenchida is not None))
             elif bloco["tipo"] == "grafico":
                 _grafico(bloco.get("grafico"), dados, imagens)
     else:
@@ -64,7 +70,8 @@ def montar(resposta, executor=None) -> list:
 
     consulta = fonte.get("consulta") or {}
     lista_longa = (consulta.get("linhas") or 0) > LINHAS_NA_CONVERSA
-    if executor is not None and fonte.get("excel") and not tabela_enviada and (fonte.get("excel_pedido") or lista_longa):
+    if (preenchida is None and executor is not None and fonte.get("excel") and not tabela_enviada
+            and (fonte.get("excel_pedido") or lista_longa)):
         planilha = planilha_da_resposta.gerar(resposta, resposta.conversation.user, executor)
         if not planilha.erro:
             arquivos.append(Envio("documento", _legenda(planilha.linhas, planilha.cortada),
@@ -72,12 +79,8 @@ def montar(resposta, executor=None) -> list:
         else:
             logger.warning("WhatsApp: planilha da resposta não saiu: %s", planilha.erro)
 
-    pergunta = resposta.in_reply_to
-    if pergunta is not None and pergunta.anexo_resposta_token:
-        preenchida = deposito.buscar(pergunta.anexo_resposta_token)
-        if preenchida:
-            nome = pergunta.anexo_resposta_nome or "planilha_preenchida.xlsx"
-            arquivos.append(Envio("documento", "Planilha preenchida", preenchida, nome, XLSX))
+    if preenchida is not None:
+        arquivos.append(preenchida)
 
     sugestoes = fonte.get("sugestoes") or []
     if sugestoes:
@@ -115,7 +118,22 @@ def _legenda(linhas: int, cortada: bool = False, titulo: str = "") -> str:
     return f"{texto}\n⚠️ {planilha_da_resposta.aviso_de_corte()}" if cortada else texto
 
 
-def _tabela(bloco, dados, arquivos, resposta, executor=None) -> str:
+def _planilha_preenchida(resposta):
+    """O envio da planilha da pessoa, preenchida, ou None."""
+    pergunta = resposta.in_reply_to
+    if pergunta is None or not pergunta.anexo_resposta_token:
+        return None
+    dados = deposito.buscar(pergunta.anexo_resposta_token)
+    if not dados:
+        return None
+    nome = pergunta.anexo_resposta_nome or "planilha_preenchida.xlsx"
+    # A planilha volta no formato em que veio (CSV continua CSV, a não ser
+    # que tenha ganhado aba nova, ADR-0031).
+    tipo = CSV if nome.lower().endswith(".csv") else XLSX
+    return Envio("documento", "Planilha preenchida", dados, nome, tipo)
+
+
+def _tabela(bloco, dados, arquivos, resposta, executor=None, sem_arquivo=False) -> str:
     """Tabela curta no texto; longa, em planilha com as primeiras no texto.
 
     A resposta guarda para a tela só as 100 primeiras linhas (a lista inteira
@@ -130,6 +148,10 @@ def _tabela(bloco, dados, arquivos, resposta, executor=None) -> str:
     total = max(int(dados.get("total") or 0), len(linhas))
     if total <= LINHAS_NA_CONVERSA and not dados.get("truncado"):
         return titulo + formato.tabela(colunas, linhas)
+    if sem_arquivo:
+        quantas = f"{total:,}".replace(",", ".")
+        rodape = f"\n_…{quantas} linhas no total; a lista completa está na planilha preenchida, anexada._"
+        return titulo + formato.tabela(colunas, linhas[:5]) + rodape
     nome = f"jarvis_tabela_{len(arquivos) + 1}.xlsx"
     inteira = None
     if (total > len(linhas) or dados.get("truncado")) and executor is not None:
