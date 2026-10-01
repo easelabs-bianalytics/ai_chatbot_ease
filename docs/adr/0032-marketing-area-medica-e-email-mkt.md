@@ -85,6 +85,15 @@ desativado; `crm_cro` pode ser CRO/CRMV/CRF; CRM `PENDENTE`/UF `ER` sem link;
 aparece na auditoria, o que não é "não prescreve") e oito consultas de
 referência, M00 a M07, entre elas as três perguntas do Rubens.
 
+### 6. Só médico ganha CRM LINK
+Achado na primeira carga de produção: a Área Médica tem dentistas e
+veterinários, e o Email MKT tem farmacêuticos e balconistas. O número do
+conselho deles não é CRM — o CRO PR 33262 de um dentista casaria com o CRM PR
+33262 de um médico. A coluna `conselho` (CRM, CRO, CRMV, CRF) sai da
+especialidade e da profissão, e só `conselho = 'CRM'` ganha `crm_link`. E o
+CRM do RJ perde o `52` do CREMERJ quando vem com ele (`52.12345-6`): tirá-lo
+recuperou 55 dos 90 CRMs longos do RJ.
+
 ## O que foi considerado e ficou de fora
 - **Consultar as APIs na hora** (como a planilha anexada, ADR-0031): lento
   para o Email MKT e sem como fazer JOIN com o BI no banco.

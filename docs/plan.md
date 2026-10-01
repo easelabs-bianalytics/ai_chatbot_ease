@@ -1949,19 +1949,49 @@ começando pelo Marketing, e cruzar as áreas pelo **CRM LINK (UF + CRM)**.
   apagar a outra, role sem acesso ao negócio.
 - Casos M00 a M07 em `casos_validacao.yaml`.
 
-### Deploy (ordem da Fase 9)
-- [ ] Snapshot `cockpit-prod-db-antes-jarvis-marketing-<AAAAMMDD>`
-- [ ] `05_criar_schema_marketing.sql` pelo túnel, com a senha gerada na hora
-- [ ] Secrets: `cockpit-prod-jarvis-mkt-db-user`, `-mkt-db-password`,
-      `-email-mkt-api-token`, `-area-medica-api-token`
-- [ ] Terraform na `feat/infra-jarvis` (`modules/compute/jarvis_marketing.tf`):
-      task definition `cockpit-prod-jarvis-sync`, role e policy do scheduler,
-      policy dos secrets, schedule diário às 5h, metric filter e alarme
-- [ ] Commit no Jarvis, build e push da imagem
-- [ ] `plan` completo (drift) e com alvo; commit, push e `apply`; merge na `main`
-- [ ] Primeira carga por `run-task`, conferida no `psql`
-- [ ] `catalog_snapshot` com o schema novo, e o gabarito M00–M07
-- [ ] As três perguntas do Rubens com o modelo real
+### Deploy (ordem da Fase 9) — feito em 2026-10-01
+- [x] Snapshot `cockpit-prod-db-antes-jarvis-marketing-20261001` (`available`)
+- [x] `05_criar_schema_marketing.sql` pelo túnel. **Pedra no caminho:** o
+      `ALTER DEFAULT PRIVILEGES FOR ROLE jarvis_mkt_sync` feito pelo
+      `rubens_dba` foi recusado — com o `GRANT ... INHERIT FALSE`, ele não tem
+      os privilégios da role. Corrigido no script com `SET ROLE` antes do
+      comando. Conferência: dono `jarvis_mkt_sync`, sem acesso a `jarvis`,
+      `audit` nem `public`; `bi_chatbot_ro` lê; `rubens_dba` não herda
+- [x] Os quatro secrets criados na mesma execução, sem passar por arquivo
+- [x] `jarvis_marketing.tf` (task `cockpit-prod-jarvis-sync`, 512 CPU / 1 GB,
+      role e policy do scheduler, schedule às 5h, metric filter e alarme no
+      tópico do Jarvis) + output `jarvis_alerts_topic_arn` no módulo `alb`
+- [x] `plan` completo: além do nosso, **drift de outras frentes que não foi
+      aplicado** — `app_eventos` voltaria da revisão `:18` para a `:14` e o
+      `trade_fv` da imagem `780a673` para a `5bb4096` (deploy feito fora do
+      Terraform; avisar a Natália). `plan` com alvo: 8 adições, 1 mudança, 1
+      destruição; `apply` igual
+- [x] Primeira carga em produção (`run-task`, 3 min 45 s): Área Médica 3.849,
+      Email MKT 17.954, exit 0
+- [x] **Só médico ganha CRM LINK** (achado na primeira carga): a Área Médica
+      tinha ~100 dentistas e veterinários, e o CRO PR 33262 de um dentista
+      casaria com o CRM PR 33262 de um médico. Coluna `conselho` (CRM, CRO,
+      CRMV, CRF) pela especialidade e pela profissão. E o **52 do CREMERJ** sai
+      do CRM do RJ (recuperou 55 de 90 CRMs longos). Carga refeita: 3.583 e
+      10.437 com CRM LINK
+- [x] `catalog_snapshot` com as 9 tabelas do `marketing`; gabarito M00–M07 no
+      RDS em até 190 ms
+- [x] As perguntas do Rubens com o modelo real (ver abaixo)
+- [x] Schedule ligado depois da carga manual; merge na `main`
+
+### As perguntas do Rubens, com o modelo real (2026-10-01)
+| Pergunta | Resposta | Custo |
+|---|---|---|
+| Área Médica (cadastro 2026) × prescritores Ease de fora, último mês | 3,21 PX por prescritor contra 1,64 (ago/26); diz que o filtro de último login não dá — a API não tem, e os retratos começam em 01/10 | US$ 0,06 |
+| Painel da Força de Vendas na Área Médica, por representante | a lista dos médicos e o ranking (Ricardo Bastos e Alexandre Cimini, 39 cada) | US$ 0,06 |
+| Base do Email MKT com coluna "está na Área Médica" | lista com a coluna (pelo CRM, ou pelo e-mail como reserva), apontando a planilha completa | US$ 0,04 |
+| Campanhas de setembro, abertura e clique | 5 campanhas; maior abertura 29,3%, maior clique 2,6% | US$ 0,03 |
+
+Corrigido no caminho: "Força de Vendas" somava ponto para o Sell Out (pelo
+"vendas"), o Marketing ia como resumo e o modelo pedia o documento inteiro —
+US$ 0,30 a pergunta, agora US$ 0,06. Pedido de "base completa" / "adicione
+uma coluna" passa a ser planilha (`excel`). E a pergunta "quais estão" leva a
+lista além do ranking.
 
 ---
 
