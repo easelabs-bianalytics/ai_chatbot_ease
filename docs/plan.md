@@ -254,6 +254,16 @@ na `main` do `sales_force_crm`
       `plan` com alvo na task do Jarvis deve mostrar só a imagem e o comando
 - [ ] Rodar `migrate` na task avulsa antes do bump: `ai_orchestrator.0006`
       (etapa `self_check`) e `messaging.0006` (tabela `Avaliacao`), ADR-0027
+- [ ] **Marketing (Fase 15, ADR-0032, 2026-10-01):** snapshot; schema
+      `marketing` e role `jarvis_mkt_sync` (`infra/rds/05_criar_schema_marketing.sql`);
+      quatro secrets novos (`cockpit-prod-jarvis-mkt-db-user`/`-password`,
+      `-email-mkt-api-token`, `-area-medica-api-token`) **antes** do `plan`;
+      `jarvis_marketing.tf` com a task do sync e o schedule. A partir daí o
+      bump de imagem mostra **duas** task definitions no `plan` com alvo (a do
+      service e a do sync): acrescentar
+      `"-target=module.compute.aws_ecs_task_definition.jarvis_sync"` e
+      `"-target=module.compute.aws_scheduler_schedule.jarvis_sincronizar_marketing"`
+      ao comando do passo 9
 - [ ] Antes de cada deploy, rodar `run_synthetic_cases` (a suíte completa com
       o modelo real) e comparar com o relatório anterior: é o que mede se o
       Jarvis melhorou
@@ -1908,6 +1918,50 @@ e correções na revisão do ADR-0031. Em resumo:
   por GR" com gráfico, metas × sell-out real, UPDATE só das vazias
 - [ ] Refazer a conversa 44 em produção com a planilha do Paulo
 - [ ] Próximo passo do 3.0: prints
+
+## Fase 15 — Marketing: Área Médica e Email MKT (ADR-0032)
+
+Pedido do Rubens (2026-10-01): ligar o cérebro do Jarvis a outras áreas,
+começando pelo Marketing, e cruzar as áreas pelo **CRM LINK (UF + CRM)**.
+
+### Como ficou
+- `app/marketing/`: `crm.py` (CRM LINK), `fontes.py` (clientes das duas APIs,
+  com dublê), `carga.py` (transforma e grava, uma transação por fonte),
+  `sincronizar.py` (frescor em `marketing.sincronizacoes`, marca de falha no
+  log), `esquema.sql` (as 9 tabelas) e o comando `sincronizar_marketing`.
+- Schema `marketing` no `easelabs`, escrito só pela role `jarvis_mkt_sync`;
+  o `bi_chatbot_ro` lê (`infra/rds/05_criar_schema_marketing.sql`).
+- Documento de referência: regra do CRM LINK nas regras gerais e seção
+  **7. Marketing** com as tabelas, as armadilhas e as consultas M00 a M07;
+  tema `marketing` no roteamento; `marketing` no catálogo.
+- Primeira carga real (local, 2026-10-01): Área Médica 3.849 cadastros
+  (3.675 com CRM LINK), Email MKT 17.954 contatos (10.781 com CRM LINK),
+  68.145 inscrições, 89.020 tags, 563 campanhas, em 3 min 16 s. Casam com
+  `audit.medico`: 1.988 dos 3.354 CRMs da Área Médica e 3.660 dos 9.815 do
+  Email MKT; 708 médicos da Área Médica estão no painel da Força de Vendas.
+
+### Testes
+- `tests/unit/test_marketing.py` (26): CRM LINK com os formatos reais, as duas
+  transformações, a senha nunca copiada, paginação, 429, token errado e o
+  roteamento das três perguntas de exemplo.
+- `tests/integration/test_marketing_no_banco.py` (4): a carga no Postgres
+  local com a role de verdade, substituição sem duplicar, fonte que falha sem
+  apagar a outra, role sem acesso ao negócio.
+- Casos M00 a M07 em `casos_validacao.yaml`.
+
+### Deploy (ordem da Fase 9)
+- [ ] Snapshot `cockpit-prod-db-antes-jarvis-marketing-<AAAAMMDD>`
+- [ ] `05_criar_schema_marketing.sql` pelo túnel, com a senha gerada na hora
+- [ ] Secrets: `cockpit-prod-jarvis-mkt-db-user`, `-mkt-db-password`,
+      `-email-mkt-api-token`, `-area-medica-api-token`
+- [ ] Terraform na `feat/infra-jarvis` (`modules/compute/jarvis_marketing.tf`):
+      task definition `cockpit-prod-jarvis-sync`, role e policy do scheduler,
+      policy dos secrets, schedule diário às 5h, metric filter e alarme
+- [ ] Commit no Jarvis, build e push da imagem
+- [ ] `plan` completo (drift) e com alvo; commit, push e `apply`; merge na `main`
+- [ ] Primeira carga por `run-task`, conferida no `psql`
+- [ ] `catalog_snapshot` com o schema novo, e o gabarito M00–M07
+- [ ] As três perguntas do Rubens com o modelo real
 
 ---
 
