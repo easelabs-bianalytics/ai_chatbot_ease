@@ -2016,6 +2016,83 @@ lista além do ranking.
 
 ---
 
+### "Insight" que virou lista de temas (2026-09-30, conversa 45)
+
+- [x] **O incidente:** o Paulo perguntou "Analisando o desempenho de 2026 da
+      Ease Labs, o que você consegue tirar como insight?" e recebeu o texto de
+      ajuda (a lista de temas). Trocou para "aprendizado" e recebeu o mesmo, e
+      abriu outro chat. A suspeita era a palavra em inglês
+- [x] **Causa:** não era a palavra. As duas mensagens caíram na regra
+      determinística `pedido_de_ajuda` (US$ 0,00, 0 ms, sem chegar ao
+      modelo), que casava "o que você consegue" em qualquer ponto da frase.
+      A conversa não travou: cada pergunta com esse começo caía de novo na
+      regra. Já tinha acontecido com "o que pode ter causado a queda"
+      (2026-09-18). A regra de pedido de escrita tinha a mesma doença
+      ("atualize a tabela com setembro" e "altere os dados para unidades"
+      eram recusados como escrita no banco)
+- [x] **Correção, pelo princípio "regra sem modelo só para o inequívoco":**
+  - a ajuda só vale quando a mensagem INTEIRA é sobre o Jarvis;
+  - a recusa de escrita fica para SQL literal, verbo destrutivo com alvo de
+    banco e alteração de registros ou cadastros;
+  - o resto vai ao modelo, que já recusa escrita e responde "o que você
+    faz", com o validador e o usuário somente leitura como trava
+- [x] **Termos em inglês** (insight, payback, LTV, churn, branding, KPI,
+      forecast…): o planejador interpreta pelo sentido de negócio. Se o
+      termo pede dado que a base não tem, diz isso e entrega o que dá para
+      medir. O texto de ajuda deixou de dizer "Pergunte em português"
+- [x] **Pergunta aberta** ("insight", "aprendizado", "destaques",
+      "panorama"): panorama em 2 a 4 entregas, contra o mesmo período do ano
+      anterior, sem pedir esclarecimento; a redação abre com 2 a 4 achados
+      (seção 7.0 do planejador, 8.1 da redação)
+- [x] Casos de validação `X01-insight-desempenho-2026` e
+      `X02-termo-em-ingles-payback`
+- [x] `uv run pytest`: 1128 passaram
+- [ ] `run_synthetic_cases --caso X01-insight-desempenho-2026 --caso
+      X02-termo-em-ingles-payback` com o modelo real (os prompts mudaram)
+- [ ] Ir ao ar
+
+### Revisão de todas as regras sem modelo (2026-10-02)
+
+Depois da conversa 45, todas as regras que decidem sem o modelo, ou que
+trocam a resposta dele por texto pronto, passaram por 24 frases plausíveis
+de usuário. Três tinham o mesmo defeito, e duas decisões automáticas
+precisavam de ajuste. O princípio é o mesmo para todas: **sem modelo, só o
+inequívoco**. Errar para o lado do modelo custa centavos; errar para o lado
+da regra deixa a pessoa sem resposta.
+
+- [x] **Injeção** (`rules.py`): recusava "atue como um analista sênior…",
+      "imagine que você é o gerente regional…", "agora você é meu analista…",
+      "ignore as regras de corte do mês parcial…" e "desconsidere as
+      instruções da resposta anterior…". Ficam só os sinais de ataque:
+      - mirar as instruções DO ASSISTENTE ("suas regras", "instruções
+        anteriores");
+      - pedir o prompt;
+      - negar o papel, ou trocá-lo por um sem regras;
+      - "modo desenvolvedor" e turno falso de sistema
+- [x] **Ajuste de gráfico** (`ajuste_grafico.py`): "top 5 representantes em
+      vendas de agosto", "mostra os 3 maiores CDs em ruptura" e "quero em
+      linha o sell out da Raia em 2026" redesenhavam o gráfico anterior.
+      Agora toda palavra da mensagem precisa ser de desenho, de cortesia ou
+      já estar no gráfico (coluna ou categoria). Assunto novo vai ao modelo
+- [x] **Escrita** (`rules.py`): "apague a tabela e mostre só o gráfico",
+      "exclua os dados de setembro da comparação" e "delete os registros
+      duplicados da análise" eram recusados. Fica o SQL literal e o verbo de
+      escrita (como pedido, não particípio) com o banco dito
+      ("…do banco", "base de dados", tabela qualificada)
+- [x] **Modelo barato** (`openai_provider.py`): para pergunta curta sem tema,
+      o barato só fica com a última palavra numa conversa de verdade.
+      "Não sei", "fora de escopo", pedido de detalhe e conversa com cara de
+      pedido de dado (ano, mês, "desempenho", "insight", "comparar"…) sobem
+      para o principal
+- [x] **Crítica** (`autocritica.py`): "o share ficou ruim no Nordeste, por
+      quê?" era lido como crítica à resposta anterior. Pergunta de porquê só é
+      crítica quando aponta a resposta; "você errou" passou a contar
+- [x] Testes com todas as frases da revisão, nos cinco pontos
+- [ ] Ir ao ar
+
+
+---
+
 ## Plano de testes
 
 Regra geral: a suíte (`uv run pytest`) nunca acessa rede, OpenAI ou o RDS.

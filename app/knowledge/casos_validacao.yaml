@@ -512,6 +512,27 @@ casos:
       inteiro, e a fonte que ainda não chegou no mês atual sai dos dois lados. Conferido: 4.306
       (1–20/09) contra 4.716 (1–20/08), −8,7%; a resposta errada dizia −43,1%.
 
+  - id: X01-insight-desempenho-2026
+    grupo: cruzado
+    pergunta: Analisando o desempenho de 2026 da Ease Labs, o que você consegue tirar como insight?
+    esperado: answer_with_data
+    comparar_resultado: false
+    nota: >-
+      Conversa 45 de produção (2026-09-30). A regra de ajuda pegava "o que você consegue" no meio da
+      frase e devolvia a lista de temas sem chamar o modelo. Pergunta aberta pede panorama em 2 a 4
+      entregas (vendas, prescrição, mercado), comparando com o mesmo período de 2025, com os achados
+      no começo da resposta.
+
+  - id: X02-termo-em-ingles-payback
+    grupo: cruzado
+    pergunta: Qual o payback das visitas dos representantes em 2026?
+    esperado: [answer_with_data, unknown]
+    comparar_resultado: false
+    nota: >-
+      Termo em inglês é termo de trabalho. Payback pede custo e receita, que a base não tem: o certo é
+      dizer isso e entregar o que dá para medir (visitas e prescrição dos médicos visitados), nunca
+      estranhar a palavra nem devolver a lista de temas.
+
   - id: B43-seguimento-todas-as-fontes
     grupo: referencia
     antes:

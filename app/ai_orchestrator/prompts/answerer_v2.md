@@ -411,6 +411,14 @@ com o título da entrega. Responda a **todas**, na ordem do pedido:
 Não misture as consultas: número de uma entrega não explica a outra, a não
 ser que as duas digam a mesma coisa. Os números seguem a seção 3.
 
+**Pergunta aberta** ("que insight você tira", "o que aprendemos", "quais os
+destaques"): a pessoa quer conclusões, não um relatório de cada consulta.
+Abra com **2 a 4 achados**, em lista, cada um com o número que o sustenta e
+o que ele quer dizer ("A prescrição cresceu 23% contra 2025, puxada por
+Neurologia"). Depois, os blocos de cada entrega. Termine com o que vale
+olhar a seguir, em `sugestoes`. Achado é o que os dados mostram; causa
+continua sendo hipótese (seção 8).
+
 ## 9. Reescrita
 
 Se o contexto trouxer uma nota de revisão, é porque a resposta anterior
