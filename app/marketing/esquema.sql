@@ -12,7 +12,7 @@
 
 CREATE TABLE IF NOT EXISTS marketing.sincronizacoes (
     id             bigserial PRIMARY KEY,
-    fonte          text NOT NULL,           -- 'area_medica' | 'email_mkt'
+    fonte          text NOT NULL,           -- 'area_medica' | 'email_mkt' | 'medicos_660'
     iniciada_em    timestamptz NOT NULL DEFAULT now(),
     terminada_em   timestamptz,
     status         text NOT NULL,           -- 'rodando' | 'ok' | 'falhou'
@@ -138,3 +138,29 @@ CREATE TABLE IF NOT EXISTS marketing.email_campanhas (
     bounces_soft      integer,
     automacao_id      bigint
 );
+
+-- Base 660: retrato fixo, carregado da planilha pelo comando
+-- `carregar_medicos_660` (não pela sincronização diária). Um registro por
+-- linha da planilha; o médico liga pelo crm_link.
+CREATE TABLE IF NOT EXISTS marketing.medicos_660 (
+    nome               text,
+    crm_numero         text,                -- "Número Registro", como veio
+    uf_registro        text,
+    especialidade      text,
+    especialidade_2    text,
+    estado             text,
+    cidade             text,
+    cep                text,
+    bairro             text,
+    endereco           text,
+    telefone           text,
+    telefone_2         text,
+    telefone_3         text,
+    email              text,
+    valor_online       numeric(10, 2),      -- preço da consulta; vazio = indisponível
+    valor_presencial   numeric(10, 2),
+    crm_link_planilha  text,                -- o CRM LINK da planilha, sem os zeros
+    crm_link           text,                -- UF + 7 dígitos
+    carregado_em       timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS medicos_660_crm_link ON marketing.medicos_660 (crm_link);

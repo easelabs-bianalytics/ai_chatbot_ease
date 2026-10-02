@@ -254,3 +254,23 @@ def test_filtrar_schema_mantem_o_schema_de_cada_tabela():
     assert "cddd.pdvs" in filtrado
     assert "cddd.apres" not in filtrado
     assert "pbm" not in filtrado
+
+
+@pytest.mark.parametrize(
+    "pergunta",
+    [
+        "Evolução de PX Ease por canal nos últimos 12 meses",
+        "Quanto do PX vem do Digital + Orgânico?",
+        "Qual a Categoria PX dos prescritores de julho?",
+        "Quantos médicos da Base 660 prescreveram Ease?",
+    ],
+)
+def test_canal_do_medico_leva_marketing_e_prescricao(pergunta):
+    """O canal (Categoria PX) mora na seção de Marketing, e o PX na de
+    Prescrição: sem o Marketing, "PX Ease por canal" ia só com a prescrição,
+    sem a regra de prioridade do canal, e o modelo pedia a seção."""
+    secoes = escolher_secoes(pergunta)
+
+    assert "marketing" in secoes[:2]  # os dois primeiros vão completos (MAX_COMPLETAS)
+    if "px" in pergunta.lower() or "prescrev" in pergunta.lower():
+        assert "prescricao" in secoes[:2]

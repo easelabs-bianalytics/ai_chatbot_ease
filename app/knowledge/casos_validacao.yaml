@@ -428,6 +428,53 @@ casos:
     referencia: M07
     sql_deve_conter: ["email_listas_do_contato", "inscrito"]
 
+  - id: M08-px-ease-por-canal
+    grupo: referencia
+    pergunta: Qual a evolução de PX Ease por canal de junho a agosto de 2026?
+    esperado: answer_with_data
+    referencia: M08
+    parametros: {data_ini: "2026-06-01", data_fim: "2026-08-01"}
+    sql_deve_conter: ["rx_cadastro_mais_recente", "rx_cadastro_inativos", "area_medica_usuarios",
+                      "email_contatos", "medicos_660", "Digital + Orgânico", "EAS"]
+
+  - id: M09-mix-por-canal-com-mercado
+    grupo: referencia
+    pergunta: >-
+      Qual o peso de cada canal no PX de setembro de 2025 a agosto de 2026, com o PX do mercado e
+      o share da Ease em cada canal?
+    esperado: answer_with_data
+    referencia: M09
+    parametros: {data_ini: "2025-09-01", data_fim: "2026-08-01"}
+    sql_deve_conter: ["rx_cadastro_inativos", "medicos_660", "share"]
+
+  - id: M10-prescritores-digital-organico
+    grupo: referencia
+    pergunta: Quais médicos Digital + Orgânico prescreveram Ease em agosto de 2026?
+    esperado: answer_with_data
+    referencia: M10
+    parametros: {data_ini: "2026-08-01", data_fim: "2026-08-01"}
+    sql_deve_conter: ["Digital + Orgânico", "rx_cadastro_inativos", "EAS"]
+    comparar_resultado: false
+    nota: Lista longa (centenas de linhas); o que se confere é a consulta.
+
+  - id: M11-novos-prescritores-por-canal
+    grupo: referencia
+    pergunta: De onde vieram os novos prescritores da Ease entre junho e agosto de 2026, por canal?
+    esperado: answer_with_data
+    referencia: M11
+    parametros: {data_ini: "2026-06-01", data_fim: "2026-08-01"}
+    sql_deve_conter: ["MIN(", "rx_cadastro_inativos", "medicos_660"]
+
+  - id: M12-base-660-x-prescricao
+    grupo: referencia
+    pergunta: >-
+      Quantos médicos da Base 660 prescreveram Ease e cannabis de setembro de 2025 a agosto de
+      2026, e em que canal eles estão hoje?
+    esperado: answer_with_data
+    referencia: M12
+    parametros: {data_ini: "2025-09-01", data_fim: "2026-08-01"}
+    sql_deve_conter: ["medicos_660", "rx_cadastro_inativos"]
+
   - id: A19-px-extrato-laboratorio
     grupo: referencia
     pergunta: Quantas prescrições de Extrato cada laboratório teve no último MAT, com o share de PX?

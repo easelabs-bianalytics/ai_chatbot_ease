@@ -110,3 +110,24 @@ def test_role_de_escrita_nao_enxerga_o_negocio(escrita):
     with escrita.cursor() as cursor, pytest.raises(psycopg2.errors.InsufficientPrivilege):
         cursor.execute("SELECT 1 FROM audit.medico LIMIT 1")
     escrita.rollback()
+
+
+def test_base_660_grava_substitui_e_o_jarvis_le(escrita):
+    """A Base 660 vai para o mesmo schema, pela mesma role: carregar de novo
+    substitui, e o usuário de leitura do Jarvis enxerga a tabela."""
+    from datetime import datetime, timezone
+
+    from marketing.base_660 import COLUNAS, gravar_base_660
+    from marketing.sincronizar import preparar
+
+    preparar(escrita)
+    agora = datetime(2026, 10, 2, tzinfo=timezone.utc)
+    linha = {c: None for c in COLUNAS} | {"nome": "Dr. Mário", "crm_link": "PI0004896", "carregado_em": agora}
+    for _ in range(2):
+        resumo = gravar_base_660(escrita, [tuple(linha[c] for c in COLUNAS)])
+        escrita.commit()
+
+    assert resumo == {"medicos": 1, "com_crm_link": 1, "crm_links": 1}
+    with psycopg2.connect(LEITURA, connect_timeout=5) as leitura, leitura.cursor() as cursor:
+        cursor.execute("SELECT crm_link FROM marketing.medicos_660")
+        assert cursor.fetchall() == [("PI0004896",)]

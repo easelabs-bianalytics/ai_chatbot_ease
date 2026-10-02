@@ -2656,6 +2656,7 @@ ORDER BY 1 DESC, 3 DESC;
 | `cddd.utc` | Brick → cidade, UF e região | `cod_utc`, `desc_utc`, `cidade` (sem acento), `uf`, `regiao` |
 | `cddd.scd_ct_territorio` + `cddd.dim_ct` | CT (representante) do território, com e-mail | `cod_territorio`, `cod_setor`, `cod_ct`, `nome_abreviado_ct`, `email_ct`, `data_saida_territorio` |
 | `audit.rx_cadastro_mais_recente` | **Painel atual**: médicos atribuídos a cada setor | `crm_link`, `nome`, `setor` (4 dígitos), `setor_cliente` (território), `categoria`, `classificacao`, `potencial`, `frequencia`, `dias_sem_visita`, contatos |
+| `audit.rx_cadastro_inativos` | **Médicos que já saíram do painel** (histórico: o mesmo médico pode ter várias linhas) | `crm_link` (já no padrão), `nome`, `setor`, `dt_ativacao`, `dt_inativacao`, `dsc_primeira_especialidade`. Conte com `COUNT(DISTINCT crm_link)`. É o canal "Médicos Inativos" (seção 7.1) |
 | `audit.trade_cadastro_estabelecimento` | **PDVs visitados** pela força de vendas | `cnpj` (14 dígitos), `setor`, `nome_setor`, `nome_rede`, `nome_loja`, `cidade`, `uf`, `frequencia` |
 | `audit.rx_visitas` | **Histórico de visitas a MÉDICOS** | `crm_norm`, `nome`, `setor`, `setor_cliente`, `setor_ims` (nome curto do representante), `data_da_visita`, `visita_efetiva`, `tipo_visita`, `lista_de_motivo_de_nao_visita`, `comentarios` |
 | `audit.trade_visita` | **Histórico de visitas a PDVs** (farmácias), desde mai/2023 | `cnpj` (14 dígitos, texto), `data_da_visita` (date), `visita_efetiva` (**boolean**), `lista_de_motivo_de_nao_visita`, `setor`, `setor_cliente` (território, liga à `cddd.forca_vendas`), `setor_ims` (nome curto do representante), `nome_do_setor` (praça), `bandeira` |
@@ -3438,10 +3439,12 @@ ORDER BY s.mes;
 Gabarito (GR Gabriel Bastos, Ease, jun a ago/26): **0,78 · 0,76 · 0,81**, com share de PX de ~16% e
 share de sell out de ~12% no distrito.
 
-## 7. Marketing — Área Médica e Email MKT
+## 7. Marketing — Área Médica, Email MKT, Base 660 e o canal do médico
 
 Duas bases do Marketing, as duas com **o médico como usuário final**, no schema `marketing`. Não
-são consultadas na hora: uma sincronização diária, de madrugada, grava as duas aqui. **Toda resposta
+são consultadas na hora: uma sincronização diária, de madrugada, grava as duas aqui. A terceira,
+a Base 660, é um retrato fixo carregado de planilha. O **canal do médico** (Categoria PX, o
+Digital + Orgânico) junta as três com o painel da força de vendas — seção 7.1. **Toda resposta
 com `marketing.*` diz de quando é o dado**: traga na consulta a data da última carga que deu certo
 (`marketing.sincronizacoes`) e cite-a ("dados da Área Médica de 01/10, 05:00"). Se a última carga
 de uma fonte falhou, o dado é o da carga anterior — diga isso.
@@ -3461,6 +3464,7 @@ GROUP BY 1;
 | `marketing.email_contatos` | **Email MKT** (ActiveCampaign): a base de contatos do canal de e-mail — campanhas, newsletters, jornadas. Um registro por contato | `email`, `nome`, `criado_em` (entrada na base), `ultima_abertura`, `ultimo_clique`, `bounces_hard`, `crm_numero`, `uf_conselho`, **`crm_link`**, `profissao`, `especialidade`, `categoria`, `potencial`, `representante`, `ultima_visita`, `ja_prescreve_ease`, `ja_prescreve_cannabis`, `participa_mais_alivio`, `e_medico`, `inativo`, `conselho`, `campos` (jsonb com todos os campos, pelo título) |
 | `marketing.email_listas` / `marketing.email_listas_do_contato` | Listas (jornadas Conscientização, Consideração, Decisão e Fidelização, eventos, "Área Médica", "Prescritores 660"...) e quem está em cada uma | `lista_id`, `nome`; `contato_id`, `lista_id`, `status`, **`inscrito`**, `inscrito_em` |
 | `marketing.email_tags` / `marketing.email_tags_do_contato` | Tags de segmentação e engajamento ("é-médico", "Inativo", "Engajado", "Visita-Médica", material convertido, régua finalizada) | `tag_id`, `tag`; `contato_id`, `tag_id`, `aplicada_em` |
+| `marketing.medicos_660` | **Base 660**: médicos que o Marketing trabalha, de uma planilha (retrato fixo, sem atualização diária). Um registro por médico | `nome`, `crm_numero`, `uf_registro`, **`crm_link`**, `especialidade`, `especialidade_2`, `estado`, `cidade`, `telefone`, `email`, `valor_online`, `valor_presencial` |
 | `marketing.email_campanhas` | Campanhas enviadas, com os totais | `nome`, `enviada_em`, `enviados`, `aberturas_unicas`, `cliques_unicos`, `descadastros`, `bounces_hard` |
 
 **Regras e armadilhas:**
@@ -3636,4 +3640,206 @@ JOIN marketing.email_contatos e ON e.contato_id = lc.contato_id
 WHERE lc.inscrito AND (e.e_medico OR e.crm_link IS NOT NULL)
 GROUP BY 1
 ORDER BY 2 DESC;
+```
+
+### 7.1 Canal do médico (Categoria PX) e o Digital + Orgânico
+
+**Canal** (ou **Categoria PX**) diz por qual frente da casa cada médico chega à Ease. É a régua do
+Marketing para medir o **Digital + Orgânico**: o médico que prescreve sem ter passado por nenhuma
+base da casa — veio de campanha digital paga ou chegou sozinho. É o mesmo cálculo da coluna
+"Categoria PX" do Power BI, médico a médico, pelo `crm_link`, **nesta ordem de prioridade** (o
+primeiro que casar vale):
+
+| Ordem | Canal | O médico está em |
+|---|---|---|
+| 1 | `Médicos Visitados pela FV` | `audit.rx_cadastro_mais_recente` **das equipes 1, 2 e 4** — o painel atual dos representantes |
+| 2 | `Médicos Inativos` | `audit.rx_cadastro_inativos` — já esteve no painel de algum representante e saiu |
+| 3 | `Área Médica` | `marketing.area_medica_usuarios` |
+| 4 | `E-mail MKT` | `marketing.email_contatos` |
+| 5 | `Base 660` | `marketing.medicos_660` |
+| 6 | `Digital + Orgânico` | nenhuma das anteriores |
+
+**Toda consulta de canal parte do bloco `canal` das M08 a M12** (um canal por médico da
+auditoria), copiado como está: não mude a ordem e não troque `IN` por `JOIN` — o mesmo médico
+aparece várias vezes nas inativas e no painel, e o `JOIN` duplicaria o PX.
+
+**Regras e armadilhas:**
+
+- **"Visitados pela FV" é o painel das equipes 1, 2 e 4** (`equipe IN (1, 2, 4)`), a mesma regra
+  do dashboard do Marketing (2026-10-02). A equipe 5 (setor 1099) fica fora: médico só dela cai nos
+  canais seguintes. Esse filtro vale para o canal; as outras consultas de painel (seção 5) seguem
+  as regras delas.
+- **PX Ease é o padrão.** "PX por canal", "quanto vem do Digital", sem dizer de quem: PX Ease
+  (`p.cdglaboratorio = 'EAS'`). Só quando pedirem **mercado** ("mercado", "cannabis total", "todos
+  os laboratórios", "share") o filtro sai — e aí traga Ease e mercado lado a lado, com o share
+  (M09).
+- **O canal é o de hoje**, aplicado a todos os meses, como na coluna do Power BI: um médico que
+  entrou no painel em agosto conta como "Visitados pela FV" também em março. Numa evolução, diga
+  isso em uma frase ("canal pela base de hoje").
+- **Só há canal para médico da auditoria** (`audit.medico`): é o PX da auditoria que se divide por
+  canal. Médico de uma base do Marketing que não está na auditoria fica "fora da auditoria", o que
+  não é o mesmo que "não prescreve" (M12).
+- **"Digital + Orgânico" é o resto**, e inclui quem nunca prescreveu Ease. Para falar de
+  prescritores, filtre PX > 0.
+- **Médicos Inativos**: `audit.rx_cadastro_inativos` é o histórico de quem já saiu do painel, e o
+  mesmo médico aparece em várias linhas (uma por saída). O `crm_link` dela já vem no padrão
+  (UF + 7 dígitos). Para contar inativos, `COUNT(DISTINCT crm_link)`, nunca `COUNT(*)`. Quem saiu
+  e voltou ao painel é "Visitado pela FV", que vem antes na ordem.
+- **Base 660** (`marketing.medicos_660`): lista de médicos que o Marketing trabalha, carregada de
+  uma planilha — **retrato fixo**, não se atualiza sozinho. De quando é: M00
+  (`fonte = 'medicos_660'`). Tem especialidade, cidade, contato, endereço e o preço da consulta
+  (`valor_online`, `valor_presencial`; vazio é indisponível).
+- Como o usuário chama: canal, Categoria PX, Digital, orgânico, pago, "médicos que vêm do
+  marketing digital", "quem chegou sem contato da casa".
+
+*"Evolução de PX Ease por canal"* / *"quanto do PX vem do Digital + Orgânico, mês a mês?"*
+
+```sql
+-- M08 · Evolução de PX por canal, mês a mês (PX Ease; mercado: tire o filtro do laboratório)
+WITH canal AS (
+  SELECT m.cdgmedico, m.crm AS crm_link,
+         CASE WHEN m.crm IN (SELECT crm_link FROM audit.rx_cadastro_mais_recente WHERE equipe IN (1, 2, 4)) THEN 'Médicos Visitados pela FV'
+              WHEN m.crm IN (SELECT crm_link FROM audit.rx_cadastro_inativos) THEN 'Médicos Inativos'
+              WHEN m.crm IN (SELECT crm_link FROM marketing.area_medica_usuarios WHERE crm_link IS NOT NULL) THEN 'Área Médica'
+              WHEN m.crm IN (SELECT crm_link FROM marketing.email_contatos WHERE crm_link IS NOT NULL) THEN 'E-mail MKT'
+              WHEN m.crm IN (SELECT crm_link FROM marketing.medicos_660 WHERE crm_link IS NOT NULL) THEN 'Base 660'
+              ELSE 'Digital + Orgânico' END AS canal
+  FROM audit.medico m
+),
+px AS (
+  SELECT p.data AS competencia, c.canal, SUM(p.px1) AS px
+  FROM audit.prescricao p
+  JOIN canal c ON c.cdgmedico = p.cdgmedico
+  WHERE p.cdglaboratorio = 'EAS'
+    AND p.data BETWEEN :data_ini AND :data_fim
+  GROUP BY 1, 2
+)
+SELECT competencia, canal, px,
+       ROUND((100.0 * px / SUM(px) OVER (PARTITION BY competencia))::numeric, 1) AS pct_do_mes
+FROM px
+ORDER BY competencia, px DESC;
+-- Ago/2026: Visitados pela FV 3.123 (58,5%), Digital + Orgânico 1.631 (30,5%), Inativos 487 (9,1%).
+```
+
+*"Qual o peso de cada canal no PX do ano?"* / *"share da Ease em cada canal"*
+
+```sql
+-- M09 · Mix por canal num período: prescritores, PX Ease, PX mercado e share
+WITH canal AS (
+  SELECT m.cdgmedico, m.crm AS crm_link,
+         CASE WHEN m.crm IN (SELECT crm_link FROM audit.rx_cadastro_mais_recente WHERE equipe IN (1, 2, 4)) THEN 'Médicos Visitados pela FV'
+              WHEN m.crm IN (SELECT crm_link FROM audit.rx_cadastro_inativos) THEN 'Médicos Inativos'
+              WHEN m.crm IN (SELECT crm_link FROM marketing.area_medica_usuarios WHERE crm_link IS NOT NULL) THEN 'Área Médica'
+              WHEN m.crm IN (SELECT crm_link FROM marketing.email_contatos WHERE crm_link IS NOT NULL) THEN 'E-mail MKT'
+              WHEN m.crm IN (SELECT crm_link FROM marketing.medicos_660 WHERE crm_link IS NOT NULL) THEN 'Base 660'
+              ELSE 'Digital + Orgânico' END AS canal
+  FROM audit.medico m
+)
+SELECT c.canal,
+       COUNT(DISTINCT p.cdgmedico) FILTER (WHERE p.cdglaboratorio = 'EAS' AND p.px1 > 0) AS prescritores_ease,
+       SUM(p.px1) FILTER (WHERE p.cdglaboratorio = 'EAS') AS px_ease,
+       SUM(p.px1) AS px_mercado,
+       ROUND((100.0 * SUM(p.px1) FILTER (WHERE p.cdglaboratorio = 'EAS')
+              / NULLIF(SUM(p.px1), 0))::numeric, 1) AS share_ease_pct,
+       ROUND((100.0 * SUM(p.px1) FILTER (WHERE p.cdglaboratorio = 'EAS')
+              / SUM(SUM(p.px1) FILTER (WHERE p.cdglaboratorio = 'EAS')) OVER ())::numeric, 1) AS pct_do_px_ease
+FROM audit.prescricao p
+JOIN canal c ON c.cdgmedico = p.cdgmedico
+WHERE p.data BETWEEN :data_ini AND :data_fim
+GROUP BY 1
+ORDER BY px_ease DESC;
+```
+
+*"Quais médicos Digital + Orgânico prescreveram Ease em agosto?"*
+
+```sql
+-- M10 · Prescritores de um canal num período (lista: com muitas linhas, vai em Excel)
+WITH canal AS (
+  SELECT m.cdgmedico, m.crm AS crm_link,
+         CASE WHEN m.crm IN (SELECT crm_link FROM audit.rx_cadastro_mais_recente WHERE equipe IN (1, 2, 4)) THEN 'Médicos Visitados pela FV'
+              WHEN m.crm IN (SELECT crm_link FROM audit.rx_cadastro_inativos) THEN 'Médicos Inativos'
+              WHEN m.crm IN (SELECT crm_link FROM marketing.area_medica_usuarios WHERE crm_link IS NOT NULL) THEN 'Área Médica'
+              WHEN m.crm IN (SELECT crm_link FROM marketing.email_contatos WHERE crm_link IS NOT NULL) THEN 'E-mail MKT'
+              WHEN m.crm IN (SELECT crm_link FROM marketing.medicos_660 WHERE crm_link IS NOT NULL) THEN 'Base 660'
+              ELSE 'Digital + Orgânico' END AS canal
+  FROM audit.medico m
+)
+SELECT m.crm AS crm_link, m.nome, m.espec1 AS especialidade, m.cidade, SUM(p.px1) AS px_ease
+FROM audit.prescricao p
+JOIN canal c        ON c.cdgmedico = p.cdgmedico
+JOIN audit.medico m ON m.cdgmedico = p.cdgmedico
+WHERE c.canal = 'Digital + Orgânico'
+  AND p.cdglaboratorio = 'EAS'
+  AND p.data BETWEEN :data_ini AND :data_fim
+GROUP BY 1, 2, 3, 4
+HAVING SUM(p.px1) > 0
+ORDER BY px_ease DESC;
+```
+
+*"De onde vêm os novos prescritores da Ease?"*
+
+```sql
+-- M11 · Novos prescritores Ease por canal: o mês da primeira PX Ease de cada médico
+WITH canal AS (
+  SELECT m.cdgmedico, m.crm AS crm_link,
+         CASE WHEN m.crm IN (SELECT crm_link FROM audit.rx_cadastro_mais_recente WHERE equipe IN (1, 2, 4)) THEN 'Médicos Visitados pela FV'
+              WHEN m.crm IN (SELECT crm_link FROM audit.rx_cadastro_inativos) THEN 'Médicos Inativos'
+              WHEN m.crm IN (SELECT crm_link FROM marketing.area_medica_usuarios WHERE crm_link IS NOT NULL) THEN 'Área Médica'
+              WHEN m.crm IN (SELECT crm_link FROM marketing.email_contatos WHERE crm_link IS NOT NULL) THEN 'E-mail MKT'
+              WHEN m.crm IN (SELECT crm_link FROM marketing.medicos_660 WHERE crm_link IS NOT NULL) THEN 'Base 660'
+              ELSE 'Digital + Orgânico' END AS canal
+  FROM audit.medico m
+),
+primeira AS (
+  SELECT p.cdgmedico, MIN(p.data) AS primeiro_mes
+  FROM audit.prescricao p
+  WHERE p.cdglaboratorio = 'EAS' AND p.px1 > 0
+  GROUP BY 1
+)
+SELECT pr.primeiro_mes, c.canal, COUNT(*) AS novos_prescritores
+FROM primeira pr
+JOIN canal c ON c.cdgmedico = pr.cdgmedico
+WHERE pr.primeiro_mes BETWEEN :data_ini AND :data_fim
+GROUP BY 1, 2
+ORDER BY 1, 3 DESC;
+-- A auditoria começa em abr/2023: antes disso não há "primeira PX", então novo prescritor só é
+-- confiável de meados de 2023 em diante. Ago/2026: 757 dos 895 novos prescritores Ease foram
+-- Digital + Orgânico.
+```
+
+*"Quantos médicos da Base 660 prescrevem? Em que canal eles estão?"*
+
+```sql
+-- M12 · Base 660 × prescrição num período, pelo canal de hoje
+WITH canal AS (
+  SELECT m.cdgmedico, m.crm AS crm_link,
+         CASE WHEN m.crm IN (SELECT crm_link FROM audit.rx_cadastro_mais_recente WHERE equipe IN (1, 2, 4)) THEN 'Médicos Visitados pela FV'
+              WHEN m.crm IN (SELECT crm_link FROM audit.rx_cadastro_inativos) THEN 'Médicos Inativos'
+              WHEN m.crm IN (SELECT crm_link FROM marketing.area_medica_usuarios WHERE crm_link IS NOT NULL) THEN 'Área Médica'
+              WHEN m.crm IN (SELECT crm_link FROM marketing.email_contatos WHERE crm_link IS NOT NULL) THEN 'E-mail MKT'
+              WHEN m.crm IN (SELECT crm_link FROM marketing.medicos_660 WHERE crm_link IS NOT NULL) THEN 'Base 660'
+              ELSE 'Digital + Orgânico' END AS canal
+  FROM audit.medico m
+),
+base AS (SELECT DISTINCT crm_link FROM marketing.medicos_660 WHERE crm_link IS NOT NULL),
+px AS (
+  SELECT p.cdgmedico,
+         SUM(p.px1) FILTER (WHERE p.cdglaboratorio = 'EAS') AS px_ease,
+         SUM(p.px1) AS px_mercado
+  FROM audit.prescricao p
+  WHERE p.data BETWEEN :data_ini AND :data_fim
+  GROUP BY 1
+)
+SELECT COALESCE(c.canal, 'Fora da auditoria') AS canal_hoje,
+       COUNT(*) AS medicos_660,
+       COUNT(*) FILTER (WHERE x.px_ease > 0) AS prescreveram_ease,
+       COUNT(*) FILTER (WHERE x.px_mercado > 0) AS prescreveram_cannabis,
+       SUM(x.px_ease) AS px_ease, SUM(x.px_mercado) AS px_mercado
+FROM base b
+LEFT JOIN canal c ON c.crm_link = b.crm_link
+LEFT JOIN px x    ON x.cdgmedico = c.cdgmedico
+GROUP BY 1
+ORDER BY 2 DESC;
+-- Médico da 660 que também está no painel conta como "Visitados pela FV" (a ordem do canal):
+-- "Base 660" aqui é quem só está na 660.
 ```

@@ -2014,6 +2014,36 @@ US$ 0,30 a pergunta, agora US$ 0,06. Pedido de "base completa" / "adicione
 uma coluna" passa a ser planilha (`excel`). E a pergunta "quais estão" leva a
 lista além do ranking.
 
+### Terceira rodada — canal do médico e o Digital + Orgânico (2026-10-02)
+- [x] **Base 660** em `marketing.medicos_660` (comando `carregar_medicos_660`,
+      sem agendamento): 4.332 médicos, 4.331 com CRM LINK (um veio com UF "UF").
+      2.896 estão na auditoria.
+- [x] **`audit.rx_cadastro_inativos`** conferida: 13.410 linhas, 11.896 CRMs,
+      `crm_link` já no padrão (igual a `cod_reg` + `uf_reg`); 1.008 deles
+      voltaram ao painel. O `bi_chatbot_ro` já lê.
+- [x] **Seção 7.1** do documento de referência: a regra do canal (Categoria PX
+      do Power BI) e as consultas M08 (evolução por canal), M09 (mix com
+      mercado e share), M10 (lista de um canal), M11 (novos prescritores por
+      canal) e M12 (Base 660 × prescrição). Gabaritos M08–M12 rodam no RDS
+      de 0,1 a 1,1 s; a M10 só confere a consulta (lista longa).
+- [x] Snapshot do schema regerado; roteamento leva Marketing + Prescrição para
+      "PX por canal".
+- Ago/2026, PX Ease: Visitados pela FV 3.123 (58,5%), Digital + Orgânico 1.631
+  (30,5%), Inativos 487 (9,1%), Área Médica 61, Base 660 28, E-mail MKT 13.
+  Dos 895 novos prescritores Ease do mês, 757 são Digital + Orgânico.
+- [x] **Conferência com o dashboard do Marketing** (ago/26: FV 3.038, Digital
+      1.641, Inativos 525, Área Médica 94, 660 28, E-mail 18). A regra do dash,
+      reproduzida no banco, bate com ele em tudo menos 1 PX do E-mail MKT. As
+      diferenças eram duas:
+      (1) o dash contava como FV só a equipe 1 com categoria M → decidido:
+      **equipes 1, 2 e 4**, no Jarvis e no dash;
+      (2) o dash juntava UF + CRM como vieram: perdia o CREMERJ com 52 (4 PX),
+      casava CRO de dentista com CRM de médico (4 PX) e perdia a UF escrita
+      dentro do CRM (1 PX) → decidido: o dash adota a normalização do Jarvis
+      (funções `fnCrmLink` e `fnConselho` em M). Efeito colateral aceito: um
+      radiologista cadastrado na Área Médica como "Dentista" (1 PX) sai da
+      Área Médica.
+
 ---
 
 ### "Insight" que virou lista de temas (2026-09-30, conversa 45)

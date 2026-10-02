@@ -101,6 +101,39 @@ o documento inteiro — US$ 0,30 a pergunta. Agora vai só o tema pedido, e um
 teto por pergunta (`AI_MAX_COST_PER_QUESTION`) corta as chamadas opcionais.
 "Força de Vendas" também deixou de pontuar para o Sell Out no roteamento.
 
+### 8. Canal do médico (Categoria PX) e a Base 660 (2026-10-02)
+O Marketing mede o **Digital + Orgânico** — o médico que prescreve sem ter
+passado por nenhuma base da casa — pela coluna "Categoria PX" do Power BI:
+cada médico da auditoria cai no primeiro canal que casar pelo `crm_link`, na
+ordem Visitados pela FV (`audit.rx_cadastro_mais_recente`), Inativos
+(`audit.rx_cadastro_inativos`), Área Médica, E-mail MKT, Base 660, e o resto
+é Digital + Orgânico.
+
+- **O canal é SQL no documento de referência (seção 7.1, M08 a M12), não
+  uma view.** Uma view no `marketing` precisaria ler o `audit`, que a role de
+  escrita não enxerga, e ficaria fora do documento que o time de BI mantém. O
+  bloco `canal` vai inteiro em cada consulta, e não referenciado: é o que o
+  modelo copia e o que o gabarito executa.
+- **"Visitados pela FV" é o painel das equipes 1, 2 e 4**, decidido com o
+  dashboard do Marketing (que filtrava só a equipe 1). O dash passa a usar a
+  normalização de CRM do Jarvis, em M: com UF + CRM como vieram, ele perdia o
+  CREMERJ com 52, casava CRO de dentista com CRM de médico e perdia a UF
+  escrita dentro do CRM.
+- **`IN`, não `JOIN`**: o médico se repete nas inativas (uma linha por
+  saída) e no painel, e o `JOIN` duplicaria o PX.
+- **O canal é o de hoje**, aplicado a todos os meses, como a coluna
+  calculada do Power BI.
+- **Base 660** é uma planilha, sem API: entra em `marketing.medicos_660` por
+  `manage.py carregar_medicos_660 <xlsx>`, sem agendamento, e a carga fica em
+  `sincronizacoes` (`fonte = 'medicos_660'`). O CRM LINK da planilha vem sem
+  zeros (`PI4896`) e é normalizado pela mesma função das outras bases
+  (`PI0004896`); o original fica em `crm_link_planilha`. As colunas de presença
+  da planilha (Área Médica, Email MKT, painel, já prescreveu) não são
+  carregadas: eram o retrato do dia, e o Jarvis cruza isso na hora.
+- Roteamento: "canal", "digital", "orgânico", "Categoria PX", "Base 660" e
+  "médicos inativos" pontuam para o Marketing, para "PX Ease por canal" levar
+  Marketing e Prescrição completos.
+
 ## O que foi considerado e ficou de fora
 - **Consultar as APIs na hora** (como a planilha anexada, ADR-0031): lento
   para o Email MKT e sem como fazer JOIN com o BI no banco.

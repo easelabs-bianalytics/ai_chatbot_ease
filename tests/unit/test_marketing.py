@@ -292,3 +292,72 @@ def test_forca_de_vendas_nao_e_sell_out():
     Marketing ia como resumo e o modelo pedia o documento inteiro."""
     temas = escolher_secoes("Pegue os médicos do painel da Força de Vendas e veja quais estão na Área Médica")
     assert "sell_out" not in temas and {"forca_vendas", "marketing"} <= set(temas)
+
+
+# ---------------------------------------------------------------- Base 660
+
+from decimal import Decimal  # noqa: E402
+
+from marketing.base_660 import COLUNAS as COLUNAS_660  # noqa: E402
+from marketing.base_660 import COLUNAS_DA_PLANILHA, linhas_da_planilha  # noqa: E402
+
+CABECALHO_660 = (*COLUNAS_DA_PLANILHA, "Presença Área Médica", "Está no Painel FV?")
+
+
+def _linha_660(nome, numero, uf, link, online=350, presencial="Indisponível", email="-"):
+    valores = {"Nome": nome, "Número Registro": numero, "UF Registro": uf, "CRM LINK": link,
+               "Valor Online": online, "Valor Presencial": presencial, "E-Mail": email}
+    return tuple(valores.get(titulo, "-") for titulo in CABECALHO_660)
+
+
+def _registro_660(linha):
+    return dict(zip(COLUNAS_660, linha))
+
+
+def test_base_660_normaliza_o_crm_link_da_planilha():
+    """A planilha traz o CRM LINK sem os zeros (`PI4896`); o BI usa UF + 7
+    dígitos (`PI0004896`). Sem normalizar, nenhum médico da 660 casaria com
+    a auditoria — e todos cairiam no "Digital + Orgânico"."""
+    [linha] = linhas_da_planilha([CABECALHO_660, _linha_660("Dr. Mário", 4896, "PI", "PI4896")], AGORA)
+    registro = _registro_660(linha)
+
+    assert registro["crm_link"] == "PI0004896"
+    assert registro["crm_link_planilha"] == "PI4896"
+
+
+def test_base_660_sem_uf_valida_fica_sem_crm_link():
+    """Caso real da planilha: UF "UF". Sem UF não há CRM LINK — o número
+    solto não identifica médico."""
+    [linha] = linhas_da_planilha([CABECALHO_660, _linha_660("Dra. Cintia", 65260, "UF", "UF65260")], AGORA)
+
+    assert _registro_660(linha)["crm_link"] is None
+
+
+def test_base_660_traço_e_indisponivel_viram_vazio():
+    [linha] = linhas_da_planilha([CABECALHO_660, _linha_660("Dr. A", 1, "SP", "SP1")], AGORA)
+    registro = _registro_660(linha)
+
+    assert registro["valor_online"] == Decimal("350")
+    assert registro["valor_presencial"] is None
+    assert registro["email"] is None
+    assert registro["especialidade_2"] is None
+
+
+def test_base_660_nao_carrega_as_colunas_de_presenca():
+    """As colunas de presença eram o retrato do dia da planilha; o Jarvis
+    cruza isso na hora, com o dado de hoje."""
+    assert not any("presenca" in c or "painel" in c for c in COLUNAS_660)
+
+
+def test_base_660_sem_coluna_obrigatoria_falha_antes_de_gravar():
+    cabecalho = tuple(t for t in CABECALHO_660 if t != "UF Registro")
+
+    with pytest.raises(ValueError, match="UF Registro"):
+        linhas_da_planilha([cabecalho, ("x",) * len(cabecalho)], AGORA)
+
+
+def test_base_660_ignora_linha_vazia():
+    linhas = linhas_da_planilha([CABECALHO_660, (None,) * len(CABECALHO_660),
+                                 _linha_660("Dr. A", 1, "SP", "SP1")], AGORA)
+
+    assert len(linhas) == 1

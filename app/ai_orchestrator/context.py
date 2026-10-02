@@ -85,7 +85,11 @@ _TERMOS = {
         2: ("area medica", "email marketing", "e-mail marketing", "email mkt", "e-mail mkt", "activecampaign",
             "active campaign", "newsletter", "campanha de email", "campanha de e-mail", "campanhas de e-mail",
             "campanhas de email", "disparo", "jornada", "opt-in", "optin", "descadastr", "taxa de abertura",
-            "taxa de clique"),
+            "taxa de clique",
+            # O canal do médico (Categoria PX): "PX Ease por canal" pontua
+            # "px" na prescrição, e o canal só está aqui.
+            "canal", "digital", "organico", "categoria px", "base 660", "medicos 660", " 660 ",
+            "medicos inativos"),
         1: ("marketing", "cadastrad", "cadastro", "login", "acessos", "abertura", "clique", "lista", "tag "),
     },
 }
