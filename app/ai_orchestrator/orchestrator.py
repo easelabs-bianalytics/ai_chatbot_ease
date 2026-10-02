@@ -2367,6 +2367,15 @@ def _ajustar_grafico(message) -> _Decisao | None:
         # Trocar o desenho de uma especificação Vega-Lite é reescrevê-la:
         # isso é com a IA, que conhece os campos.
         return None
+    colunas_do_grafico = list(dados.get("columns") or ())
+    vocabulario = ajuste_grafico.vocabulario_do_grafico(
+        colunas_do_grafico, dados.get("rows") or (),
+        [c for c in (grafico.get("x"), grafico.get("grupo")) if c],
+    )
+    if not ajuste_grafico.fala_so_do_desenho(message.content, vocabulario):
+        # Tem assunto novo ("top 5 representantes em vendas de agosto"): é
+        # pergunta, e quem responde é a IA com uma consulta (2026-10-02).
+        return None
 
     if ajuste.get("separar") is False and not grafico.get("separar") and len(ajuste) == 1:
         # "Juntar" um gráfico que já está junto não é ajuste de desenho: é

@@ -15,10 +15,12 @@ reaproveitam o prefixo em cache, que custa um décimo.
 
 import base64
 import json
-from dataclasses import replace
 import logging
 import os
+import re
 import time
+import unicodedata
+from dataclasses import replace
 from datetime import date
 
 from pydantic import BaseModel, Field
@@ -99,6 +101,19 @@ MAX_TOKENS_PLANO = 8000
 # pergunta sobe para o principal, que é quem escreve SQL.
 MAX_LETRAS_CONVERSA_BARATA = 120
 _INTENCOES_QUE_SOBEM = frozenset({Plan.Intent.ANSWER_WITH_DATA, Plan.Intent.INVESTIGATE})
+# O modelo barato só fica com a última palavra quando é conversa de verdade.
+# "Não sei", "fora de escopo" e "de qual período?" sobem: quem decide que uma
+# pergunta sem tema reconhecido não tem resposta é o modelo principal, que lê
+# o documento (2026-10-02). E conversa que tem cara de pedido de dado — ano,
+# mês, "desempenho", "insight", "comparar" — também sobe: "o que você tira
+# como insight de 2026?" respondido como bate-papo é a pergunta perdida.
+_INTENCOES_QUE_SOBEM = _INTENCOES_QUE_SOBEM | {Plan.Intent.CLARIFY, Plan.Intent.UNKNOWN, Plan.Intent.OUT_OF_SCOPE}
+_CARA_DE_DADO = re.compile(
+    r"\b(?:20\d\d|jan\w*|fev\w*|mar(?:co|\b)|abr\w*|mai(?:o|\b)|jun\w*|jul\w*|ago\w*|set(?:embro|\b)|"
+    r"out(?:ubro|\b)|nov\w*|dez\w*|desempenho|analis\w*|insights?|aprendizad\w*|tendenc\w*|panorama|"
+    r"destaques?|compar\w*|cresc\w*|queda|cai\w*|subi\w*|evolu\w*|resultado\w*|indicador\w*|kpis?|metas?|"
+    r"ranking|top|vend\w*|prescri\w*|share|estoque|ruptura|faturamento|unidades|px)\b"
+)
 # O limite conta também o raciocínio. Com 2000, "o que é IC? como está o IC
 # da Ease em 2026? crie uma visualização" saiu cortado (2026-09-25): definir,
 # analisar oito meses e desenhar o gráfico não cabe. Só se paga o que é usado.
@@ -298,6 +313,11 @@ def _planilha_devolvida(request) -> str:
         "seguro preencher, não peça para refazer e não fale em \"Baixar Excel\". Se houver alerta "
         "acima, diga-o. O sistema acrescenta no fim a lista do que ficou em branco: não a repita."
     )
+
+
+def _sem_acento_minusculo(texto: str) -> str:
+    sem_acento = unicodedata.normalize("NFD", (texto or "").lower())
+    return "".join(c for c in sem_acento if unicodedata.category(c) != "Mn")
 
 
 def _entendimento_em_texto(request) -> str:
@@ -743,7 +763,10 @@ class OpenAIProvider(AIProvider):
         intent = (conteudo.intent or "").strip()
         if intent not in _INTENCOES:
             raise AIProviderError(f"intenção desconhecida devolvida pelo modelo: {intent!r}")
-        if conversa_curta and intent in _INTENCOES_QUE_SOBEM:
+        sobe = intent in _INTENCOES_QUE_SOBEM or (
+            intent == Plan.Intent.CONVERSATION and _CARA_DE_DADO.search(_sem_acento_minusculo(request.question))
+        )
+        if conversa_curta and sobe:
             principal = self.plan(replace(request, sem_atalho=True))
             return replace(principal, tentativas=(usage, *principal.tentativas))
 

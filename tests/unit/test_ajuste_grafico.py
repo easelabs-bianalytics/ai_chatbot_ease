@@ -145,3 +145,45 @@ def test_pedido_so_visual(mensagem):
 )
 def test_pedido_com_dado_nao_e_so_visual(mensagem):
     assert not pedido_so_visual(mensagem)
+
+
+
+# --- 2026-10-02: ajuste só quando a mensagem fala do desenho ---------------
+
+from ai_orchestrator.ajuste_grafico import fala_so_do_desenho, vocabulario_do_grafico  # noqa: E402
+
+_REDES = vocabulario_do_grafico(["rede", "unidades"], [["Pague Menos", 10], ["Raia", 5]], ["rede"])
+_CATEGORIAS = vocabulario_do_grafico(["competencia", "categoria", "px"], [["2026-01-01", 1, 520], ["2026-01-01", 3, 221]],
+                                     ["competencia", "categoria"])
+
+
+@pytest.mark.parametrize(
+    "mensagem",
+    [
+        "top 5 representantes em vendas de agosto",
+        "mostra os 3 maiores CDs em ruptura",
+        "barras horizontais com as 10 maiores redes de 2026",
+        "quero em linha o sell out da Raia em 2026",
+    ],
+)
+def test_corte_ou_tipo_com_assunto_novo_e_pergunta(mensagem):
+    """Tinham cara de ajuste (corte, tipo) e traziam assunto novo — mês,
+    ano, outra métrica — e redesenhavam o gráfico antigo."""
+    assert not fala_so_do_desenho(mensagem, _REDES)
+
+
+@pytest.mark.parametrize(
+    "mensagem,vocabulario",
+    [
+        ("muda para barras", _REDES),
+        ("só os 5 primeiros", _REDES),
+        ("top 10 redes", _REDES),
+        ("barras horizontais com as 10 maiores redes", _REDES),
+        ("O gráfico não ficou bom! eu quero ver CAT 1 e CAT 3 de forma separada", _CATEGORIAS),
+        ("junta tudo no mesmo gráfico", _CATEGORIAS),
+    ],
+)
+def test_pedido_so_de_desenho_continua_ajuste(mensagem, vocabulario):
+    """Palavra que já está no gráfico (coluna, categoria) não é assunto novo:
+    "CAT 1 e CAT 3" é a categoria da tela."""
+    assert fala_so_do_desenho(mensagem, vocabulario)

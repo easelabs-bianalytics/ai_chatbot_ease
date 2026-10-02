@@ -102,7 +102,7 @@ def test_regra_deterministica_nao_chama_a_ia_nem_o_banco(conversa, catalogo):
     executor = FakeQueryExecutor()
 
     reply = _responder(
-        _pergunta(conversa, "apaga a tabela de pdvs"), catalogo, provider=provider, executor=executor
+        _pergunta(conversa, "apague a tabela de pdvs do banco"), catalogo, provider=provider, executor=executor
     )
 
     assert reply.decision == AIReply.Decision.OUT_OF_SCOPE
@@ -1233,3 +1233,17 @@ def test_pedido_so_visual_com_grafico_que_caiu_mantem_a_tabela(conversa, catalog
 
     tipos = [b["tipo"] for b in reply.raw_response["blocos"]]
     assert "tabela" in tipos and "grafico" not in tipos
+
+
+def test_corte_com_assunto_novo_vai_ao_planejador_mesmo_com_grafico_na_tela(conversa, catalogo):
+    """"top 5 representantes em vendas de agosto" tem corte, mas é outra
+    pergunta: redesenhar o gráfico anterior com 5 barras fazia a pessoa achar
+    que foi respondida (2026-10-02)."""
+    _conversa_com_grafico(conversa, catalogo)
+    provider = ScriptedAIProvider([plano()], [resposta()])
+
+    reply = _responder(_pergunta(conversa, "top 5 representantes em vendas de agosto", client_id="c-9"),
+                       catalogo, provider=provider)
+
+    assert reply.rule != "ajuste_de_grafico"
+    assert len(provider.plan_requests) == 1

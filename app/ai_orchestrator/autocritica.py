@@ -87,7 +87,7 @@ MAX_LETRAS_DA_CRITICA = 240
 
 _CRITICA = re.compile(
     r"\b(?:feio|feia|horrivel|pessim[oa]|ruim|mal feito|poluid[oa]|ilegive(?:l|is)|sobrepost\w*"
-    r"|errad[oa]s?|incorret[oa]s?|nao (?:ficou|gostei|e isso|era isso|esta certo|bate|funcionou"
+    r"|errad[oa]s?|err(?:ou|ei|aram)|incorret[oa]s?|nao (?:ficou|gostei|e isso|era isso|esta certo|bate|funcionou"
     r"|apareceu|veio|fez|faz sentido|ta bom|esta bom)|faltou|esqueceu"
     r"|corrij\w*|corrig\w*|consert\w*|arrum\w*|refa(?:ca|z|zer)|melhore|melhora (?:isso|o|a|esse|essa))\b"
 )
@@ -98,10 +98,24 @@ def _normalizar(texto: str) -> str:
     return " ".join("".join(c for c in sem_acento if unicodedata.category(c) != "Mn").split())
 
 
+# "O share ficou ruim no Nordeste, por quê?" é pergunta sobre o negócio, não
+# sobre a resposta (2026-10-02). Pergunta de porquê só é crítica quando aponta
+# a resposta do Jarvis.
+_PORQUE = re.compile(r"\b(?:por que|porque|por qual motivo|o que explica|qual (?:a|o) (?:causa|motivo))\b")
+_APONTA_A_RESPOSTA = re.compile(
+    r"\b(?:voce|vc|sua resposta|a resposta|resposta anterior|o grafico|a tabela|o visual|a consulta|"
+    r"esse numero|esses numeros|isso|esse|essa)\b"   # "esta" sem acento é o verbo "está"
+)
+
+
 def e_critica(mensagem: str) -> bool:
     """A mensagem reclama da resposta anterior ou pede que ela seja corrigida."""
     texto = _normalizar(mensagem)
-    return bool(texto) and len(texto) <= MAX_LETRAS_DA_CRITICA and bool(_CRITICA.search(texto))
+    if not texto or len(texto) > MAX_LETRAS_DA_CRITICA or not _CRITICA.search(texto):
+        return False
+    if _PORQUE.search(texto) and not _APONTA_A_RESPOSTA.search(texto):
+        return False
+    return True
 
 
 NOTA_DA_CRITICA = (

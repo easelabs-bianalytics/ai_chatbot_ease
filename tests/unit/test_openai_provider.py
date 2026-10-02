@@ -132,6 +132,29 @@ def test_conversa_curta_que_era_dado_sobe_para_o_principal(catalogo):
     assert [u.model for u in plano.tentativas] == ["gpt-5.6-luna"]
 
 
+@pytest.mark.parametrize("intent", ["clarify", "unknown", "out_of_scope"])
+def test_barato_que_nao_responde_passa_a_vez_ao_principal(catalogo, intent):
+    """Quem decide que uma pergunta sem tema reconhecido não tem resposta, ou
+    precisa de detalhe, é o modelo principal, que lê o documento
+    (2026-10-02)."""
+    provider = _provider(catalogo, [_plano(intent=intent, sql=""), _plano()])
+
+    plano = provider.plan(PlanRequest(question="e a Raia, como está?"))
+
+    assert [c["model"] for c in provider._client.chamadas] == ["gpt-5.6-luna", "gpt-5.6-terra"]
+    assert plano.intent == Plan.Intent.ANSWER_WITH_DATA
+
+
+def test_conversa_com_cara_de_dado_sobe(catalogo):
+    """A pergunta do Paulo (conversa 45), sem a regra de ajuda no caminho,
+    caía no barato. Respondida como bate-papo, é a pergunta perdida."""
+    provider = _provider(catalogo, [_plano(intent="conversation", sql="", user_message="Posso ajudar!"), _plano()])
+
+    provider.plan(PlanRequest(question="O que você tira como insight do desempenho de 2026?"))
+
+    assert [c["model"] for c in provider._client.chamadas] == ["gpt-5.6-luna", "gpt-5.6-terra"]
+
+
 def test_pergunta_com_tema_vai_direto_ao_principal(catalogo):
     provider = _provider(catalogo, [_plano()])
 

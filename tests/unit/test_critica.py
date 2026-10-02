@@ -115,3 +115,20 @@ def test_critica_sem_resposta_anterior_com_dado_segue_normal(conversa, catalogo)
 
     assert len(provider.plan_requests) == 1
     assert provider.plan_requests[0].autocritica_note == ""
+
+
+
+@pytest.mark.parametrize(
+    "mensagem,esperado",
+    [
+        ("O share ficou ruim no Nordeste, por quê?", False),
+        ("por que a venda está ruim em setembro?", False),
+        ("por que você errou isso?", True),
+        ("o gráfico está errado, por quê?", True),
+    ],
+)
+def test_pergunta_de_porque_so_e_critica_quando_aponta_a_resposta(mensagem, esperado):
+    """"O share ficou ruim no Nordeste, por quê?" pergunta sobre o negócio;
+    lida como crítica, o planejador recebia "corrija a resposta anterior"
+    (2026-10-02)."""
+    assert autocritica.e_critica(mensagem) is esperado

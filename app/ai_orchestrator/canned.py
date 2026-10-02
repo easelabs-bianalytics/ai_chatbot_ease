@@ -111,7 +111,7 @@ def ajuda(catalog) -> str:
         "consultando a base de BI, mostro de onde veio cada número e aviso "
         "quando o dado não existe. Posso ajudar com:\n"
         + "\n".join(temas)
-        + "\n\nPergunte em português, dizendo o período e o recorte — por "
+        + "\n\nPergunte do seu jeito, dizendo o período e o recorte — por "
         "exemplo: *Quantas unidades a Pague Menos dispensou por mês em 2026?*"
     )
 

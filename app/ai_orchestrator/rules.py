@@ -28,16 +28,31 @@ def _normalize(texto: str) -> str:
     return "".join(c for c in sem_acento if unicodedata.category(c) != "Mn")
 
 
-# Pedido em português ("apague a tabela", "zera os dados") ou o comando SQL
-# escrito direto. Exige o objeto junto para não confundir com pergunta
-# legítima: "quando a tabela foi atualizada?" não é pedido de escrita.
+# Princípio das regras daqui: só o INEQUÍVOCO é decidido sem o modelo.
+# Errar para o lado do modelo custa centavos (ele mesmo recusa escrita e
+# responde "o que você faz"); errar para o lado da regra deixa a pessoa sem
+# resposta — e sem entender por quê. Quem garante que nada escreve no banco
+# é o validador (`sql_guard`) e o usuário somente leitura (ADR-0008), não
+# esta regra.
+#
+# Pedido de escrita: só o inequívoco — o comando SQL escrito direto, ou um
+# verbo de escrita com o BANCO como alvo dito ("apague a tabela de pdvs do
+# banco", "atualize os registros no banco de dados"). Em 2026-10-02, frases
+# como "apague a tabela e mostre só o gráfico", "exclua os dados de setembro
+# da comparação" e "delete os registros duplicados da análise" — pedidos
+# sobre a RESPOSTA — eram recusadas como escrita. O resto vai ao modelo, que
+# recusa escrita de verdade (planejador, seção 6).
+_ALVO_NO_BANCO = (
+    r"(?:banco(?:\s+de\s+dados)?|base\s+de\s+dados|database|schema|"
+    r"(?:no|do|na|da)\s+sistema|tabelas?\s+\w+\.\w+)"
+)
 _PEDIDO_DE_ESCRITA = re.compile(
-    r"\b(apag(a|ar|ue)|delet(a|ar|e)|remov(a|er)|exclu(a|ir)|zer(a|ar|e)|"
-    r"atualiz(a|ar|e)|alter(a|ar|e)|insir(a|o)|inser(e|ir)|cri(a|ar|e)|"
-    r"trunc(a|ar|ue)|dropa?r?)\s+"
-    r"(a|o|os|as|essa|esse|todas?|todos?|meu|minha)?\s*"
-    r"(tabela|tabelas|registro|registros|linha|linhas|dado|dados|banco|"
-    r"coluna|colunas|base|schema)\b"
+    # Só o verbo como PEDIDO (imperativo, infinitivo): "foi atualizada no
+    # banco" é pergunta, não ordem.
+    r"\b(?:apag(?:a|ar|ue|uem)|delet(?:a|ar|e|em)|exclu(?:a|ir|i|am)|remov(?:a|er|e|am)|zer(?:a|ar|e)|"
+    r"insir(?:a|o)|inser(?:e|ir)|trunc(?:a|ar|ue)|drop(?:e|ar)?|atualiz(?:a|ar|e|em)|alter(?:a|ar|e)|"
+    r"modifi(?:ca|car|que)|edit(?:a|ar|e)|cri(?:a|ar|e)|grav(?:a|ar|e))\b"
+    r"[^.?!]{0,50}\b" + _ALVO_NO_BANCO + r"\b"
     r"|\b(delete\s+from|drop\s+table|truncate\s+table|insert\s+into|"
     r"update\s+\w+\s+set|alter\s+table|create\s+table|grant\s+)\b"
 )
@@ -47,11 +62,21 @@ _PEDIDO_DE_ESCRITA = re.compile(
 # "ignore" e "sem filtro" sozinhos aparecem em pergunta legítima ("vendas
 # sem filtro de canal"). Falso positivo aqui custa uma recusa cordial;
 # falso negativo custa o assistente virando outra coisa.
+# Só o inequívoco aqui também (2026-10-02). "Atue como um analista sênior",
+# "imagine que você é o gerente regional", "agora você é meu analista",
+# "ignore as regras de corte do mês parcial" e "desconsidere as instruções da
+# resposta anterior" são jeitos comuns de pedir ANÁLISE, e eram recusados
+# como injeção. Ficam os sinais que só aparecem em ataque: mirar as
+# instruções DO ASSISTENTE, pedir o prompt, negar o papel, pedir para operar
+# sem regras, "modo desenvolvedor" e turno falso de sistema. O planejador
+# continua instruído contra o resto (ADR-0021).
+_ALVO_INSTRUCAO = r"(?:instruc\w+|regras\b|orientac\w+|diretriz\w+|prompt\w*)"
 _PADROES_DE_INJECAO = (
-    # trocar ou apagar as regras
-    r"\b(ignor|esquec|desconsider)\w*\s+(tudo\b[^.?!]{0,25})?"
-    r"((as?|os?|sua?s?|seu?s?|todas?|todos?|essas?|esses?)\s+)*"
-    r"(instruc\w+|regras\b|orientac\w+|diretriz\w+|prompt\w*)",
+    # apagar as instruções do assistente — as dele, não uma regra de negócio
+    r"\b(?:ignor|esquec|desconsider)\w*\s+(?:(?:todas?|todos?|as|os)\s+)*"
+    r"(?:(?:suas?|seus?)\s+" + _ALVO_INSTRUCAO + r"|" + _ALVO_INSTRUCAO +
+    r"\s+(?:anteriores|acima|iniciais|originais|do\s+sistema\b(?!\s+d[eo])|de\s+sistema|que\s+(?:te|lhe|voce)\s+\w+))",
+    r"\b(?:esquec|ignor|desconsider)\w*\s+tudo\s+(?:o\s+)?que\s+(?:te|lhe)\s+(?:disseram|falaram|ensinaram|passaram|deram)",
     r"\b(ignore|disregard|forget)\s+(all\s+)?(the\s+)?"
     r"(previous|prior|above|your|any)\s+(instruction|rule|prompt)\w*",
     # fazer o assistente mostrar o que é interno
@@ -59,15 +84,13 @@ _PADROES_DE_INJECAO = (
     r"me\s+(mande|passe|diga|envie|mostre)|qual\s+e|quais\s+sao)\b[^.?!]{0,40}"
     r"\b(system\s*prompt|prompt\s+(do\s+sistema|de\s+sistema|inicial|completo|original)|"
     r"suas?\s+(instruc\w+|regras\s+intern\w+)|"
-    r"instruc\w+\s+(do\s+sistema|iniciais|originais|acima))",
+    r"instruc\w+\s+(do\s+sistema\b(?!\s+d[eo])|iniciais|originais|acima))",
     r"\bsystem\s*prompt\b|\bprompt\s+injection\b",
-    # trocar de papel
-    r"\b(aja|atue|comporte-?se|finja|faca\s+de\s+conta|se\s+passe)\b[^.?!]{0,30}\bcomo\b",
-    r"\b(finja|imagine|suponha|pretenda|faca\s+de\s+conta)\s+(que\s+)?(voce|vc)\s+"
-    r"(e\b|eh\b|seja\b|fosse\b|nao\s+e\b|trabalha)",
-    r"\b(a\s+partir\s+de\s+agora|de\s+agora\s+em\s+diante|agora)\s+(voce|vc)\s+"
-    r"(e\b|eh\b|sera|vai\s+ser|nao\s+e\s+mais)",
-    r"\b(voce|vc)\s+(nao\s+e\s+mais|agora\s+e\b|agora\s+sera)",
+    # negar o papel, ou trocá-lo por um sem regras
+    r"\bfinja\s+(?:que\s+)?(?:voce|vc)\s+(?:e|eh|seja|fosse)\b",
+    r"\b(?:voce|vc)\s+nao\s+e\s+mais\b",
+    r"\b(?:a\s+partir\s+de\s+agora|de\s+agora\s+em\s+diante|agora)\s+(?:voce|vc)\s+"
+    r"(?:e|eh|sera|vai\s+ser)\b[^.?!]{0,60}\bsem\s+(?:nenhum\w*\s+)?(?:restric|filtro|regra|limit|censura)",
     # "modos" sem regra
     r"\b(modo\s+(desenvolvedor|dev|deus|livre|irrestrito|dan)|developer\s+mode|jailbreak)\b",
     r"\b(responda|fale|aja|atue|funcione|opere|trabalhe)\s+sem\s+(nenhum\w*\s+)?"
@@ -78,11 +101,29 @@ _PADROES_DE_INJECAO = (
 )
 _TENTATIVA_DE_INJECAO = re.compile("|".join(_PADROES_DE_INJECAO))
 
+# Pedido de ajuda: a mensagem INTEIRA é sobre o próprio Jarvis. Antes bastava
+# "o que você consegue" em qualquer ponto da frase, e em 2026-09-30 (conversa
+# 45) "Analisando o desempenho de 2026 da Ease Labs, o que você consegue tirar
+# como insight?" — e a mesma com "aprendizado" — voltaram com a lista de
+# temas, de graça e em 0 ms, sem nunca chegar ao modelo. (Em 2026-09-18 já
+# tinha sido "o que pode ter causado a queda".) Pergunta que segue para outra
+# coisa depois de "o que você consegue" é pergunta de negócio.
+_SAUDACAO = r"(?:(?:oi|ola|bom dia|boa tarde|boa noite|e ai|jarvis|amigo|por favor)[\s,!.]*)*"
+_SOBRE_O_JARVIS = (
+    r"(?:o que|que tipo de coisa|que coisas?|quais coisas)\s+(?:voce|vc|tu)\s+(?:sabe|faz|pode|consegue)"
+    r"(?:\s+(?:fazer|responder|consultar|analisar|me dizer|me mostrar|me ajudar|ajudar|me responder))?"
+    r"(?:\s+(?:aqui|por mim|pra mim|para mim|com isso))?",
+    r"como\s+(?:voce|vc|o jarvis)?\s*funciona",
+    r"para que\s+(?:voce|vc|o jarvis)\s+serve",
+    r"quais\s+(?:dados|perguntas|temas|assuntos|informacoes)\s+(?:voce|vc)\s+"
+    r"(?:tem|sabe|responde|conhece|cobre|consegue responder|acessa)",
+    r"quais\s+(?:dados|perguntas|temas|assuntos|informacoes)(?:\s+tem)?",
+    r"(?:me )?ajuda a usar(?:\s+(?:voce|vc|o jarvis|isso))?",
+    r"como\s+(?:eu\s+)?(?:uso|usar)\s+(?:voce|vc|isso|aqui|o jarvis)",
+    r"ajuda", r"help",
+)
 _PEDIDO_DE_AJUDA = re.compile(
-    r"\b(o que (voce|vc|tu)\s+(sabe|faz|pode|consegue)|"
-    r"como (voce|vc)?\s*funciona|para que (voce|vc) serve|"
-    r"quais (dados|perguntas|temas|assuntos|informacoes)|"
-    r"me ajuda a usar|como usar (voce|vc|isso|aqui))\b|^ajuda$|^help$"
+    rf"^{_SAUDACAO}(?:{'|'.join(_SOBRE_O_JARVIS)})[\s?!.]*$"
 )
 
 _TEM_LETRA = re.compile(r"[a-z]")

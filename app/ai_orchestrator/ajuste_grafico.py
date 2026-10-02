@@ -168,3 +168,62 @@ def descrever(ajuste: dict, total: int | None = None, grupo: str = "") -> str:
     if ajuste.get("limite") and total and total > ajuste["limite"]:
         texto += f" A tabela acima continua com as {total} linhas."
     return texto
+
+
+# ------------------------------------------------ só fala do desenho?
+
+# Palavras que um pedido de AJUSTE DE DESENHO usa. "top 5 representantes em
+# vendas de agosto", "mostra os 3 maiores CDs em ruptura" e "quero em linha o
+# sell out da Raia em 2026" tinham cara de ajuste (corte, tipo) mas traziam
+# assunto novo — e redesenhavam o gráfico antigo (2026-10-02). A regra só vale
+# quando TODA palavra da mensagem é de desenho, de cortesia, ou já está no
+# gráfico da tela (coluna ou categoria).
+_PALAVRAS_DO_DESENHO = frozenset("""
+    muda mude mudar troca troque trocar coloca coloque colocar passa passe passar deixa deixe deixar
+    transforma transforme pode poderia quero queria prefiro faz faca fazer mostra mostre mostrar ver exibe
+    exiba volta volte voltar usa use usar separa separe separar separado separada separados separadas
+    junta junte juntar juntos juntas empilha empilhe empilhar empilhado empilhada empilhados empilhadas
+    ficou fica ficar vira virar desenha desenhe desenhar plota plote plotar
+    grafico graficos visual visualizacao desenho barra barras coluna colunas linha linhas horizontal
+    horizontais vertical verticais pizza rosca area serie series eixo legenda cor cores escala tipo formato
+    top primeiro primeiros primeira primeiras maior maiores menor menores melhor melhores pior piores
+    todos todas tudo completo inteiro so somente apenas
+    o a os as um uma uns umas de do da dos das em no na nos nas para pra pro com sem e ou ao aos
+    isso esse essa este esta nisso nesse nessa ele ela eles elas me mim eu voce vc agora entao tambem
+    mesmo mesma lado cada outro outra outros outras forma jeito modo assim aqui ai bom boa ruim nao sim
+    ok obrigado obrigada valeu novo novamente favor que mais menos
+""".split())
+_TOKEN = re.compile(r"[a-z0-9]+")
+_CORTE_INTEIRO = re.compile(r"\b(?:top\s*\d{1,3}|\d{1,3}\s*(?:primeir|maior|menor|melhor|pior)\w*)")
+
+
+def vocabulario_do_grafico(colunas, linhas, colunas_de_categoria) -> set:
+    """Palavras que já estão no gráfico: nomes de coluna e as categorias."""
+    vocabulario = set()
+    for coluna in colunas:
+        vocabulario.update(_TOKEN.findall(_normalizar(str(coluna).replace("_", " "))))
+    indices = [colunas.index(c) for c in colunas_de_categoria if c in colunas]
+    for linha in list(linhas)[:500]:
+        for i in indices:
+            vocabulario.update(_TOKEN.findall(_normalizar(str(linha[i]))))
+    return vocabulario
+
+
+def _no_vocabulario(palavra: str, vocabulario: set) -> bool:
+    if palavra in vocabulario:
+        return True
+    # "cat" de "categoria", "redes" de "rede": prefixo de 3 letras ou mais.
+    return len(palavra) >= 3 and any(
+        len(v) >= 3 and (v.startswith(palavra) or palavra.startswith(v)) for v in vocabulario
+    )
+
+
+def fala_so_do_desenho(mensagem: str, vocabulario=frozenset()) -> bool:
+    """Toda palavra é de desenho, de cortesia ou já está no gráfico."""
+    # O "5" de "top 5" e o "10 maiores" são do corte, inteiros.
+    texto = _CORTE_INTEIRO.sub(" ", _normalizar(mensagem))
+    for palavra in _TOKEN.findall(texto):
+        if palavra in _PALAVRAS_DO_DESENHO or _no_vocabulario(palavra, vocabulario):
+            continue
+        return False
+    return True
