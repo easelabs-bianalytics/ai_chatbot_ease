@@ -475,6 +475,74 @@ casos:
     parametros: {data_ini: "2025-09-01", data_fim: "2026-08-01"}
     sql_deve_conter: ["medicos_660", "rx_cadastro_inativos"]
 
+  # Perguntas do treinamento do Marketing (marketing/treinamento_jarvis_mkt.md, 2026-10-02).
+  - id: M13-area-medica-2026-por-categoria
+    grupo: referencia
+    pergunta: >-
+      Os médicos da Área Médica com cadastro em 2026 são, em média, melhores prescritores Ease do
+      que os prescritores Ease de fora da Área Médica no último mês de prescrição, detalhando por
+      categoria do último mês?
+    esperado: answer_with_data
+    referencia: M13
+    sql_deve_conter: ["area_medica_usuarios", "2026-01-01", "0.20", "EAS"]
+
+  - id: M14-area-medica-2026-por-especialidade
+    grupo: referencia
+    pergunta: >-
+      Os médicos da Área Médica com cadastro em 2026 são, em média, melhores prescritores Ease do
+      que os de fora da Área Médica no último mês de prescrição, detalhando por especialidade?
+    esperado: answer_with_data
+    referencia: M14
+    sql_deve_conter: ["area_medica_usuarios", "especialidade", "EAS"]
+
+  - id: M15-px-ease-x-demais-area-medica
+    grupo: referencia
+    pergunta: >-
+      Qual o percentual de PX da Ease e dos demais laboratórios entre os médicos que estão e os que
+      não estão na Área Médica, de setembro de 2025 a agosto de 2026?
+    esperado: answer_with_data
+    referencia: M15
+    parametros: {data_ini: "2025-09-01", data_fim: "2026-08-01"}
+    sql_deve_conter: ["area_medica_usuarios", "EAS"]
+
+  - id: M16-px-ease-x-demais-email-mkt
+    grupo: referencia
+    pergunta: >-
+      Qual o percentual de PX da Ease e dos demais laboratórios entre os médicos que estão e os que
+      não estão na base de Email Marketing, de setembro de 2025 a agosto de 2026?
+    esperado: answer_with_data
+    referencia: M16
+    parametros: {data_ini: "2025-09-01", data_fim: "2026-08-01"}
+    sql_deve_conter: ["email_contatos", "EAS"]
+
+  - id: M17-entrada-na-area-medica-x-painel
+    grupo: referencia
+    pergunta: >-
+      Quando cada médico entrou na Área Médica, ele já fazia parte do painel da Força de Vendas ou
+      passou a fazer parte depois?
+    esperado: answer_with_data
+    referencia: M17
+    sql_deve_conter: ["rx_cadastro_mais_recente", "rx_cadastro_inativos", "data_inclusao", "dt_inativacao"]
+    comparar_resultado: false
+    nota: Lista longa (um médico por linha); o que se confere é a consulta.
+
+  - id: M18-px-antes-e-depois-da-area-medica
+    grupo: referencia
+    pergunta: Depois que o médico entrou na Área Médica, houve aumento no PX Ease dele?
+    esperado: answer_with_data
+    referencia: M18
+    sql_deve_conter: ["area_medica_usuarios", "data_cadastro", "3 months", "EAS"]
+
+  - id: M19-area-medica-e-email-x-so-uma
+    grupo: referencia
+    pergunta: >-
+      Os médicos que estão na Área Médica e no Email MKT ao mesmo tempo prescrevem mais, em média, do
+      que os que estão só no Email MKT ou só na Área Médica, de setembro de 2025 a agosto de 2026?
+    esperado: answer_with_data
+    referencia: M19
+    parametros: {data_ini: "2025-09-01", data_fim: "2026-08-01"}
+    sql_deve_conter: ["area_medica_usuarios", "email_contatos", "FULL JOIN"]
+
   - id: A19-px-extrato-laboratorio
     grupo: referencia
     pergunta: Quantas prescrições de Extrato cada laboratório teve no último MAT, com o share de PX?

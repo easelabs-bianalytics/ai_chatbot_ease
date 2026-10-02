@@ -2044,6 +2044,25 @@ lista além do ranking.
       radiologista cadastrado na Área Médica como "Dentista" (1 PX) sai da
       Área Médica.
 
+### Quarta rodada — perguntas do treinamento do Marketing (2026-10-02)
+`marketing/treinamento_jarvis_mkt.md`, 11 perguntas:
+- [x] 1, 9 e 10 já tinham referência (M03, M04, M05).
+- [x] Seção 7.2 nova, com M13 a M19, gabaritos rodando no RDS em até 1,4 s:
+  - M13: Área Médica 2026 × fora, por categoria do médico no último mês
+    (Pareto do mercado, a régua das `vw_cat_*`; nenhuma view é de um mês);
+  - M14: o mesmo por especialidade;
+  - M15 e M16: PX Ease × demais laboratórios, dentro e fora da Área Médica e do
+    Email MKT;
+  - M17: entrada na Área Médica × painel (equipes 1, 2 e 4, com as inativas);
+  - M18: 3 meses antes × 3 depois da entrada (a parte "depois que saiu" não
+    tem dado);
+  - M19: Área Médica e Email × só uma das bases.
+- [ ] **Sem dado**, pedido à Larissa: saída da Área Médica (pergunta 7, segunda
+      metade) e áreas, conteúdos e navegação (pergunta 11). A API só traz o
+      cadastro e a contagem de logins.
+- A seção de Marketing foi de ~2,9 mil para ~9 mil tokens: cerca de US$ 0,01 a
+  mais por pergunta de Marketing.
+
 ---
 
 ### "Insight" que virou lista de temas (2026-09-30, conversa 45)

@@ -3843,3 +3843,282 @@ ORDER BY 2 DESC;
 -- Médico da 660 que também está no painel conta como "Visitados pela FV" (a ordem do canal):
 -- "Base 660" aqui é quem só está na 660.
 ```
+
+### 7.2 Área Médica e Email MKT contra a prescrição
+
+As perguntas que comparam quem está numa base do Marketing com quem não está. Regras comuns:
+
+- **Médico de fora da auditoria não entra na conta**: a prescrição só existe para quem está em
+  `audit.medico` (59% dos CRMs da Área Médica). Diga quantos membros ficaram de fora por isso.
+- **"Em média de prescrição" é a média por prescritor** (PX > 0 no período), como na M03, salvo se
+  pedirem a média de todos os membros — a M19 traz as duas.
+- **Sem período dito**: "último mês de prescrição" quando a pergunta fala em mês; senão, os últimos
+  12 meses fechados da auditoria. Diga qual usou.
+- **Categoria do médico no último mês**: nenhuma view `vw_cat_*` é de um mês só; ela é montada na
+  consulta com a mesma régua das views (Pareto do PX do **mercado**: os médicos que somam os
+  primeiros 20% do PX são categoria 1, até 40% categoria 2, e assim até a 5). Diga que a categoria
+  é a do mercado no mês.
+- **Antes e depois de entrar na Área Médica não é causa**: o PX Ease cresce no mercado todo. Diga
+  isso, e não chame a diferença de "efeito da Área Médica".
+- **Saída da Área Médica não existe no dado**: a API não informa quem saiu nem quando. Para "depois
+  que saiu", responda que não há essa informação.
+- **Áreas, conteúdos e navegação da Área Médica não existem no dado**: a API só traz o cadastro e a
+  contagem de logins. Responda que não há essa informação.
+
+*"Os médicos da Área Médica cadastrados em 2026 prescrevem mais Ease que os de fora, por categoria
+do último mês?"*
+
+```sql
+-- M13 · Média de PX Ease no último mês: Área Médica (2026, antes de 2026) × fora, por categoria do médico no mês
+WITH ultimo_mes AS (
+  SELECT MAX(p.data) AS mes FROM audit.prescricao p WHERE p.cdglaboratorio = 'EAS'
+),
+categoria AS (   -- a régua das views vw_cat_*: Pareto do PX do mercado, no último mês
+  SELECT b.cdgmedico,
+         CASE WHEN b.px_acum / NULLIF(b.px_total, 0) <= 0.20 THEN '1'
+              WHEN b.px_acum / NULLIF(b.px_total, 0) <= 0.40 THEN '2'
+              WHEN b.px_acum / NULLIF(b.px_total, 0) <= 0.60 THEN '3'
+              WHEN b.px_acum / NULLIF(b.px_total, 0) <= 0.80 THEN '4'
+              ELSE '5' END AS categoria
+  FROM (
+    SELECT p.cdgmedico,
+           SUM(SUM(p.px1)) OVER () AS px_total,
+           SUM(SUM(p.px1)) OVER (ORDER BY SUM(p.px1) DESC, p.cdgmedico) AS px_acum
+    FROM audit.prescricao p
+    JOIN ultimo_mes u ON p.data = u.mes
+    GROUP BY p.cdgmedico
+  ) b
+),
+prescritores AS (
+  SELECT m.crm AS crm_link, p.cdgmedico, SUM(p.px1) AS px
+  FROM audit.prescricao p
+  JOIN audit.medico m ON m.cdgmedico = p.cdgmedico
+  JOIN ultimo_mes u   ON p.data = u.mes
+  WHERE p.cdglaboratorio = 'EAS'
+  GROUP BY 1, 2
+  HAVING SUM(p.px1) > 0
+),
+grupos AS (
+  SELECT pr.cdgmedico, pr.px,
+         CASE WHEN EXISTS (SELECT 1 FROM marketing.area_medica_usuarios a
+                           WHERE a.crm_link = pr.crm_link AND a.data_cadastro >= DATE '2026-01-01')
+                   THEN 'area_2026'
+              WHEN EXISTS (SELECT 1 FROM marketing.area_medica_usuarios a WHERE a.crm_link = pr.crm_link)
+                   THEN 'area_antes_2026'
+              ELSE 'fora' END AS grupo
+  FROM prescritores pr
+)
+SELECT COALESCE(c.categoria, 'SEM CAT') AS categoria_no_mes,
+       COUNT(*) FILTER (WHERE g.grupo = 'area_2026') AS prescritores_area_2026,
+       ROUND(AVG(g.px) FILTER (WHERE g.grupo = 'area_2026')::numeric, 2) AS media_px_area_2026,
+       COUNT(*) FILTER (WHERE g.grupo = 'area_antes_2026') AS prescritores_area_antes_2026,
+       ROUND(AVG(g.px) FILTER (WHERE g.grupo = 'area_antes_2026')::numeric, 2) AS media_px_area_antes_2026,
+       COUNT(*) FILTER (WHERE g.grupo = 'fora') AS prescritores_fora,
+       ROUND(AVG(g.px) FILTER (WHERE g.grupo = 'fora')::numeric, 2) AS media_px_fora
+FROM grupos g
+LEFT JOIN categoria c ON c.cdgmedico = g.cdgmedico
+GROUP BY 1
+ORDER BY 1;
+-- Sem a quebra por categoria, a mesma pergunta é a M03.
+```
+
+*"...e por especialidade?"*
+
+```sql
+-- M14 · Média de PX Ease no último mês: Área Médica (2026, antes de 2026) × fora, por especialidade
+WITH ultimo_mes AS (
+  SELECT MAX(p.data) AS mes FROM audit.prescricao p WHERE p.cdglaboratorio = 'EAS'
+),
+prescritores AS (
+  SELECT m.crm AS crm_link, COALESCE(e.nome, m.espec1) AS especialidade, SUM(p.px1) AS px
+  FROM audit.prescricao p
+  JOIN audit.medico m ON m.cdgmedico = p.cdgmedico
+  LEFT JOIN audit.especialidade e ON e.codigo = m.espec1
+  JOIN ultimo_mes u   ON p.data = u.mes
+  WHERE p.cdglaboratorio = 'EAS'
+  GROUP BY 1, 2
+  HAVING SUM(p.px1) > 0
+),
+grupos AS (
+  SELECT pr.especialidade, pr.px,
+         CASE WHEN EXISTS (SELECT 1 FROM marketing.area_medica_usuarios a
+                           WHERE a.crm_link = pr.crm_link AND a.data_cadastro >= DATE '2026-01-01')
+                   THEN 'area_2026'
+              WHEN EXISTS (SELECT 1 FROM marketing.area_medica_usuarios a WHERE a.crm_link = pr.crm_link)
+                   THEN 'area_antes_2026'
+              ELSE 'fora' END AS grupo
+  FROM prescritores pr
+)
+SELECT especialidade,
+       COUNT(*) FILTER (WHERE grupo = 'area_2026') AS prescritores_area_2026,
+       ROUND(AVG(px) FILTER (WHERE grupo = 'area_2026')::numeric, 2) AS media_px_area_2026,
+       COUNT(*) FILTER (WHERE grupo = 'area_antes_2026') AS prescritores_area_antes_2026,
+       ROUND(AVG(px) FILTER (WHERE grupo = 'area_antes_2026')::numeric, 2) AS media_px_area_antes_2026,
+       COUNT(*) FILTER (WHERE grupo = 'fora') AS prescritores_fora,
+       ROUND(AVG(px) FILTER (WHERE grupo = 'fora')::numeric, 2) AS media_px_fora
+FROM grupos
+GROUP BY 1
+HAVING COUNT(*) FILTER (WHERE grupo IN ('area_2026', 'area_antes_2026')) > 0
+ORDER BY prescritores_area_2026 DESC, prescritores_area_antes_2026 DESC;
+-- Só as especialidades com alguém da Área Médica; média de 1 ou 2 prescritores não é tendência — diga.
+```
+
+*"Qual o percentual de PX da Ease e dos demais laboratórios entre quem está e quem não está na Área
+Médica?"*
+
+```sql
+-- M15 · PX Ease × demais laboratórios: médicos na Área Médica × fora
+WITH area AS (
+  SELECT DISTINCT crm_link FROM marketing.area_medica_usuarios WHERE crm_link IS NOT NULL
+)
+SELECT CASE WHEN m.crm IN (SELECT crm_link FROM area) THEN 'Na Área Médica' ELSE 'Fora da Área Médica' END AS grupo,
+       COUNT(DISTINCT p.cdgmedico) FILTER (WHERE p.px1 > 0) AS prescritores_cannabis,
+       SUM(p.px1) FILTER (WHERE p.cdglaboratorio = 'EAS') AS px_ease,
+       SUM(p.px1) FILTER (WHERE p.cdglaboratorio IS DISTINCT FROM 'EAS') AS px_demais_laboratorios,
+       ROUND((100.0 * SUM(p.px1) FILTER (WHERE p.cdglaboratorio = 'EAS') / NULLIF(SUM(p.px1), 0))::numeric, 1) AS pct_ease,
+       ROUND((100.0 * SUM(p.px1) FILTER (WHERE p.cdglaboratorio IS DISTINCT FROM 'EAS') / NULLIF(SUM(p.px1), 0))::numeric, 1) AS pct_demais
+FROM audit.prescricao p
+JOIN audit.medico m ON m.cdgmedico = p.cdgmedico
+WHERE p.data BETWEEN :data_ini AND :data_fim
+GROUP BY 1
+ORDER BY 1 DESC;
+-- Laboratório a laboratório: agrupe também por p.cdglaboratorio, com o nome de audit.laboratorio.
+```
+
+*"...e entre quem está e quem não está no Email MKT?"*
+
+```sql
+-- M16 · PX Ease × demais laboratórios: médicos no Email MKT × fora
+WITH email AS (
+  SELECT DISTINCT crm_link FROM marketing.email_contatos WHERE crm_link IS NOT NULL
+)
+SELECT CASE WHEN m.crm IN (SELECT crm_link FROM email) THEN 'No Email MKT' ELSE 'Fora do Email MKT' END AS grupo,
+       COUNT(DISTINCT p.cdgmedico) FILTER (WHERE p.px1 > 0) AS prescritores_cannabis,
+       SUM(p.px1) FILTER (WHERE p.cdglaboratorio = 'EAS') AS px_ease,
+       SUM(p.px1) FILTER (WHERE p.cdglaboratorio IS DISTINCT FROM 'EAS') AS px_demais_laboratorios,
+       ROUND((100.0 * SUM(p.px1) FILTER (WHERE p.cdglaboratorio = 'EAS') / NULLIF(SUM(p.px1), 0))::numeric, 1) AS pct_ease,
+       ROUND((100.0 * SUM(p.px1) FILTER (WHERE p.cdglaboratorio IS DISTINCT FROM 'EAS') / NULLIF(SUM(p.px1), 0))::numeric, 1) AS pct_demais
+FROM audit.prescricao p
+JOIN audit.medico m ON m.cdgmedico = p.cdgmedico
+WHERE p.data BETWEEN :data_ini AND :data_fim
+GROUP BY 1
+ORDER BY 1 DESC;
+```
+
+*"Quando cada médico entrou na Área Médica, ele já estava no painel da força de vendas?"*
+
+```sql
+-- M17 · Entrada na Área Médica × painel da força de vendas (equipes 1, 2 e 4)
+WITH area AS (
+  SELECT a.crm_link, MIN(a.nome) AS nome, MIN(a.data_cadastro)::date AS entrou_na_area
+  FROM marketing.area_medica_usuarios a
+  WHERE a.crm_link IS NOT NULL
+  GROUP BY 1
+),
+passagens AS (   -- cada passagem pelo painel: as atuais (sem saída) e as que já terminaram
+  SELECT crm_link, data_inclusao::date AS entrou, NULL::date AS saiu
+  FROM audit.rx_cadastro_mais_recente
+  WHERE equipe IN (1, 2, 4)
+  UNION ALL
+  SELECT crm_link, data_inclusao::date, to_date(dt_inativacao, 'DD/MM/YYYY')
+  FROM audit.rx_cadastro_inativos
+  WHERE equipe IN (1, 2, 4)
+)
+SELECT a.nome, a.crm_link, a.entrou_na_area,
+       CASE WHEN bool_or(p.entrou <= a.entrou_na_area AND (p.saiu IS NULL OR p.saiu >= a.entrou_na_area))
+                 THEN 'Já estava no painel'
+            WHEN bool_or(p.entrou > a.entrou_na_area) THEN 'Entrou no painel depois'
+            WHEN bool_or(p.saiu < a.entrou_na_area) THEN 'Tinha saído do painel antes'
+            ELSE 'Nunca esteve no painel' END AS situacao,
+       MIN(p.entrou) FILTER (WHERE p.entrou > a.entrou_na_area) AS entrou_no_painel_em
+FROM area a
+LEFT JOIN passagens p ON p.crm_link = a.crm_link
+GROUP BY 1, 2, 3
+ORDER BY a.entrou_na_area DESC;
+-- Lista longa: vai em Excel; o resumo é a contagem por situacao. O histórico do painel começa em
+-- set/2022 (data_inclusao) e as saídas em jan/2023: cadastro na Área Médica antes disso pode ter
+-- passagem pelo painel que não está no dado — diga isso.
+```
+
+*"Depois que o médico entrou na Área Médica, a prescrição Ease aumentou?"*
+
+```sql
+-- M18 · PX Ease nos 3 meses antes × 3 meses depois da entrada na Área Médica
+WITH ultimo_mes AS (
+  SELECT MAX(p.data) AS mes FROM audit.prescricao p
+),
+entradas AS (   -- o mês do cadastro fica fora das duas janelas
+  SELECT m.cdgmedico, date_trunc('month', MIN(a.data_cadastro))::date AS mes_entrada
+  FROM marketing.area_medica_usuarios a
+  JOIN audit.medico m ON m.crm = a.crm_link
+  WHERE a.crm_link IS NOT NULL
+  GROUP BY 1
+),
+janelas AS (
+  SELECT e.cdgmedico, e.mes_entrada,
+         COALESCE(SUM(p.px1) FILTER (WHERE p.data <  e.mes_entrada), 0) AS px_antes,
+         COALESCE(SUM(p.px1) FILTER (WHERE p.data >  e.mes_entrada), 0) AS px_depois
+  FROM entradas e
+  CROSS JOIN ultimo_mes u
+  LEFT JOIN audit.prescricao p
+         ON p.cdgmedico = e.cdgmedico AND p.cdglaboratorio = 'EAS'
+        AND p.data BETWEEN (e.mes_entrada - INTERVAL '3 months') AND (e.mes_entrada + INTERVAL '3 months')
+        AND p.data <> e.mes_entrada
+  WHERE e.mes_entrada + INTERVAL '3 months' <= u.mes      -- 3 meses completos depois
+    AND e.mes_entrada >= DATE '2023-07-01'                -- 3 meses antes dentro da auditoria
+  GROUP BY 1, 2
+)
+SELECT COUNT(*) AS medicos,
+       COUNT(*) FILTER (WHERE px_antes > 0 OR px_depois > 0) AS prescreveram_ease_nas_janelas,
+       SUM(px_antes) AS px_ease_3m_antes,
+       SUM(px_depois) AS px_ease_3m_depois,
+       ROUND((100.0 * (SUM(px_depois) - SUM(px_antes)) / NULLIF(SUM(px_antes), 0))::numeric, 1) AS variacao_pct,
+       COUNT(*) FILTER (WHERE px_depois > px_antes) AS aumentaram,
+       COUNT(*) FILTER (WHERE px_depois < px_antes) AS diminuiram,
+       COUNT(*) FILTER (WHERE px_antes = 0 AND px_depois > 0) AS comecaram_a_prescrever
+FROM janelas;
+-- Por médico: troque o SELECT final por "SELECT * FROM janelas". Não é causa (regras desta seção).
+-- "Depois que saiu da Área Médica": a API não informa saída — não há como responder.
+```
+
+*"Quem está na Área Médica e no Email MKT prescreve mais do que quem está em só uma das bases?"*
+
+```sql
+-- M19 · Área Médica e Email MKT × só uma das bases: média de PX por médico e por prescritor
+WITH area AS (
+  SELECT DISTINCT crm_link FROM marketing.area_medica_usuarios WHERE crm_link IS NOT NULL
+),
+email AS (
+  SELECT DISTINCT crm_link FROM marketing.email_contatos WHERE crm_link IS NOT NULL
+),
+membros AS (
+  SELECT COALESCE(a.crm_link, e.crm_link) AS crm_link,
+         CASE WHEN a.crm_link IS NOT NULL AND e.crm_link IS NOT NULL THEN 'Área Médica e Email MKT'
+              WHEN a.crm_link IS NOT NULL THEN 'Só Área Médica'
+              ELSE 'Só Email MKT' END AS grupo
+  FROM area a
+  FULL JOIN email e ON e.crm_link = a.crm_link
+),
+px AS (
+  SELECT p.cdgmedico,
+         SUM(p.px1) FILTER (WHERE p.cdglaboratorio = 'EAS') AS px_ease,
+         SUM(p.px1) AS px_mercado
+  FROM audit.prescricao p
+  WHERE p.data BETWEEN :data_ini AND :data_fim
+  GROUP BY 1
+)
+SELECT mb.grupo,
+       COUNT(*) AS medicos,
+       COUNT(m.cdgmedico) AS na_auditoria,
+       COUNT(*) FILTER (WHERE x.px_ease > 0) AS prescritores_ease,
+       ROUND(AVG(COALESCE(x.px_ease, 0)) FILTER (WHERE m.cdgmedico IS NOT NULL)::numeric, 2) AS media_px_ease_por_medico,
+       ROUND(AVG(x.px_ease) FILTER (WHERE x.px_ease > 0)::numeric, 2) AS media_px_ease_por_prescritor,
+       ROUND(AVG(COALESCE(x.px_mercado, 0)) FILTER (WHERE m.cdgmedico IS NOT NULL)::numeric, 2) AS media_px_mercado_por_medico
+FROM membros mb
+LEFT JOIN audit.medico m ON m.crm = mb.crm_link
+LEFT JOIN px x ON x.cdgmedico = m.cdgmedico
+GROUP BY 1
+ORDER BY 1;
+-- "Por médico" conta todos os membros que estão na auditoria (quem não prescreveu entra com 0);
+-- "por prescritor", só quem prescreveu Ease no período.
+```
