@@ -404,13 +404,55 @@ def test_reescrita_diz_qual_numero_nao_tinha_suporte(catalogo):
     assert "1.200 não está no resultado" in provider._client.chamadas[0]["input"]
 
 
-def test_resposta_vazia_vira_falha(catalogo):
-    provider = _provider(catalogo, [_Resposta(RespostaEstruturada(reply="   "), _Uso(10, 10))])
+def test_resposta_vazia_duas_vezes_vira_falha(catalogo):
+    vazia = _Resposta(RespostaEstruturada(reply="   "), _Uso(10, 10))
+    provider = _provider(catalogo, [vazia, vazia])
 
     with pytest.raises(AIProviderError, match="vazia"):
         provider.answer(
             AnswerRequest(question="q", sql="SELECT 1", columns=("a",), rows=((1,),), truncated=False)
         )
+    assert len(provider._client.chamadas) == 2
+
+
+def test_resposta_vazia_ganha_uma_segunda_chamada_com_o_aviso(catalogo):
+    """Repetir a mesma entrada dava o mesmo vazio (conversa 64: três
+    tentativas, três vazios). A segunda chamada diz o que faltou, e o custo
+    das duas fica somado na auditoria."""
+    provider = _provider(catalogo, [
+        _Resposta(RespostaEstruturada(reply=""), _Uso(1000, 10)),
+        _Resposta(RespostaEstruturada(reply="Foram 47 unidades."), _Uso(1200, 30)),
+    ])
+
+    saida = provider.answer(
+        AnswerRequest(question="q", sql="SELECT 1", columns=("a",), rows=((47,),), truncated=False)
+    )
+
+    assert saida.reply == "Foram 47 unidades."
+    assert "# Resposta vazia" in provider._client.chamadas[1]["input"]
+    assert "# Resposta vazia" not in provider._client.chamadas[0]["input"]
+    assert saida.usage.tokens_input == 2200
+
+
+def test_resposta_so_com_grafico_nao_vira_falha(catalogo):
+    """Conversa 64 (2026-10-02): "Compare apenas enviando um gráfico, os
+    outros canais" — o modelo mandou só o bloco do gráfico, sem texto, e a
+    resposta pronta virou "Tive um problema técnico", duas vezes. Vira uma
+    frase fixa, sem número (o título já está no gráfico)."""
+    from ai_orchestrator.providers.openai_provider import BlocoEstruturado, GraficoEstruturado
+
+    grafico = GraficoEstruturado(tipo="linha", x="competencia", series=["px"], grupo="canal",
+                                 titulo="PX Ease por canal, mar a ago/26")
+    conteudo = RespostaEstruturada(reply="", blocos=[BlocoEstruturado(tipo="grafico", consulta=0, grafico=grafico)])
+    provider = _provider(catalogo, [_Resposta(conteudo, _Uso(3000, 100))])
+
+    saida = provider.answer(
+        AnswerRequest(question="Compare apenas enviando um gráfico", sql="SELECT 1",
+                      columns=("competencia", "canal", "px"), rows=(("2026-08-01", "FV", 3123),), truncated=False)
+    )
+
+    assert saida.reply == "Segue o gráfico."
+    assert [b["tipo"] for b in saida.blocos] == ["grafico"]
 
 
 class _ErroDaOpenAI(Exception):

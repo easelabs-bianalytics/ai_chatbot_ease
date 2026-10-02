@@ -126,6 +126,10 @@ def test_texto_do_separar_diz_por_qual_coluna():
         "Crie um gráfico de PX por mês em 2026",
         "crie um visual da evolução de sell out em 2026",
         "plote a evolução do share por canal",
+        # conversa 64 (2026-10-02): "compare" não tira o "apenas um gráfico"
+        "Compare apenas enviando um gráfico, os outros canais nesse mesmo período",
+        "mostre só o gráfico da comparação",
+        "compare os canais somente em gráfico",
     ],
 )
 def test_pedido_so_visual(mensagem):
@@ -141,6 +145,8 @@ def test_pedido_so_visual(mensagem):
         "faz um gráfico e uma tabela de PX por especialidade",
         "PX por especialidade por mês em 2026",
         "me manda o gráfico e a planilha em excel",
+        "apenas o gráfico e a tabela de PX",
+        "quantos médicos aparecem no gráfico?",
     ],
 )
 def test_pedido_com_dado_nao_e_so_visual(mensagem):

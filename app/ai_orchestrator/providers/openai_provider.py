@@ -388,6 +388,36 @@ def _texto_dos_blocos(blocos) -> str:
     return "\n\n".join(b["texto"] for b in blocos if b["tipo"] == "texto")
 
 
+def _somar_uso(a, b):
+    """Duas chamadas da mesma etapa contam como uma na auditoria: o custo e
+    os tokens somam, e a resposta guardada é a da última."""
+    return replace(
+        b,
+        tokens_input=a.tokens_input + b.tokens_input,
+        tokens_output=a.tokens_output + b.tokens_output,
+        cost_estimate=a.cost_estimate + b.cost_estimate,
+        latency_ms=a.latency_ms + b.latency_ms,
+    )
+
+
+def _legenda_do_visual(blocos, grafico) -> str:
+    """A frase de uma resposta que veio só com gráfico ou tabela.
+
+    Quem pede "apenas um gráfico" às vezes recebe exatamente isso: o bloco do
+    gráfico, sem nenhum texto. Recusar jogava fora uma resposta pronta e
+    mostrava "Tive um problema técnico" (conversa 64, 2026-10-02, duas vezes
+    seguidas). A frase é fixa e sem número: o título já está no gráfico, e um
+    "ago/26" nele seria cobrado pela ancoragem como número sem suporte. Vazio
+    só quando não há visual nenhum — aí é resposta vazia mesmo."""
+    if any(b["tipo"] == "grafico" for b in blocos) or (
+        grafico is not None and getattr(grafico, "tipo", "nenhum") != "nenhum"
+    ):
+        return "Segue o gráfico."
+    if any(b["tipo"] == "tabela" for b in blocos):
+        return "Segue a tabela."
+    return ""
+
+
 def _entrada_com_cache(fixo: str, tema: str, resto: str) -> list:
     """Uma mensagem, três blocos de texto, com dois pontos de cache.
 
@@ -887,23 +917,38 @@ class OpenAIProvider(AIProvider):
                 "o gráfico no formato simples, se couber."
             )
 
-        conteudo, usage = self._chamar(
-            modelo=self.answer_model,
-            instrucoes=load_prompt(ANSWER_PROMPT_VERSION),
-            entrada=entrada,
-            formato=RespostaEstruturada,
-            esforco=self.answer_effort,
-            max_tokens=MAX_TOKENS_RESPOSTA,
-            cache_key=f"resposta:{ANSWER_PROMPT_VERSION}",
-        )
+        usage = None
+        for tentativa in range(2):
+            conteudo, uso = self._chamar(
+                modelo=self.answer_model,
+                instrucoes=load_prompt(ANSWER_PROMPT_VERSION),
+                entrada=entrada,
+                formato=RespostaEstruturada,
+                esforco=self.answer_effort,
+                max_tokens=MAX_TOKENS_RESPOSTA,
+                cache_key=f"resposta:{ANSWER_PROMPT_VERSION}",
+            )
+            usage = uso if usage is None else _somar_uso(usage, uso)
 
-        blocos = _blocos(conteudo)
-        # Com blocos o `reply` pode vir vazio: o texto é o dos blocos.
-        texto = (conteudo.reply or "").strip() or _texto_dos_blocos(blocos)
+            blocos = _blocos(conteudo)
+            grafico = getattr(conteudo, "grafico", None)
+            # Com blocos o `reply` pode vir vazio: o texto é o dos blocos.
+            texto = (conteudo.reply or "").strip() or _texto_dos_blocos(blocos)
+            if not texto:
+                texto = _legenda_do_visual(blocos, grafico)
+            if texto:
+                break
+            # Nem texto nem visual. Repetir a mesma entrada dá o mesmo vazio
+            # (conversa 64: três tentativas iguais, três vazios); a segunda
+            # vai com o aviso do que faltou.
+            entrada += (
+                "\n\n# Resposta vazia\n\nA sua resposta anterior veio sem nenhum texto e sem "
+                "gráfico. Escreva pelo menos um bloco `texto` com uma ou duas frases sobre o "
+                "resultado e, se o usuário pediu gráfico, o bloco `grafico` da consulta 0."
+            )
         if not texto:
             raise AIProviderError("o modelo devolveu uma resposta vazia")
 
-        grafico = getattr(conteudo, "grafico", None)
         return Answer(
             reply=texto,
             resolution=(conteudo.resolution or "answered").strip(),

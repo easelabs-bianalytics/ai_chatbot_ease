@@ -62,9 +62,21 @@ _PEDE_DADO = re.compile(
 )
 
 
+# "Apenas/só/somente ... gráfico" diz que é só o gráfico mesmo com um verbo de
+# dado na frase: "Compare apenas enviando um gráfico, os outros canais"
+# (conversa 64, 2026-10-02) caía no "compar" e ia sem a instrução de pedido
+# visual — o modelo mandou só o gráfico, sem texto, e a resposta virou erro.
+_SO_O_VISUAL = re.compile(
+    r"\b(?:apenas|so|somente|unicamente)\b(?:\s+\S+){0,3}?\s+(?:um|o|os|uns|em|por|de)?\s*"
+    r"(?:graficos?|visual|visualizacao)\b"
+)
+
+
 def pedido_so_visual(mensagem: str) -> bool:
     """A pessoa pediu explicitamente um gráfico, e só ele."""
     texto = _normalizar(mensagem)
+    if _SO_O_VISUAL.search(texto) and not re.search(r"\b(?:tabelas?|planilha|excel)\b", texto):
+        return True
     return bool(_PEDE_VISUAL.search(texto)) and not _PEDE_DADO.search(texto)
 
 
