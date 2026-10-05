@@ -352,3 +352,16 @@ def test_uma_aba_que_falha_nao_entrega_o_arquivo_pela_metade(cliente, resposta_c
 
     assert r.status_code == 502
     assert "Médicos no Email MKT" in DataExport.objects.get().error
+
+
+def test_os_dois_rodapes_da_tela_desenham_o_botao_de_excel():
+    """Conversa 71 (2026-10-05): a API mandava `excel: true`, mas resposta com
+    várias consultas é desenhada pelo rodapé da investigação, que não tinha
+    o botão — e "um Excel, um por aba" seguia sem arquivo depois do F5."""
+    from pathlib import Path
+
+    js = (Path(__file__).resolve().parents[2] / "app" / "web" / "static" / "web" / "app.js").read_text(encoding="utf-8")
+    investigacao = js[js.index("const blocoFonteDaInvestigacao"):]
+    investigacao = investigacao[: investigacao.index("\n  };")]
+    assert "botaoExcel(fonte, id, temPlanilha)" in investigacao
+    assert "blocoFonteDaInvestigacao(fonte, id, temPlanilha)" in js

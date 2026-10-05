@@ -1971,8 +1971,16 @@
     return true;
   };
 
+  // O "Baixar Excel" do rodapé, igual nos dois rodapés (consulta única e
+  // várias consultas). O de várias consultas não tinha o botão: o pedido de
+  // "um Excel, um por aba" chegava com `excel: true` e a tela não o
+  // desenhava (conversa 71, 2026-10-05).
+  const botaoExcel = (fonte, id, temPlanilha) => (modoDeBaixar(fonte, temPlanilha) === 'geral'
+    ? `<button class="fonte-excel${fonte.excel_pedido ? ' destaque' : ''}" type="button" data-excel="${id}">${ICONES.planilha}<span>Baixar Excel</span></button>`
+    : '');
+
   const blocoFonte = (fonte, id, temPlanilha = false) => {
-    if (fonte.investigacao?.length) return blocoFonteDaInvestigacao(fonte);
+    if (fonte.investigacao?.length) return blocoFonteDaInvestigacao(fonte, id, temPlanilha);
     const consulta = fonte.consulta;
     if (!consulta) return '';
     const equipe = state.usuario?.equipe;
@@ -1994,7 +2002,7 @@
       <div class="fonte">
         <div class="fonte-barra">
           <button class="fonte-toggle" type="button" aria-expanded="false">${ICONES.banco}<span class="fonte-toggle-texto">Ver fonte e consulta</span><span class="chevron">${ICONES.chevron}</span></button>
-          ${modoDeBaixar(fonte, temPlanilha) === 'geral' ? `<button class="fonte-excel${fonte.excel_pedido ? ' destaque' : ''}" type="button" data-excel="${id}">${ICONES.planilha}<span>Baixar Excel</span></button>` : ''}
+          ${botaoExcel(fonte, id, temPlanilha)}
         </div>
         <div class="fonte-detalhe">
           <div class="fonte-detalhe-inner">
@@ -2012,7 +2020,7 @@
 
   // Investigação: uma consulta por hipótese, na ordem em que foram testadas.
   // É o que permite ao time de BI conferir o raciocínio, não só o número.
-  const blocoFonteDaInvestigacao = (fonte) => {
+  const blocoFonteDaInvestigacao = (fonte, id, temPlanilha = false) => {
     const equipe = state.usuario?.equipe;
     const passos = fonte.investigacao;
     const meta = [
@@ -2038,6 +2046,7 @@
       <div class="fonte">
         <div class="fonte-barra">
           <button class="fonte-toggle" type="button" aria-expanded="false">${ICONES.banco}<span class="fonte-toggle-texto">Ver fonte e consulta</span><span class="chevron">${ICONES.chevron}</span></button>
+          ${botaoExcel(fonte, id, temPlanilha)}
         </div>
         <div class="fonte-detalhe">
           <div class="fonte-detalhe-inner">
