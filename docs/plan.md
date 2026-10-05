@@ -2163,3 +2163,34 @@ testes. Cada teste traz na docstring o incidente que previne.
 | Casos de validação | Cobertura das 96 referências, gabaritos montáveis e aprovados pelo validador, regras coerentes com os gabaritos | unit |
 | Avaliador da suíte | Cada status (aprovado, reprovado, revisão, bloqueador) com IA e banco programados; comparação de resultados | unit |
 | `run_synthetic_cases` | Comportamento com a IA real contra o banco real | fora da suíte, gera relatório |
+
+## Fase 16 — Jarvis 3.0: reconhecer o dado antes de responder (ADR-0033)
+
+Origem: conversa 70 (Amanda, 2026-10-05). Sem referência, o Jarvis escreveu a
+consulta às cegas: contou adesões em vez de pacientes, disse "500" (o limite
+da tela; eram 2.796), não viu que outubro não tinha entrado e não disse o
+critério de "concluiu".
+
+- [x] D15 por paciente no documento: 2.790 pacientes em set/2026 (dado até
+      29/09), 1.819 concluíram (1.776 o produto da adesão e 43 outra
+      apresentação), 971 não. Imagem `0b622ba`.
+- [x] Modo reconhecer (`intent: "explore"`), com o método na seção 1.1 do
+      planejador: frescor, grão e chave, valores e ambiguidade, em 2 a 4
+      consultas pequenas. Depois, a consulta final com `premissas`, que a
+      resposta diz. Uma rodada só.
+- [x] Etapa de auditoria `explore` (migração `0007`, só a opção).
+- [x] `referencias_do_uso`: o que deu certo sem referência vira rascunho de
+      referência para o time de BI revisar.
+- [x] Testes: `test_reconhecimento.py` (6) e três no provider.
+- [x] Validação no modelo real (2026-10-05, US$ 0,20 nas três):
+      - "pacientes do PBM que compraram mais de uma vez em setembro": sem
+        referência, reconheceu (frescor, grão com a distribuição de compras
+        por paciente, status e data-sentinela) e respondeu 310 pacientes, 11
+        dias de intervalo, com o critério e "dado até 29/09". US$ 0,096
+        (plano 0,072 + reconhecimento 0,023 + redação 0,002);
+      - "médicos com adesão em setembro × painel da força de vendas": partiu
+        da D02, sem reconhecer (a referência próxima resolve); 1.820
+        médicos, 627 no painel, excluindo o setor 3000 de Visitação Remota
+        como manda o documento. US$ 0,060;
+      - a pergunta da Amanda: D15 direto, 2.790 pacientes, avisando que
+        outubro não entrou. US$ 0,042.

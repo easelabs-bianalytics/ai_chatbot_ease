@@ -76,6 +76,9 @@ class AICall(models.Model):
         # Segunda chance do seguimento que pediu mudança e devolveu os mesmos
         # números da resposta anterior (`autocritica.py`).
         SELF_CHECK = "self_check", "Autocrítica do seguimento"
+        # A consulta final de uma pergunta sem referência, escrita depois de
+        # ler as consultas de reconhecimento (ADR-0033).
+        EXPLORE = "explore", "Consulta depois do reconhecimento"
 
     ai_reply = models.ForeignKey(AIReply, on_delete=models.CASCADE, related_name="calls")
     stage = models.CharField(max_length=20, choices=Stage.choices)

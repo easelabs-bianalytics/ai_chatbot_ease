@@ -132,6 +132,7 @@ uv run python app/manage.py run_synthetic_cases --so-gabarito   # só os gabarit
 uv run python app/manage.py run_synthetic_cases   # gera docs/validation-report.md
 uv run python app/manage.py bi_report
 uv run python app/manage.py casos_do_uso          # cada 👎 vira rascunho de caso
+uv run python app/manage.py referencias_do_uso    # perguntas sem referência resolvidas → rascunho de referência (ADR-0033)
 uv run python app/manage.py run_synthetic_cases --com-rascunhos
 uv run python app/manage.py catalog_check
 docker compose --profile whatsapp up -d evolution   # Evolution local (ADR-0028), porta 8082

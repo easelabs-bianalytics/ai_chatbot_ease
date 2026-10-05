@@ -754,6 +754,7 @@ def _redigir(plano, resultado, message, provider, catalog, auditoria, historico,
         tabela_em_bloco=lista_longa,
         entendimento=plano.entendimento,
         pedido_nao_atendido=plano.pedido_nao_atendido,
+        premissas=plano.premissas,
         so_visual=so_visual,
         planilha_devolvida=nota_da_planilha,
     )
@@ -1586,6 +1587,54 @@ def _investigar(plano, message, provider, executor, catalog, auditoria, historic
         rule=raw.pop("rule", ""),
         raw={**raw, "investigacao": registro, "rodadas": rodada},
     )
+
+
+def _reconhecer(plano, message, provider, executor, catalog, auditoria, historico):
+    """Pergunta sem referência (ADR-0033): olhar o dado antes de responder.
+
+    É o método de quem resolve uma pergunta nova com uma base que não
+    conhece — o que resolveu a conversa 70 (Amanda, 2026-10-05): frescor
+    (outubro não tinha entrado), grão e chave (2.796 adesões de 2.790
+    pacientes, `ID_CONSUMIDOR` bigint × texto), valores (CONFIRMADA, PRE,
+    PEN, ANU) e o tamanho de cada leitura (43 pacientes compraram outra
+    apresentação). O planejador escreveu as consultas de reconhecimento; elas
+    rodam, e ele recebe o que mostraram para escrever a consulta final, com
+    as premissas.
+
+    Uma rodada só, até MAX_PASSOS_POR_RODADA consultas: o custo é uma chamada
+    a mais ao planejador. Ela passa pelo teto por pergunta — sem ela, nada
+    responde. Devolve o plano final, que segue o caminho de sempre; None se a
+    pessoa interrompeu."""
+    passos = []
+    for passo in plano.investigacao[:MAX_PASSOS_POR_RODADA]:
+        if foi_interrompida(message):
+            return None
+        passos.append(_testar_hipotese(passo, 1, message, executor, catalog, auditoria,
+                                       rotulo="Reconhecendo o dado", entendimento=plano.entendimento))
+    if foi_interrompida(message):
+        return None
+    auditoria.extras["reconhecimento"] = [
+        {"o_que_confere": p["hipotese"], "sql": p["sql"],
+         "linhas": p["resultado"].row_count if p["resultado"] is not None else None, "erro": p["erro"]}
+        for p in passos
+    ]
+    progresso.definir(message.pk, "Lendo o que o reconhecimento mostrou e montando a consulta",
+                      etapa="entendi", entendimento=plano.entendimento)
+    final = provider.plan(PlanRequest(
+        question=_pergunta(message),
+        history=historico,
+        planilha=_planilha(message),
+        reconhecimento=_achados(passos),
+    ))
+    auditoria.chamada(AICall.Stage.EXPLORE, final.usage)
+    if final.premissas:
+        auditoria.extras["premissas"] = final.premissas
+    if final.intent == Plan.Intent.EXPLORE:
+        # O prompt proíbe um segundo reconhecimento; se vier, não há
+        # terceira chamada — melhor "não sei" do que um laço pago.
+        return replace(final, intent=Plan.Intent.UNKNOWN, sql="", investigacao=(),
+                       reason=final.reason or "o reconhecimento não fechou a consulta")
+    return final
 
 
 def _testar_hipotese(passo, rodada, message, executor, catalog, auditoria,
@@ -2583,6 +2632,11 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
     # investigação, as rodadas seguintes inteiras.
     if foi_interrompida(message):
         return _interrompida()
+
+    if plano.intent == Plan.Intent.EXPLORE:
+        plano = _reconhecer(plano, message, provider, executor, catalog, auditoria, historico)
+        if plano is None:
+            return _interrompida()
 
     if plano.entendimento and plano.intent in (Plan.Intent.ANSWER_WITH_DATA, Plan.Intent.INVESTIGATE):
         # A tela troca o "Pensando…" pelo que foi entendido: é a hora mais

@@ -606,3 +606,41 @@ def test_resultado_inteiro_manda_a_tabela_sair_completa(catalogo):
     entrada = provider._client.chamadas[0]["input"]
     assert "todas as 31 linhas, sem cortar" in entrada
     assert "Lista longa" not in entrada
+
+
+def test_reconhecimento_vem_como_explore_com_as_consultas(catalogo):
+    """Pergunta sem referência (ADR-0033): o planejador devolve as consultas
+    de reconhecimento em `investigacao`, como nas hipóteses de uma
+    investigação."""
+    from ai_orchestrator.providers.openai_provider import PassoEstruturado
+
+    passos = [PassoEstruturado(hipotese="frescor", sql="SELECT MAX(\"DATA_ADESAO\") FROM pbm.fato_pbm_adesoes")]
+    provider = _provider(catalogo, [_plano(intent="explore", sql="", investigacao=passos)])
+
+    plano = provider.plan(PlanRequest(question="pacientes que aderiram e concluíram a transação"))
+
+    assert plano.intent == Plan.Intent.EXPLORE
+    assert plano.investigacao[0]["hipotese"] == "frescor"
+
+
+def test_depois_do_reconhecimento_o_plano_recebe_o_que_ele_mostrou(catalogo):
+    provider = _provider(catalogo, [_plano(premissas="Dado até 29/09: outubro ainda não entrou.")])
+
+    plano = provider.plan(PlanRequest(question="pacientes que aderiram e concluíram",
+                                      reconhecimento="## Consulta 0: frescor\nLinhas: [{\"max\": \"2026-09-29\"}]"))
+
+    enviado = _texto(provider._client.chamadas[0])
+    assert "# Reconhecimento" in enviado and "2026-09-29" in enviado
+    assert "Nunca `explore` de novo" in enviado
+    assert plano.premissas == "Dado até 29/09: outubro ainda não entrou."
+
+
+def test_premissas_chegam_a_redacao_com_a_instrucao(catalogo):
+    resposta = _Resposta(RespostaEstruturada(reply="Foram 1.819 pacientes."), _Uso(3000, 100))
+    provider = _provider(catalogo, [resposta])
+
+    provider.answer(AnswerRequest(question="q", sql="SELECT 1", columns=("pacientes",), rows=((1819,),),
+                                  truncated=False, premissas="Dado até 29/09: outubro ainda não entrou."))
+
+    enviado = provider._client.chamadas[0]["input"]
+    assert "# Premissas desta resposta" in enviado and "outubro ainda não entrou" in enviado

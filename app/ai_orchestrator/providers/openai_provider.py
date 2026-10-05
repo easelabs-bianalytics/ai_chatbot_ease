@@ -90,6 +90,7 @@ _INTENCOES = frozenset(
         Plan.Intent.CONVERSATION,
         Plan.Intent.INVESTIGATE,
         Plan.Intent.CONCLUDE,
+        Plan.Intent.EXPLORE,
     }
 )
 
@@ -100,7 +101,7 @@ MAX_TOKENS_PLANO = 8000
 # de dado quase sempre tem termo de tema. Se o barato achar que é dado, a
 # pergunta sobe para o principal, que é quem escreve SQL.
 MAX_LETRAS_CONVERSA_BARATA = 120
-_INTENCOES_QUE_SOBEM = frozenset({Plan.Intent.ANSWER_WITH_DATA, Plan.Intent.INVESTIGATE})
+_INTENCOES_QUE_SOBEM = frozenset({Plan.Intent.ANSWER_WITH_DATA, Plan.Intent.INVESTIGATE, Plan.Intent.EXPLORE})
 # O modelo barato só fica com a última palavra quando é conversa de verdade.
 # "Não sei", "fora de escopo" e "de qual período?" sobem: quem decide que uma
 # pergunta sem tema reconhecido não tem resposta é o modelo principal, que lê
@@ -181,7 +182,7 @@ class PlanoEstruturado(BaseModel):
         "o que vem da conversa + o que o usuário mudou agora",
     )
     intent: str = Field(
-        description="answer_with_data, investigate, conversation, clarify, unknown ou out_of_scope; "
+        description="answer_with_data, investigate, explore, conversation, clarify, unknown ou out_of_scope; "
         "conclude só nas rodadas com achados"
     )
     sql: str = Field(default="", description="a consulta, vazia quando não houver")
@@ -214,7 +215,8 @@ class PlanoEstruturado(BaseModel):
     aba_nova: str = Field(default="", description="com planilha: nome da aba nova que recebe o resultado do `sql`; vazio se não houver")
     grafico_na_aba: str = Field(default="", description="gráfico do Excel na aba nova: barras, colunas, linha, pizza ou vazio")
     investigacao: list[PassoEstruturado] = Field(
-        default_factory=list, description="em investigate: as hipóteses desta rodada"
+        default_factory=list,
+        description="em investigate: as hipóteses desta rodada; em explore: as consultas de reconhecimento",
     )
     ressalva_forecast: bool = Field(
         default=False,
@@ -223,6 +225,11 @@ class PlanoEstruturado(BaseModel):
     rodada_final: bool = Field(
         default=False,
         description="em investigate: true se estas consultas já bastam para concluir",
+    )
+    premissas: str = Field(
+        default="",
+        description="depois de um reconhecimento: o critério adotado, até quando vai o dado e as "
+        "ambiguidades, com os números; vazio nos demais",
     )
 
 
@@ -332,6 +339,16 @@ def _entendimento_em_texto(request) -> str:
             + request.pedido_nao_atendido
             + "\n\nDiga isso logo no começo da resposta, com o motivo, antes dos números. "
             "Nunca escreva que considerou algo que está nesta lista."
+        )
+    if getattr(request, "premissas", ""):
+        # Pergunta sem referência (ADR-0033): quem lê precisa saber que
+        # critério virou o número e de quando é o dado — na conversa 70 o
+        # critério mudava 45 adesões.
+        texto += (
+            "\n\n# Premissas desta resposta\n\n"
+            + request.premissas
+            + "\n\nDiga, em uma ou duas frases logo no começo, o critério adotado e até quando "
+            "vai o dado; a ambiguidade que mexe no número vai com o número dela."
         )
     return texto
 
@@ -722,7 +739,7 @@ class OpenAIProvider(AIProvider):
             and not contexto.secoes
             and not contexto.completo
             and not (request.planilha or request.error_note or request.empty_note or request.achados
-                     or request.autocritica_note)
+                     or request.autocritica_note or request.reconhecimento)
             and len(request.question.strip()) <= MAX_LETRAS_CONVERSA_BARATA
         )
         tema = contexto.texto[len(contexto.fixo):] if contexto.fixo else ""
@@ -748,6 +765,17 @@ class OpenAIProvider(AIProvider):
                 + "\n\nLeia os achados e decida (seção 13): aprofunde o ramo que eles "
                 "apontaram com 1 a 3 consultas novas (`investigate`), sem repetir o que já foi "
                 "consultado, ou responda `conclude` se já dá para explicar."
+            )
+        if request.reconhecimento:
+            entrada += (
+                "\n\n# Reconhecimento\n\nO que as consultas de reconhecimento mostraram "
+                "(seção 1.1):\n\n"
+                + request.reconhecimento
+                + "\n\nAgora escreva a resposta de verdade: `answer_with_data` com a consulta "
+                "final, no grão que o usuário pediu, e `premissas` com o critério adotado, até "
+                "quando vai o dado e as ambiguidades com os números — ou `clarify`, com os "
+                "números de cada leitura, se as leituras levam a respostas muito diferentes e "
+                "nada na pergunta diz qual. Nunca `explore` de novo."
             )
         if request.planilha:
             # Sobe o PERFIL da planilha, nunca o conteúdo (ADR-0024): as
@@ -815,9 +843,11 @@ class OpenAIProvider(AIProvider):
             preenchimento=_preenchimento(conteudo, pedido=bool(request.planilha)),
             operacao_da_planilha=_operacao(conteudo, bool(request.planilha)),
             **(_aba_nova(conteudo) if request.planilha else {}),
-            investigacao=_investigacao(conteudo) if intent == Plan.Intent.INVESTIGATE else (),
+            investigacao=(_investigacao(conteudo)
+                          if intent in (Plan.Intent.INVESTIGATE, Plan.Intent.EXPLORE) else ()),
             ressalva_forecast=bool(getattr(conteudo, "ressalva_forecast", False)),
             rodada_final=bool(getattr(conteudo, "rodada_final", False)),
+            premissas=(getattr(conteudo, "premissas", "") or "").strip(),
             usage=usage,
         )
 

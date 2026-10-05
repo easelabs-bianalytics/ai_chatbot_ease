@@ -79,6 +79,9 @@ class PlanRequest:
     # concluir.
     achados: str = ""
     rodada: int = 1
+    # O que as consultas de reconhecimento mostraram (ADR-0033): com ele, o
+    # planejador escreve a consulta final, não outro reconhecimento.
+    reconhecimento: str = ""
     # Autocrítica do seguimento (`autocritica.py`): o plano anterior disse
     # que mudava o dado e devolveu os mesmos números da resposta anterior.
     autocritica_note: str = ""
@@ -104,6 +107,10 @@ class Plan:
         # Só depois de achados: o que foi consultado já explica, hora de
         # escrever a análise.
         CONCLUDE = "conclude"
+        # Pergunta sem referência (ADR-0033): antes da consulta final, 2 a 4
+        # consultas pequenas de reconhecimento — frescor, grão e chave,
+        # valores, ambiguidade. Uma rodada só; depois vem a resposta.
+        EXPLORE = "explore"
 
     intent: str
     sql: str = ""
@@ -166,6 +173,9 @@ class Plan:
     # chamada seguinte ao planejador, que em quase toda investigação só
     # servia para ele dizer "pode concluir" — ~US$ 0,05 por pergunta.
     rodada_final: bool = False
+    # Depois de um reconhecimento (ADR-0033): o critério adotado, até quando
+    # vai o dado e as ambiguidades, com os números. A redação diz isso.
+    premissas: str = ""
     usage: AIUsage = field(default_factory=AIUsage)
     # Chamadas de planejamento descartadas antes desta: o modelo barato que
     # tentou a conversa curta e viu que era pergunta de dado. Pagas do mesmo
@@ -214,6 +224,9 @@ class AnswerRequest:
     # mudança que não aconteceu.
     entendimento: str = ""
     pedido_nao_atendido: str = ""
+    # Critério, frescor e ambiguidades de uma pergunta sem referência
+    # (ADR-0033): a resposta os diz em poucas palavras.
+    premissas: str = ""
     # A pessoa pediu só o gráfico ("separe em gráficos", "crie um visual"):
     # a resposta é o gráfico e uma frase, sem tabela (conversa 18).
     so_visual: bool = False
