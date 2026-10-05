@@ -1331,19 +1331,20 @@ casos:
     referencia: D14
     parametros: {data_ini: "2026-08-01", data_fim: "2026-09-01"}
 
-  - id: D15-adesao-x-transacao-concluida
+  - id: D15-pacientes-adesao-x-transacao
     grupo: referencia
     pergunta: >-
-      Das adesões ao PBM de setembro até 5 de outubro de 2026, quais concluíram a transação e quais
-      não, em planilha?
+      Utilize as planilhas de adesão e transação do PBM de setembro e outubro de 2026 e coloque uma
+      coluna dizendo quais pacientes aderiram e concluíram a transação e quais aderiram e não
+      concluíram.
     esperado: answer_with_data
     referencia: D15
-    parametros: {data_ini: "2026-09-01", data_fim: "2026-10-06", data_corte: "2026-10-05"}
-    sql_deve_conter: ["fato_pbm_adesoes", "fato_pbm_transacoes", "CONFIRMADA", "MIN("]
+    parametros: {data_ini: "2026-09-01", data_fim: "2026-11-01"}
+    sql_deve_conter: ["fato_pbm_adesoes", "fato_pbm_transacoes", "CONFIRMADA", "ID_CONSUMIDOR"]
     comparar_resultado: false
     nota: >-
-      Lista longa (2.796 adesões em 2026-10-05). O que se confere é a consulta: agregar as
-      transações e juntar, nunca LATERAL por adesão (conversa 70).
+      Lista longa (2.790 pacientes em set/2026). O que se confere é a consulta: um paciente por
+      linha, compras agregadas e juntadas, nunca LATERAL por adesão (conversa 70, Amanda).
 
   - id: D20-vouchers-2026
     grupo: referencia

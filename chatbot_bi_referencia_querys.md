@@ -2585,43 +2585,70 @@ ORDER BY unidades DESC
 LIMIT 50;
 ```
 
-*"Das adesões de setembro e outubro, quais concluíram a transação e quais não?"* / *"conversão de
-adesão em compra"*
+*"Quais pacientes aderiram ao PBM em setembro e concluíram a transação, e quais não?"* / *"coluna
+dizendo quem aderiu e comprou"* / *"conversão de adesão em compra"*
 
 ```sql
--- D15 · Adesão × transação concluída: cada adesão com a primeira transação confirmada depois dela
-WITH adesoes AS (
-  SELECT a."DATA_ADESAO" AS data_adesao, upper(a."MARCA") AS marca, a."EAN" AS ean,
-         a."CAMPANHA" AS campanha,
+-- D15 · Pacientes que aderiram ao PBM num período: concluíram ou não a compra (um paciente por linha)
+WITH adesoes AS (   -- a primeira adesão de cada paciente no período
+  SELECT DISTINCT ON (a."ID_CONSUMIDOR")
+         a."ID_CONSUMIDOR"::text AS id_consumidor, a."DATA_ADESAO" AS data_adesao,
+         a."PRODUTO" AS produto_aderido, a."CAMPANHA" AS campanha,
          a."UF_PROFISSIONAL" || lpad(ltrim(a."COD_PROFISSIONAL"::text, '0'), 7, '0') AS crm_medico,
-         a."NOME_PROFISSIONAL" AS medico, a."NOME_FANTASIA" AS pdv, a."UF_PDV" AS uf_pdv,
-         a."ID_CONSUMIDOR"::text AS id_consumidor
+         a."NOME_PROFISSIONAL" AS medico, a."NOME_FANTASIA" AS pdv, a."CIDADE_PDV" AS cidade_pdv,
+         a."UF_PDV" AS uf_pdv
   FROM pbm.fato_pbm_adesoes a
   WHERE a."DATA_ADESAO" >= :data_ini AND a."DATA_ADESAO" < :data_fim
+  ORDER BY a."ID_CONSUMIDOR", a."DATA_ADESAO"
 ),
-transacoes AS (   -- só as do período: a transação que conta é na data da adesão ou depois
-  SELECT t."ID_CONSUMIDOR" AS id_consumidor, t."DATA_REF" AS data_ref
-  FROM pbm.fato_pbm_transacoes t
-  WHERE t."STATUS_TRN" = 'CONFIRMADA'
-    AND t."DATA_REF" >= :data_ini AND t."DATA_REF" <= :data_corte
+produtos_aderidos AS (
+  SELECT a."ID_CONSUMIDOR"::text AS id_consumidor, array_agg(DISTINCT a."EAN") AS eans
+  FROM pbm.fato_pbm_adesoes a
+  WHERE a."DATA_ADESAO" >= :data_ini AND a."DATA_ADESAO" < :data_fim
+  GROUP BY 1
 ),
-primeira AS (     -- a primeira transação de cada adesão, calculada uma vez e juntada depois
-  SELECT a.id_consumidor, a.data_adesao, MIN(t.data_ref) AS primeira_transacao
+compras AS (      -- compras confirmadas depois da adesão: agregadas uma vez, nunca linha a linha
+  SELECT a.id_consumidor,
+         COUNT(*) AS compras_confirmadas,
+         MIN(t."DATA_REF") AS primeira_compra,
+         bool_or(t."EAN" = ANY(pa.eans)) AS comprou_o_produto_aderido
   FROM adesoes a
-  JOIN transacoes t ON t.id_consumidor = a.id_consumidor AND t.data_ref >= a.data_adesao
-  GROUP BY 1, 2
+  JOIN produtos_aderidos pa ON pa.id_consumidor = a.id_consumidor
+  JOIN pbm.fato_pbm_transacoes t
+    ON t."ID_CONSUMIDOR" = a.id_consumidor
+   AND t."STATUS_TRN" = 'CONFIRMADA'
+   AND t."DATA_REF" >= :data_ini
+   AND t."DATA_REF" >= a.data_adesao
+  GROUP BY 1
+),
+iniciadas AS (    -- transação começada e não confirmada (pré-autorizada, pendente, anulada)
+  SELECT DISTINCT t."ID_CONSUMIDOR" AS id_consumidor
+  FROM pbm.fato_pbm_transacoes t
+  WHERE t."STATUS_TRN" IN ('PRE', 'PEN', 'ANU')
+    AND t."ID_CONSUMIDOR" IN (SELECT id_consumidor FROM adesoes)
 )
-SELECT date_trunc('month', a.data_adesao)::date AS mes, a.data_adesao, a.marca, a.ean, a.campanha,
-       a.crm_medico, a.medico, a.pdv, a.uf_pdv,
-       CASE WHEN p.primeira_transacao IS NOT NULL THEN 'Aderiu e concluiu a transação'
+SELECT a.id_consumidor AS paciente, a.data_adesao, a.produto_aderido, a.campanha,
+       a.crm_medico, a.medico, a.pdv, a.cidade_pdv, a.uf_pdv,
+       CASE WHEN c.id_consumidor IS NOT NULL THEN 'Aderiu e concluiu a transação'
             ELSE 'Aderiu e não concluiu a transação' END AS situacao,
-       p.primeira_transacao
+       CASE WHEN c.comprou_o_produto_aderido THEN 'Comprou o produto da adesão'
+            WHEN c.id_consumidor IS NOT NULL THEN 'Comprou outra apresentação'
+            WHEN i.id_consumidor IS NOT NULL THEN 'Começou e não confirmou a compra'
+            ELSE 'Não chegou a comprar' END AS detalhe,
+       c.primeira_compra,
+       c.primeira_compra - a.data_adesao AS dias_ate_a_compra,
+       COALESCE(c.compras_confirmadas, 0) AS compras_confirmadas
 FROM adesoes a
-LEFT JOIN primeira p ON p.id_consumidor = a.id_consumidor AND p.data_adesao = a.data_adesao
-ORDER BY 1, 2, 10;
--- 01/09 a 05/10/2026: 2.796 adesões, 1.824 concluíram; 1,1 s. A mesma regra com LEFT JOIN
--- LATERAL (procurar a transação adesão por adesão) passou de 60 s e derrubou o Excel (conversa 70).
--- Resumo: a contagem por mes e situacao, sobre o mesmo resultado.
+LEFT JOIN compras c   ON c.id_consumidor = a.id_consumidor
+LEFT JOIN iniciadas i ON i.id_consumidor = a.id_consumidor
+ORDER BY a.data_adesao, situacao;
+-- Grão: PACIENTE ("ID_CONSUMIDOR"), a pergunta típica do Marketing. "Concluiu" = compra
+-- CONFIRMADA pelo PBM na data da adesão ou depois, de qualquer apresentação Ease (aderiu ao 30 ml
+-- e comprou o 10 ml também concluiu; `detalhe` separa os dois). Diga esse critério na resposta.
+-- Set/2026 (dado até 29/09): 2.790 pacientes; 1.819 concluíram (65,2%: 1.776 o produto da adesão,
+-- 43 outra apresentação), 971 não (708 começaram e não confirmaram, 263 nem começaram); 1.583
+-- compraram no mesmo dia da adesão. 1,4 s. Por ADESÃO (não paciente), o grão é a adesão e a compra
+-- tem de ser do mesmo EAN. LEFT JOIN LATERAL por adesão passou de 60 s e derrubou o Excel (conversa 70).
 ```
 
 ### 4.3 Vouchers
