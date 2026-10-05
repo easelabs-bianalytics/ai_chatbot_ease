@@ -27,6 +27,21 @@
 </head>
 <body class="bg-gradiente">
 
+  <!-- Jarvis 3.0: os gradientes do mascote ficam num SVG só, que todos os
+       outros referenciam pelo CSS (url(#jv3Corpo), url(#jv3Anel)). Fica em
+       tamanho zero, e não com display:none: num SVG escondido o navegador
+       não pinta o gradiente e o mascote sai sem cor. -->
+  <svg class="jarvis-defs" width="0" height="0" aria-hidden="true" focusable="false">
+    <defs>
+      <linearGradient id="jv3Corpo" x1="0.2" y1="0" x2="0.8" y2="1">
+        <stop offset="0" stop-color="#7C80F7"/><stop offset="1" stop-color="#4A4DC4"/>
+      </linearGradient>
+      <linearGradient id="jv3Anel" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#4FB34A"/><stop offset="1" stop-color="#A8F09E"/>
+      </linearGradient>
+    </defs>
+  </svg>
+
   <!-- LOGIN
        Duas metades: à esquerda o palco, onde o Jarvis recebe a pessoa e
        mostra o que faz (uma pergunta entra, ele consulta, a resposta chega
@@ -46,6 +61,7 @@
           </g>
           <rect class="j-corpo" x="17" y="11.9" width="30" height="40.3" rx="15"/>
           <rect class="j-viseira" x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9"/>
+          <path class="j-reflexo" d="M 22.5 24.2 H 33"/>
           <g class="j-olho-g"><circle class="j-olho" cx="40" cy="26.5" r="2.4"/></g>
           <g class="j-orbita-g">
             <path class="j-orbita j-orbita--frente" d="M 7,40 A 25,8 0 0,1 57,40"/>
@@ -126,11 +142,12 @@
           <svg class="jarvis" viewBox="0 0 64 64" focusable="false">
             <rect class="j-corpo" x="17" y="11.9" width="30" height="40.3" rx="15"/>
             <rect class="j-viseira" x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9"/>
+            <path class="j-reflexo" d="M 22.5 24.2 H 33"/>
             <circle class="j-olho" cx="40" cy="26.5" r="2.4"/>
           </svg>
         </span>
         <span class="marca-produto">
-          <span class="produto-nome">Jarvis <span class="produto-versao">2.0</span></span>
+          <span class="produto-nome">Jarvis <span class="produto-versao" id="versaoNovidades" title="O que há de novo no 3.0">3.0</span></span>
           <!-- Ao passar o mouse a linha de baixo diz o que o clique faz: o
                aceno sozinho mostrava que o mascote reage, não o que ele abre. -->
           <span class="produto-area">
@@ -229,6 +246,7 @@
               </g>
               <rect class="j-corpo" x="17" y="11.9" width="30" height="40.3" rx="15"/>
               <rect class="j-viseira" x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9"/>
+              <path class="j-reflexo" d="M 22.5 24.2 H 33"/>
               <circle class="j-olho" cx="40" cy="26.5" r="2.4"/>
               <g class="j-orbita-g">
                 <path class="j-orbita j-orbita--frente" d="M 7,40 A 25,8 0 0,1 57,40"/>
@@ -315,6 +333,36 @@
         <button class="btn btn-primary walk-proximo" id="walkProximo" type="button">Próximo</button>
       </div>
       <p class="walk-dica">Use as setas do teclado ou arraste para os lados</p>
+    </div>
+  </div>
+
+  <!-- Novidades da versão (Jarvis 3.0: Marketing no cérebro e motor de anexos). Abre uma vez, sozinha,
+       para quem já conhecia o Jarvis; depois, pelo "3.0" da lateral. O filme
+       é a mesma composição do vídeo de anúncio (novidades/jarvis-3.0/), que
+       toca sozinha dentro do iframe. -->
+  <div class="novidades" id="novidades" role="dialog" aria-modal="true" aria-labelledby="novidadesTitulo" hidden>
+    <div class="novidades-cartao">
+      <button class="novidades-fechar" id="novidadesFechar" type="button" aria-label="Fechar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+      <div class="novidades-tela">
+        <iframe id="novidadesFilme" title="Anúncio do Jarvis 3.0" tabindex="-1"
+                data-src="{% static 'web/novidades/jarvis-3.0/index.html' %}"></iframe>
+      </div>
+      <div class="novidades-texto">
+        <span class="novidades-rotulo">Novidade</span>
+        <h2 id="novidadesTitulo">Jarvis <span class="produto-versao">3.0</span>: o cérebro ficou maior</h2>
+        <p>O Marketing entrou no cérebro do Jarvis: Área Médica, Email MKT e o canal de cada médico, cruzados com prescrição, sell out e força de vendas. E agora ele trabalha com os seus arquivos: anexe uma planilha e diga o que preencher, ou cole um print.</p>
+        <ul class="novidades-lista">
+          <li>Marketing: Área Médica, Email MKT e o Digital + Orgânico, atualizados todo dia</li>
+          <li>Planilhas xlsx, xlsm e csv de até 20 mil linhas, e prints colados com Ctrl+V</li>
+          <li>Nada fica guardado: o arquivo vive só durante a conversa</li>
+        </ul>
+        <div class="novidades-acoes">
+          <button class="walk-link" id="novidadesDeNovo" type="button">Ver de novo</button>
+          <button class="btn btn-primary" id="novidadesExperimentar" type="button">Anexar uma planilha</button>
+        </div>
+      </div>
     </div>
   </div>
 

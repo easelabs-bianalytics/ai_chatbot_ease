@@ -194,6 +194,7 @@
       <rect class="j-corpo" x="17" y="11.9" width="30" height="40.3" rx="15"/>
       ${armadura ? ARMADURA_FRENTE : ''}
       <rect class="j-viseira" x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9"/>
+      <path class="j-reflexo" d="M 22.5 24.2 H 33"/>
       <circle class="j-olho" cx="40" cy="26.5" r="2.4"/>
       ${armadura ? ARMADURA_REATOR : ''}
       ${orbita ? `
@@ -399,7 +400,15 @@
     // acontece, antes de a conversa entrar em cena. Quem chega sem nunca ter
     // visto o Jarvis precisa saber o que ele faz antes de olhar para um campo
     // de pergunta em branco.
-    if (usuario.passeio_pendente) setTimeout(() => abrirPasseio(), 320);
+    // Quem já conhecia o Jarvis vê as novidades da versão uma vez. Quem está
+    // chegando agora faz o passeio, que já mostra os anexos, e não ganha os
+    // dois de uma vez.
+    if (usuario.passeio_pendente) {
+      gravarChave(CHAVE_NOVIDADES, '1');
+      setTimeout(() => abrirPasseio(), 320);
+    } else if (!lerChave(CHAVE_NOVIDADES)) {
+      setTimeout(() => abrirNovidades(), 600);
+    }
     avisarDaCota();
   };
 
@@ -2904,6 +2913,51 @@
   });
   convidarParaPasseio();
 
+  // ---------------------------------------------------------- novidades
+  // O anúncio do 3.0 (motor de anexos). A chave é por versão: o 3.1 terá a
+  // dele. Fica no navegador, como as do passeio: quem trocar de computador
+  // vê de novo uma vez, o que não incomoda ninguém.
+  const CHAVE_NOVIDADES = 'jarvis:novidades-3.0';
+  let focoAntesDasNovidades = null;
+
+  const abrirNovidades = () => {
+    const caixa = $('#novidades');
+    if (!caixa.hidden || !$('#walk').hidden) return;
+    gravarChave(CHAVE_NOVIDADES, '1');
+    focoAntesDasNovidades = document.activeElement;
+    // Com "reduzir movimento", o filme abre parado no quadro final.
+    const filme = $('#novidadesFilme');
+    filme.src = `${filme.dataset.src}?${semMovimento() ? 'fim' : 'tocar'}=1`;
+    $('#novidadesDeNovo').hidden = semMovimento();
+    caixa.hidden = false;
+    $('#novidadesExperimentar').focus({ preventScroll: true });
+  };
+
+  const fecharNovidades = () => {
+    const caixa = $('#novidades');
+    if (caixa.hidden) return;
+    caixa.hidden = true;
+    $('#novidadesFilme').src = 'about:blank';   // para o filme
+    focoAntesDasNovidades?.focus?.({ preventScroll: true });
+    focoAntesDasNovidades = null;
+  };
+
+  $('#novidadesFechar').addEventListener('click', fecharNovidades);
+  // clicar fora do cartão fecha, como no visor
+  $('#novidades').addEventListener('click', (ev) => { if (ev.target.id === 'novidades') fecharNovidades(); });
+  $('#novidadesDeNovo').addEventListener('click', () => {
+    $('#novidadesFilme').contentWindow?.postMessage({ jarvis: 'anuncio-de-novo' }, location.origin);
+  });
+  // O convite é usar: fecha e abre o seletor de arquivo do compositor. O
+  // clique ainda é do usuário, então o navegador deixa o seletor abrir.
+  $('#novidadesExperimentar').addEventListener('click', () => {
+    fecharNovidades();
+    $('#btnAnexar').click();
+  });
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && !$('#novidades').hidden) fecharNovidades();
+  });
+
   // ---------------------------------------------------------- limites
   // Quanto a pessoa já usou hoje. Existe para a cota não ser uma surpresa:
   // descobrir o limite no instante em que ele bate é a pior hora de saber
@@ -3445,7 +3499,11 @@
   const irParaNova = () => { fecharDropdown(); fecharGaveta(); novaConversa('push'); };
   $('#btnNovaConversa').addEventListener('click', irParaNova);
   $('#btnNovaConversaMenu').addEventListener('click', irParaNova);
-  $('#btnLogoHome').addEventListener('click', abrirPasseio);
+  // O "3.0" ao lado do nome abre as novidades; o resto da marca, o passeio.
+  $('#btnLogoHome').addEventListener('click', (ev) => {
+    if (ev.target.closest('#versaoNovidades')) abrirNovidades();
+    else abrirPasseio();
+  });
 
   // ---------------------------------------------------------- busca
   // Espera a pessoa parar de digitar: uma consulta por tecla faria a lista

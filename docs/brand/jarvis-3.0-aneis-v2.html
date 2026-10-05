@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jarvis 3.0 · anel, segunda leva</title>
+<style>
+  :root { --bg:#F7F8FA; --card:#fff; --tx:#1A1D2E; --mu:#6B7088; --bd:#EEEEF3; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--tx); font:15px/1.5 Inter, system-ui, sans-serif; padding:28px 16px; }
+  h1 { font-size:22px; margin:0 0 4px; } p.sub { color:var(--mu); margin:0 0 24px; max-width:900px; }
+  .grade { display:grid; grid-template-columns:repeat(auto-fit, minmax(270px, 1fr)); gap:16px; max-width:1240px; }
+  .op { background:var(--card); border:1px solid var(--bd); border-radius:16px; overflow:hidden; }
+  .op.ref { border-style:dashed; }
+  .op header { padding:16px 18px 0; }
+  .op h2 { font-size:15px; margin:0 0 2px; } .op small { color:var(--mu); display:block; min-height:62px; font-size:12.5px; }
+  .palcos { display:grid; grid-template-columns:1fr 1fr; }
+  .palco { padding:12px 8px 10px; display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .palco.claro { --contorno:#FFFFFF; background:#FFFFFF; }
+  .palco.escuro { --contorno:#151823; background:#151823; }
+  .grande { width:118px; height:118px; overflow:visible; }
+  .tam { display:flex; align-items:center; gap:12px; }
+  .tam svg { overflow:visible; }
+  .ico { border-radius:22%; }
+</style>
+</head>
+<body>
+<h1>Jarvis 3.0: o anel, segunda leva (I a R)</h1>
+<p class="sub">O corpo, a viseira com reflexo e o olho aceso são os da opção 5, que você aprovou. Muda só o anel e o satélite. As duas primeiras, tracejadas, são para comparar: o 2.0 e o gradiente atual. Cada versão aparece no fundo claro e no escuro, em 118 e 38 px e como favicon.</p>
+<div class="grade" id="grade"></div>
+
+<script>
+const V = '#6ECC64', C = '#4FD8E8';
+const TRAS = 'M 7,40 A 25,8 0 0,0 57,40', FRENTE = 'M 7,40 A 25,8 0 0,1 57,40';
+
+/* Gradiente ao longo da frente do anel: da ponta esquerda (0) à direita (1). */
+const grad = (id, paradas) =>
+  `<linearGradient id="${id}" x1="0" y1="0" x2="1" y2="0">${paradas.map(([o, c, a = 1]) =>
+    `<stop offset="${o}" stop-color="${c}" stop-opacity="${a}"/>`).join('')}</linearGradient>`;
+
+const OPCOES = [
+  {
+    ref: true, nome: 'Referência · 2.0', nota: 'Anel verde chapado e satélite verde, como hoje no WhatsApp e nas figurinhas.',
+    anel: () => ({ tras: `<path d="${TRAS}" stroke="${V}" stroke-width="1.8" opacity="0.55"/>`, frente: `<path d="${FRENTE}" stroke="${V}" stroke-width="2.4"/>`, sat: V }),
+  },
+  {
+    ref: true, nome: 'Referência · atual (verde → ciano)', nota: 'O que está no app agora: o gradiente corre da esquerda para a direita, e as duas cores se misturam no meio.',
+    anel: (id) => ({ defs: grad(`g${id}`, [[0, V], [1, C]]), tras: `<path d="${TRAS}" stroke="url(#g${id})" stroke-width="1.8" opacity="0.55"/>`, frente: `<path d="${FRENTE}" stroke="url(#g${id})" stroke-width="2.4"/>`, sat: C, brilho: true }),
+  },
+  {
+    nome: 'I · Brilho na frente', nota: 'Verde nas pontas e ciano claro só no meio da frente, onde a luz bateria. O ciano vira reflexo, não uma segunda cor do anel.',
+    anel: (id) => ({ defs: grad(`g${id}`, [[0, V], [0.5, '#8FF0E4'], [1, V]]), tras: `<path d="${TRAS}" stroke="${V}" stroke-width="1.8" opacity="0.5"/>`, frente: `<path d="${FRENTE}" stroke="url(#g${id})" stroke-width="2.4"/>`, sat: V, brilho: true }),
+  },
+  {
+    nome: 'J · Verde-água no meio', nota: 'O mesmo verde → ciano de hoje, com uma parada de verde-água no meio. A transição fica limpa, sem o trecho "lavado".',
+    anel: (id) => ({ defs: grad(`g${id}`, [[0, V], [0.5, '#3FD7A6'], [1, C]]), tras: `<path d="${TRAS}" stroke="url(#g${id})" stroke-width="1.8" opacity="0.5"/>`, frente: `<path d="${FRENTE}" stroke="url(#g${id})" stroke-width="2.4"/>`, sat: C, brilho: true }),
+  },
+  {
+    nome: 'K · Só a frente acesa', nota: 'Atrás do corpo o anel é verde escuro e firme; na frente, o gradiente com brilho. O gradiente só aparece onde o anel está mais perto de quem olha.',
+    anel: (id) => ({ defs: grad(`g${id}`, [[0, V], [0.5, '#3FD7A6'], [1, C]]), tras: `<path d="${TRAS}" stroke="#3E8F38" stroke-width="1.8" opacity="0.75"/>`, frente: `<path d="${FRENTE}" stroke="url(#g${id})" stroke-width="2.4" filter="url(#br${id})"/>`, sat: C, brilho: true }),
+  },
+  {
+    nome: 'L · Profundidade só no verde', nota: 'Sem ciano no anel: verde escuro atrás, e a frente clareia até o satélite. A novidade fica toda no satélite ciano aceso.',
+    anel: (id) => ({ defs: grad(`g${id}`, [[0, '#4FB34A'], [1, '#A8F09E']]), tras: `<path d="${TRAS}" stroke="#3E8F38" stroke-width="1.8" opacity="0.7"/>`, frente: `<path d="${FRENTE}" stroke="url(#g${id})" stroke-width="2.4"/>`, sat: C, brilho: true }),
+  },
+  {
+    nome: 'M · Halo ciano', nota: 'O anel continua verde chapado, e um brilho ciano suave fica em volta da frente, como energia saindo dele. Em 38 px vira um verde um pouco mais claro.',
+    anel: (id) => ({ tras: `<path d="${TRAS}" stroke="${V}" stroke-width="1.8" opacity="0.55"/>`, frente: `<path d="${FRENTE}" stroke="${C}" stroke-width="4.2" opacity="0.45" filter="url(#hz${id})"/><path d="${FRENTE}" stroke="${V}" stroke-width="2.4"/>`, sat: C, brilho: true }),
+  },
+  {
+    nome: 'N · Rastro que se apaga', nota: 'Versão mais fina do "rastro de cometa": o anel é verde, e só o último quarto antes do satélite acende em ciano, saindo do transparente.',
+    anel: (id) => ({ defs: grad(`g${id}`, [[0.7, C, 0], [1, C, 1]]), tras: `<path d="${TRAS}" stroke="${V}" stroke-width="1.8" opacity="0.55"/>`, frente: `<path d="${FRENTE}" stroke="${V}" stroke-width="2.4"/><path d="${FRENTE}" stroke="url(#g${id})" stroke-width="2.4"/>`, sat: C, brilho: true }),
+  },
+  {
+    nome: 'O · Órbita dupla', nota: 'Dois anéis finos, sem gradiente: o verde de sempre e um ciano um pouco maior, por fora. Lê como "mais energia" sem misturar cor.',
+    anel: () => ({ tras: `<path d="${TRAS}" stroke="${V}" stroke-width="1.5" opacity="0.5"/><path d="M 5,40.6 A 27,9 0 0,0 59,40.6" stroke="${C}" stroke-width="1" opacity="0.45"/>`, frente: `<path d="${FRENTE}" stroke="${V}" stroke-width="2"/><path d="M 5,40.6 A 27,9 0 0,1 59,40.6" stroke="${C}" stroke-width="1.2"/>`, sat: C, brilho: true }),
+  },
+  {
+    nome: 'P · Ciano com pontas verdes', nota: 'O inverso da I: o anel é ciano, e as pontas, onde ele some atrás do corpo, voltam ao verde. Mais "3.0", ainda ligado ao verde da marca.',
+    anel: (id) => ({ defs: grad(`g${id}`, [[0, V], [0.25, C], [0.75, C], [1, V]]), tras: `<path d="${TRAS}" stroke="${V}" stroke-width="1.8" opacity="0.5"/>`, frente: `<path d="${FRENTE}" stroke="url(#g${id})" stroke-width="2.4"/>`, sat: V, brilho: true }),
+  },
+  {
+    nome: 'Q · Índigo → verde → ciano', nota: 'Três cores: começa no índigo do corpo, passa pelo verde da marca e termina em ciano no satélite. O anel "sai" do corpo.',
+    anel: (id) => ({ defs: grad(`g${id}`, [[0, '#7B84F0'], [0.5, V], [1, C]]), tras: `<path d="${TRAS}" stroke="url(#g${id})" stroke-width="1.8" opacity="0.5"/>`, frente: `<path d="${FRENTE}" stroke="url(#g${id})" stroke-width="2.4"/>`, sat: C, brilho: true }),
+  },
+  {
+    nome: 'R · Neon ciano', nota: 'A troca mais forte: o anel inteiro em ciano aceso, e o satélite verde, como o olho. O verde da marca fica no olho e no satélite.',
+    anel: (id) => ({ tras: `<path d="${TRAS}" stroke="${C}" stroke-width="1.8" opacity="0.5"/>`, frente: `<path d="${FRENTE}" stroke="#7FE6F0" stroke-width="2.4" filter="url(#br${id})"/>`, sat: V, brilho: true }),
+  },
+];
+
+function mascote(op, id) {
+  const a = op.anel(id);
+  return `<defs>
+      <linearGradient id="vol${id}" x1="0.2" y1="0" x2="0.8" y2="1"><stop offset="0" stop-color="#7C80F7"/><stop offset="1" stop-color="#4A4DC4"/></linearGradient>
+      <filter id="br${id}" x="-150%" y="-150%" width="400%" height="400%"><feGaussianBlur stdDeviation="1" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      <filter id="hz${id}" x="-50%" y="-150%" width="200%" height="400%"><feGaussianBlur stdDeviation="1.4"/></filter>
+      ${a.defs || ''}
+    </defs>
+    <g transform="rotate(-14 32 40)" fill="none" stroke-linecap="round">${a.tras}</g>
+    <rect x="17" y="11.9" width="30" height="40.3" rx="15" fill="url(#vol${id})" stroke="var(--contorno)" stroke-width="2.4" paint-order="stroke"/>
+    <rect x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9" fill="#1E1F5C"/>
+    <path d="M 22.5 24.2 H 33" stroke="#FFFFFF" stroke-width="0.9" stroke-linecap="round" opacity="0.3"/>
+    <circle cx="40" cy="26.5" r="2.6" fill="${V}" filter="url(#br${id})"/>
+    <g transform="rotate(-14 32 40)" fill="none" stroke-linecap="round">
+      ${a.frente}
+      <circle cx="51.5" cy="44.9" r="3" fill="${a.sat}" stroke="var(--contorno)" stroke-width="1.2" paint-order="stroke" ${a.brilho ? `filter="url(#br${id})"` : ''}/>
+    </g>`;
+}
+
+let n = 0;
+const svg = (op, attrs) => `<svg viewBox="0 0 64 64" ${attrs}>${mascote(op, 'm' + (n++))}</svg>`;
+const favicon = (op) => {
+  const id = 'f' + (n++);
+  return `<svg viewBox="0 0 64 64" width="32" height="32" class="ico">
+    <defs><linearGradient id="lad${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2E3190"/><stop offset="1" stop-color="#161747"/></linearGradient></defs>
+    <rect width="64" height="64" rx="15" fill="url(#lad${id})"/>
+    <g transform="translate(32 31.5) scale(1.16) translate(-32 -32)" style="--contorno:#1B1C55">${mascote(op, id + 'i')}</g></svg>`;
+};
+const palco = (op, tema) => `
+  <div class="palco ${tema}">
+    ${svg(op, 'class="grande"')}
+    <div class="tam">${svg(op, 'width="38" height="38"')}${favicon(op)}</div>
+  </div>`;
+
+document.getElementById('grade').innerHTML = OPCOES.map(op => `
+  <div class="op${op.ref ? ' ref' : ''}">
+    <header><h2>${op.nome}</h2><small>${op.nota}</small></header>
+    <div class="palcos">${palco(op, 'claro')}${palco(op, 'escuro')}</div>
+  </div>`).join('');
+</script>
+</body>
+</html>

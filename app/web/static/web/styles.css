@@ -29,6 +29,9 @@
   --xlsx: #217346;
 
   --brand-green: #6ECC64; --brand-indigo: #5661E8;
+  /* Jarvis 3.0 (anel V, 2026-10-05): o satélite tem a cor da auréola, o verde
+     claro em que a frente do anel termina. Fica só no mascote. */
+  --brand-satelite: #9BE88F;
   --brand-diagonal: linear-gradient(135deg, #5661E8, #6ECC64);
   --brand-vertical: linear-gradient(180deg, #6ECC64, #5661E8);
   --brand-horizontal: linear-gradient(90deg, #6ECC64, #5661E8);
@@ -1068,12 +1071,14 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
    As partes ficam com classe própria para o CSS animar cada uma, e toda
    animação para com "reduzir movimento" (há quem passe mal com isso). */
 .jarvis { display: block; width: 100%; height: 100%; overflow: visible; }
+.jarvis-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 /* O anel fica parado e inclinado, como no desenho: girando 360° ele passa
    pela vertical e parece atravessar o corpo. Quem se move é o satélite, que
    corre por cima do anel e some atrás do Jarvis na metade de trás. */
 .j-orbita-g { transform: rotate(-14deg); transform-origin: 32px 40px; }
 .j-satelite {
-  fill: var(--brand-green);
+  fill: var(--brand-satelite);
+  filter: drop-shadow(0 0 1px var(--brand-satelite));
   /* contorno da cor do fundo: sem ele a bolinha some dentro do anel */
   stroke: var(--bg-card); stroke-width: 1.2;
   offset-path: path("M 7,40 a 25,8 0 1,0 50,0 a 25,8 0 1,0 -50,0");
@@ -1084,10 +1089,18 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
 /* A primeira metade do caminho é a de cima (atrás); a segunda, a de baixo
    (frente). Cada cópia acende só na sua metade, e a da frente é maior:
    é o que dá a impressão de que ela vem para perto de quem olha. */
-.j-corpo { fill: var(--primary-600); }
+/* Jarvis 3.0 ("anel energizado", 2026-10-05): a mesma geometria do 2.0, com
+   luz. O corpo ganha volume (gradiente do SVG `.jarvis-defs` no index.html;
+   a cor depois do url() é a reserva se ele faltar), a viseira um reflexo, o
+   olho brilha. O anel é a opção V ("profundidade no verde", escolhida em
+   docs/brand/jarvis-3.0-escolha.html): verde escuro e firme atrás do corpo,
+   e a frente clareia até o satélite, que tem a mesma cor. */
+.j-corpo { fill: url(#jv3Corpo) var(--primary-600); }
 .j-viseira { fill: var(--primary-950); }
+.j-reflexo { fill: none; stroke: #FFFFFF; stroke-width: 0.9; stroke-linecap: round; opacity: 0.3; }
 .j-olho {
   fill: var(--brand-green);
+  filter: drop-shadow(0 0 1px var(--brand-green));
   /* sem isto, o scaleX da varredura acontece em torno do canto do viewBox e
      o olho sai voando para fora da viseira */
   transform-box: fill-box; transform-origin: center;
@@ -1095,15 +1108,15 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
 /* O anel é partido em duas metades, como anel de planeta: a de trás passa
    atrás do corpo, a da frente passa por cima. Só assim o satélite some e
    reaparece — com o anel inteiro atrás, ele nunca cruzava o Jarvis. */
-.j-orbita { fill: none; stroke: var(--brand-green); stroke-linecap: round; }
-.j-orbita--tras { stroke-width: 1.8; opacity: 0.55; }
+.j-orbita { fill: none; stroke: url(#jv3Anel) var(--brand-green); stroke-linecap: round; }
+.j-orbita--tras { stroke: #3E8F38; stroke-width: 1.8; opacity: 0.7; }
 .j-orbita--frente { stroke-width: 2.4; }
 /* o contorno branco abre uma folga entre o anel e o corpo: sem ele, o anel
    encosta na silhueta e parece estar entrando no Jarvis */
 .j-corpo { stroke: var(--bg-card); stroke-width: 2.6; paint-order: stroke; }
 
 /* parado, mas não morto: respira devagar e a órbita corre */
-.jarvis--vivo .j-corpo, .jarvis--vivo .j-viseira, .jarvis--vivo .j-olho,
+.jarvis--vivo .j-corpo, .jarvis--vivo .j-viseira, .jarvis--vivo .j-reflexo, .jarvis--vivo .j-olho,
 .jarvis--vivo .j-olho-g, .jarvis--vivo .j-orbita-g {
   animation: jarvisFlutua 3.6s ease-in-out infinite;
 }
@@ -1112,7 +1125,7 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
 
 /* pensando: o olhar varre a viseira, de um lado ao outro */
 .jarvis--pensando .j-olho { animation: jarvisOlhar 2.4s ease-in-out infinite; }
-.jarvis--pensando .j-corpo, .jarvis--pensando .j-viseira,
+.jarvis--pensando .j-corpo, .jarvis--pensando .j-viseira, .jarvis--pensando .j-reflexo,
 .jarvis--pensando .j-orbita-g {
   animation: jarvisFlutua 3.6s ease-in-out infinite;
 }
@@ -1123,7 +1136,7 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
 .jarvis--consultando .j-olho { animation: jarvisVarre 1.1s ease-in-out infinite; }
 .jarvis--consultando .j-satelite--tras { animation: jarvisSateliteTras 1.6s linear infinite; }
 .jarvis--consultando .j-satelite--frente { animation: jarvisSateliteFrente 1.6s linear infinite; }
-.jarvis--consultando .j-corpo, .jarvis--consultando .j-viseira,
+.jarvis--consultando .j-corpo, .jarvis--consultando .j-viseira, .jarvis--consultando .j-reflexo,
 .jarvis--consultando .j-orbita-g {
   animation: jarvisFlutua 2.4s ease-in-out infinite;
 }
@@ -2166,7 +2179,11 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
 .jarvis--armadura .j-armadura:not(.j-arm-scan) { clip-path: url(#jvArmVarredura); }
 /* De armadura, quem flutua é o Jarvis inteiro: se o corpo e a viseira
    seguissem flutuando sozinhos, eles dançariam dentro da armadura. */
-.jarvis--armadura .j-corpo, .jarvis--armadura .j-viseira, .jarvis--armadura .j-olho { animation: none; }
+.jarvis--armadura .j-corpo, .jarvis--armadura .j-viseira, .jarvis--armadura .j-reflexo, .jarvis--armadura .j-olho { animation: none; }
+/* o reflexo é da viseira de sempre: na máscara ela muda de lugar e ele sobraria */
+.walk-ator .j-reflexo { transition: opacity 0.35s ease; }
+.jarvis--armadura .j-reflexo { opacity: 0; transition-delay: 0.42s; }
+.jarvis--desarmando .j-reflexo { transition-delay: 0.4s; }
 /* o anel sai de cena devagar, enquanto a faixa desce */
 .jarvis--armadura .j-orbita-g { animation: orbitaSome 0.5s ease 0.25s forwards; }
 @keyframes orbitaSome { to { opacity: 0; } }
@@ -2644,6 +2661,63 @@ button.secao-cabeca {
 /* Os limites pedem mais largura que um diálogo de confirmação: a barra é o
    assunto, e espremida entre o rótulo e a porcentagem ela vira um risco. */
 .modal.largo { max-width: 560px; }
+
+/* ── Novidades da versão (Jarvis 3.0) ──
+   O filme em cima, em 16:9, e o texto embaixo: o filme conta, o texto fica
+   para quem quer reler. Abaixo do passeio (1400) e acima dos diálogos. */
+.novidades {
+  position: fixed; inset: 0; z-index: 1350;
+  background: rgba(15, 17, 25, 0.55);
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  animation: fadeIn 0.25s ease-out both;
+}
+.novidades[hidden] { display: none; }
+.novidades-cartao {
+  position: relative;
+  width: 100%; max-width: 880px; max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  background: var(--bg-card);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl);
+  animation: novidadesSobe 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes novidadesSobe { from { transform: translateY(16px) scale(0.98); opacity: 0; } to { transform: none; opacity: 1; } }
+.novidades-tela { aspect-ratio: 16 / 9; background: #F4F5FB; border-radius: var(--radius-xl) var(--radius-xl) 0 0; overflow: hidden; }
+.novidades-tela iframe { display: block; width: 100%; height: 100%; border: 0; pointer-events: none; }
+.novidades-texto { padding: 22px 28px 24px; }
+.novidades-rotulo {
+  font-size: 11px; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase; color: var(--primary-600);
+}
+.novidades-texto h2 { margin: 6px 0 8px; font-size: 22px; font-weight: 700; letter-spacing: -0.3px; color: var(--gray-900); }
+.novidades-texto p { font-size: 14.5px; line-height: 1.6; color: var(--gray-700); }
+.novidades-lista { margin: 12px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.novidades-lista li { position: relative; padding-left: 22px; font-size: 13.5px; color: var(--gray-700); }
+.novidades-lista li::before {
+  content: ''; position: absolute; left: 4px; top: 6px; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--brand-green); box-shadow: 0 0 6px var(--brand-green);
+}
+.novidades-acoes { display: flex; justify-content: flex-end; align-items: center; gap: 14px; margin-top: 20px; }
+.novidades-fechar {
+  position: absolute; top: 12px; right: 12px; z-index: 1;
+  width: 34px; height: 34px; border-radius: 50%; border: none; cursor: pointer;
+  display: grid; place-items: center;
+  background: rgba(255, 255, 255, 0.85); color: #3A3F58;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+.novidades-fechar:hover { background: #fff; }
+.novidades-fechar svg { width: 16px; height: 16px; }
+:root[data-escuro="1"] .novidades-rotulo { color: var(--primary-300); }
+/* o "3.0" da lateral abre as novidades: ele precisa parecer clicável */
+#versaoNovidades { cursor: pointer; }
+#versaoNovidades:hover { text-decoration: underline; text-decoration-color: var(--primary-400); text-underline-offset: 3px; }
+@media (max-width: 560px) {
+  .novidades-texto { padding: 18px 18px 20px; }
+  .novidades-texto h2 { font-size: 19px; }
+  .novidades-acoes { flex-direction: column-reverse; align-items: stretch; }
+}
+@media (prefers-reduced-motion: reduce) { .novidades, .novidades-cartao { animation: none; } }
 .modal-head { padding: 20px 24px 12px; }
 .modal-head h2 { font-size: 17px; font-weight: 700; letter-spacing: -0.2px; }
 .modal-corpo { padding: 4px 24px 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }

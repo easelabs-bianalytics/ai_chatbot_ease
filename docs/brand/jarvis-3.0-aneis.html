@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jarvis 3.0 · anel</title>
+<style>
+  :root { --bg:#F7F8FA; --card:#fff; --tx:#1A1D2E; --mu:#6B7088; --bd:#EEEEF3; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--tx); font:15px/1.5 Inter, system-ui, sans-serif; padding:28px 16px; }
+  h1 { font-size:22px; margin:0 0 4px; } p.sub { color:var(--mu); margin:0 0 24px; max-width:900px; }
+  .grade { display:grid; grid-template-columns:repeat(auto-fit, minmax(270px, 1fr)); gap:16px; max-width:1240px; }
+  .op { background:var(--card); border:1px solid var(--bd); border-radius:16px; overflow:hidden; }
+  .op header { padding:16px 18px 0; }
+  .op h2 { font-size:15px; margin:0 0 2px; } .op small { color:var(--mu); display:block; min-height:62px; font-size:12.5px; }
+  .palcos { display:grid; grid-template-columns:1fr 1fr; }
+  .palco { padding:12px 8px 10px; display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .palco.claro { --contorno:#FFFFFF; background:#FFFFFF; }
+  .palco.escuro { --contorno:#151823; background:#151823; }
+  .grande { width:118px; height:118px; overflow:visible; }
+  .tam { display:flex; align-items:center; gap:12px; }
+  .tam svg { overflow:visible; }
+  .ico { border-radius:22%; }
+</style>
+</head>
+<body>
+<h1>Jarvis 3.0: o anel, oito versões</h1>
+<p class="sub">O corpo, a viseira acesa e o olho são os da opção 5 escolhida. Muda só o anel e o satélite. Cada versão aparece no fundo claro e no escuro, em 118 e 38 px e como favicon. (O avatar de 24 px não tem anel.)</p>
+<div class="grade" id="grade"></div>
+
+<script>
+const V = '#6ECC64', C = '#4FD8E8';
+
+/* anel(id) devolve { defs, tras, frente } — o resto do mascote é fixo. */
+const OPCOES = [
+  {
+    nome: 'Atual · verde → ciano', nota: 'O gradiente da esquerda para a direita, como está no app. Na metade de trás os dois tons se misturam e o anel fica "lavado".',
+    anel: (id) => ({
+      defs: `<linearGradient id="g-${id}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${V}"/><stop offset="1" stop-color="${C}"/></linearGradient>`,
+      tras: `<path d="M 7,40 A 25,8 0 0,0 57,40" stroke="url(#g-${id})" stroke-width="1.8" opacity="0.55"/>`,
+      frente: `<path d="M 7,40 A 25,8 0 0,1 57,40" stroke="url(#g-${id})" stroke-width="2.4"/>`,
+      sat: C, satBrilho: true,
+    }),
+  },
+  {
+    nome: 'A · Verde de sempre, satélite aceso', nota: 'O anel volta ao verde do 2.0. A novidade fica só no satélite, ciano e brilhando. É a mudança mais discreta.',
+    anel: () => ({
+      tras: `<path d="M 7,40 A 25,8 0 0,0 57,40" stroke="${V}" stroke-width="1.8" opacity="0.55"/>`,
+      frente: `<path d="M 7,40 A 25,8 0 0,1 57,40" stroke="${V}" stroke-width="2.4"/>`,
+      sat: C, satBrilho: true,
+    }),
+  },
+  {
+    nome: 'B · Verde neon', nota: 'O anel continua todo verde, mas aceso como a viseira, com um brilho em volta. Conversa com o olho, que também brilha.',
+    anel: (id) => ({
+      tras: `<path d="M 7,40 A 25,8 0 0,0 57,40" stroke="${V}" stroke-width="1.8" opacity="0.55"/>`,
+      frente: `<path d="M 7,40 A 25,8 0 0,1 57,40" stroke="#8FE584" stroke-width="2.4" filter="url(#br-${id})"/>`,
+      sat: '#B8F5AE', satBrilho: true,
+    }),
+  },
+  {
+    nome: 'C · Profundidade: frente verde, trás ciano', nota: 'A metade da frente é verde e firme; a de trás, ciano e mais apagada. A cor ajuda a ler o que está atrás do corpo.',
+    anel: () => ({
+      tras: `<path d="M 7,40 A 25,8 0 0,0 57,40" stroke="${C}" stroke-width="1.8" opacity="0.6"/>`,
+      frente: `<path d="M 7,40 A 25,8 0 0,1 57,40" stroke="${V}" stroke-width="2.4"/>`,
+      sat: V, satBrilho: true,
+    }),
+  },
+  {
+    nome: 'D · Rastro de cometa', nota: 'O anel é verde, e só o trecho que chega no satélite acende em ciano, como um rastro. No app esse rastro correria junto com o satélite.',
+    anel: (id) => ({
+      defs: `<linearGradient id="r-${id}" x1="0" y1="0" x2="1" y2="0"><stop offset="0.55" stop-color="${V}"/><stop offset="0.95" stop-color="${C}"/></linearGradient>`,
+      tras: `<path d="M 7,40 A 25,8 0 0,0 57,40" stroke="${V}" stroke-width="1.8" opacity="0.55"/>`,
+      frente: `<path d="M 7,40 A 25,8 0 0,1 57,40" stroke="url(#r-${id})" stroke-width="2.4"/>`,
+      sat: C, satBrilho: true,
+    }),
+  },
+  {
+    nome: 'E · Trilho duplo', nota: 'O anel verde ganha um fio ciano fino correndo por dentro, como uma trilha de energia. Em 38 px vira um anel só, um pouco mais claro.',
+    anel: () => ({
+      tras: `<path d="M 7,40 A 25,8 0 0,0 57,40" stroke="${V}" stroke-width="2.2" opacity="0.5"/>`,
+      frente: `<path d="M 7,40 A 25,8 0 0,1 57,40" stroke="${V}" stroke-width="3"/><path d="M 7,40 A 25,8 0 0,1 57,40" stroke="${C}" stroke-width="0.9" opacity="0.95"/>`,
+      sat: C, satBrilho: true,
+    }),
+  },
+  {
+    nome: 'F · Índigo → verde (o gradiente da marca)', nota: 'O mesmo gradiente da Ease Labs (#5661E8 → #6ECC64) usado no app. Fica em família com o corpo, mas perde contraste perto dele.',
+    anel: (id) => ({
+      defs: `<linearGradient id="m-${id}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#7B84F0"/><stop offset="0.6" stop-color="${V}"/></linearGradient>`,
+      tras: `<path d="M 7,40 A 25,8 0 0,0 57,40" stroke="url(#m-${id})" stroke-width="1.8" opacity="0.55"/>`,
+      frente: `<path d="M 7,40 A 25,8 0 0,1 57,40" stroke="url(#m-${id})" stroke-width="2.4"/>`,
+      sat: V, satBrilho: true,
+    }),
+  },
+  {
+    nome: 'G · Tubo com reflexo', nota: 'O anel verde fica mais grosso e ganha um reflexo branco fino, como a viseira. Parece um objeto, não um traço, e repete a linguagem do reflexo.',
+    anel: () => ({
+      tras: `<path d="M 7,40 A 25,8 0 0,0 57,40" stroke="${V}" stroke-width="2" opacity="0.55"/>`,
+      frente: `<path d="M 7,40 A 25,8 0 0,1 57,40" stroke="#4FB34A" stroke-width="3.2"/><path d="M 9,39.2 A 23.2,7.2 0 0,1 55,39.2" stroke="#FFFFFF" stroke-width="0.7" opacity="0.55"/>`,
+      sat: V, satBrilho: true,
+    }),
+  },
+  {
+    nome: 'H · Ciano → verde (invertido)', nota: 'O gradiente atual, só que ao contrário: o ciano fica do lado esquerdo, longe do satélite, e o satélite volta ao verde. O anel termina na cor da marca.',
+    anel: (id) => ({
+      defs: `<linearGradient id="i-${id}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${C}"/><stop offset="0.7" stop-color="${V}"/></linearGradient>`,
+      tras: `<path d="M 7,40 A 25,8 0 0,0 57,40" stroke="url(#i-${id})" stroke-width="1.8" opacity="0.55"/>`,
+      frente: `<path d="M 7,40 A 25,8 0 0,1 57,40" stroke="url(#i-${id})" stroke-width="2.4"/>`,
+      sat: V, satBrilho: true,
+    }),
+  },
+];
+
+function mascote(op, id) {
+  const a = op.anel(id);
+  return `<defs>
+      <linearGradient id="vol-${id}" x1="0.2" y1="0" x2="0.8" y2="1"><stop offset="0" stop-color="#7C80F7"/><stop offset="1" stop-color="#4A4DC4"/></linearGradient>
+      <filter id="br-${id}" x="-150%" y="-150%" width="400%" height="400%"><feGaussianBlur stdDeviation="1" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      ${a.defs || ''}
+    </defs>
+    <g transform="rotate(-14 32 40)" fill="none" stroke-linecap="round">${a.tras}</g>
+    <rect x="17" y="11.9" width="30" height="40.3" rx="15" fill="url(#vol-${id})" stroke="var(--contorno)" stroke-width="2.4" paint-order="stroke"/>
+    <rect x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9" fill="#1E1F5C"/>
+    <path d="M 22.5 24.2 H 33" stroke="#FFFFFF" stroke-width="0.9" stroke-linecap="round" opacity="0.3"/>
+    <circle cx="40" cy="26.5" r="2.6" fill="${V}" filter="url(#br-${id})"/>
+    <g transform="rotate(-14 32 40)" fill="none" stroke-linecap="round">
+      ${a.frente}
+      <circle cx="51.5" cy="44.9" r="3" fill="${a.sat}" stroke="var(--contorno)" stroke-width="1.2" paint-order="stroke" ${a.satBrilho ? `filter="url(#br-${id})"` : ''}/>
+    </g>`;
+}
+
+let n = 0;
+const svg = (op, attrs) => `<svg viewBox="0 0 64 64" ${attrs}>${mascote(op, 'm' + (n++))}</svg>`;
+const favicon = (op) => {
+  const id = 'f' + (n++);
+  return `<svg viewBox="0 0 64 64" width="32" height="32" class="ico">
+    <defs><linearGradient id="lad-${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2E3190"/><stop offset="1" stop-color="#161747"/></linearGradient></defs>
+    <rect width="64" height="64" rx="15" fill="url(#lad-${id})"/>
+    <g transform="translate(32 31.5) scale(1.16) translate(-32 -32)" style="--contorno:#1B1C55">${mascote(op, id + 'i')}</g></svg>`;
+};
+const palco = (op, tema) => `
+  <div class="palco ${tema}">
+    ${svg(op, 'class="grande"')}
+    <div class="tam">${svg(op, 'width="38" height="38"')}${favicon(op)}</div>
+  </div>`;
+
+document.getElementById('grade').innerHTML = OPCOES.map(op => `
+  <div class="op">
+    <header><h2>${op.nome}</h2><small>${op.nota}</small></header>
+    <div class="palcos">${palco(op, 'claro')}${palco(op, 'escuro')}</div>
+  </div>`).join('');
+</script>
+</body>
+</html>

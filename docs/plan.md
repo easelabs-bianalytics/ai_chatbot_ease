@@ -2194,3 +2194,45 @@ critério de "concluiu".
         como manda o documento. US$ 0,060;
       - a pergunta da Amanda: D15 direto, 2.790 pacientes, avisando que
         outubro não entrou. US$ 0,042.
+
+## Fase 17 — Jarvis 3.0: identidade visual e anúncio
+
+Pedido do Rubens (2026-10-05): marcar a passagem do 2.0 para o 3.0 em todo
+lugar onde o Jarvis aparece, mantendo a identidade, e anunciar o motor de
+anexos no app com motion graphics (o fluxo do PDF
+`docs/brand/Motion-Graphics-with-Claude-Code.pdf`: HyperFrames).
+
+- [x] Mascote 3.0, a opção 5 ("anel energizado") de
+      `docs/brand/jarvis-3.0-propostas.html`. A geometria não muda: o corpo
+      ganha um gradiente, a viseira um reflexo e o olho um brilho. A primeira
+      rodada, com uma folha de planilha no satélite, foi descartada. O anel é
+      a opção V de `docs/brand/jarvis-3.0-escolha.html` (página animada, com
+      as variações de anel e de corpo): verde escuro atrás do corpo, a frente
+      clareando até o satélite, da mesma cor. O primeiro anel, do verde ao
+      ciano, ficava "lavado" no meio. Aplicado em `jarvis()`, nas cópias do
+      `index.html`, no favicon (SVG, 32 e 180 px), no mascote do e-mail e no
+      selo "3.0" da lateral. Detalhes em `docs/brand/README.md`.
+- [x] Anúncio animado: `app/web/static/web/novidades/jarvis-3.0/`, uma
+      composição HyperFrames de 30 s (GSAP 3.14.2 vendorizado ao lado):
+      o 2.0 vira 3.0; o cérebro da Ease Labs (núcleo Jarvis e as áreas do BI)
+      com o Marketing trancado, que se desbloqueia e brota Área Médica, Email
+      MKT e Canal do médico; Marketing × BI na mesma resposta (PX por canal);
+      e o motor de anexos (planilha de representantes com unidades
+      dispensadas e market share, print, lista). Ela tem dois usos:
+      - no app, toca dentro de um iframe;
+      - fora dele, vira o vídeo `docs/brand/jarvis-3.0-anuncio.mp4`
+        (1920×1080, 30 fps), gerado com
+        `npx hyperframes@0.8.134 render . -o <mp4> -q high` a partir da pasta.
+
+      Os números da planilha, do print e do canal são de exemplo, na ordem
+      de grandeza real (B02, B27, M08), e a tela diz isso. Os nomes dos
+      representantes são fictícios e não coincidem com nenhum real.
+- [x] Modal de novidades:
+      - abre uma vez, sozinho, para quem já tinha feito o passeio (chave
+        `jarvis:novidades-3.0` no localStorage);
+      - quem está chegando agora vê só o passeio, que já mostra os anexos;
+      - depois, abre pelo "3.0" da lateral;
+      - "Anexar uma planilha" fecha o modal e abre o seletor de arquivo;
+      - com "reduzir movimento", o filme abre parado no quadro final.
+- [ ] Trocar a foto e o nome ("Jarvis 2.0") do perfil do WhatsApp no
+      celular.

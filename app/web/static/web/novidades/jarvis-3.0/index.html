@@ -1,0 +1,590 @@
+<!doctype html>
+<!-- Anúncio do Jarvis 3.0: o cérebro da Ease Labs ganha o Marketing, e o motor
+     de anexos chega ao chat. Uma composição só, com dois usos:
+     - vídeo: `npx hyperframes render` (veja o README ao lado) gera o MP4 para
+       WhatsApp e redes. Nesse modo o runtime do HyperFrames comanda a timeline
+       pausada, quadro a quadro;
+     - app: o modal de novidades abre esta página num iframe com `?tocar=1`, e
+       ela mesma toca a timeline, ajustada ao tamanho da janela. Com `?fim=1`
+       (reduzir movimento) mostra direto o quadro final.
+     Os números da planilha, do print e do canal são de exemplo, e a tela diz isso. -->
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1920, height=1080">
+  <title>Jarvis 3.0</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="gsap.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 1920px; height: 1080px; overflow: hidden; background: #F4F5FB; }
+    body { transform-origin: 0 0; }
+    #root {
+      position: relative; width: 1920px; height: 1080px; overflow: hidden;
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #1A1D2E;
+      background: linear-gradient(160deg, #F7F8FC 0%, #EEF0FB 55%, #EAF7F1 100%);
+    }
+    .clip { position: absolute; inset: 0; }
+
+    /* fundo: três manchas desfocadas que andam devagar */
+    .mancha { position: absolute; border-radius: 50%; filter: blur(110px); opacity: 0.55; }
+    .m1 { width: 760px; height: 760px; left: -160px; top: -220px; background: #A9ADFB; }
+    .m2 { width: 680px; height: 680px; right: -140px; top: 180px; background: #A6EBC0; }
+    .m3 { width: 560px; height: 560px; left: 640px; bottom: -320px; background: #A8EEF5; }
+
+    /* vidro */
+    .vidro {
+      background: rgba(255, 255, 255, 0.78);
+      backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px);
+      border: 1.5px solid rgba(255, 255, 255, 0.95);
+      border-radius: 32px;
+      box-shadow: 0 30px 80px rgba(46, 49, 144, 0.14), 0 4px 14px rgba(46, 49, 144, 0.06);
+    }
+    .rotulo { font-size: 20px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; color: #5558D4; }
+
+    /* o mascote: o 2.0 por baixo e a luz do 3.0 por cima */
+    #mascote { position: absolute; left: 760px; top: 170px; width: 400px; height: 400px; transform-origin: 50% 50%; }
+    #mascote svg { width: 100%; height: 100%; overflow: visible; }
+    #sombra { position: absolute; left: 860px; top: 590px; width: 200px; height: 26px; border-radius: 50%; background: rgba(46, 49, 144, 0.16); filter: blur(6px); }
+
+    #titulo { position: absolute; left: 0; right: 0; top: 640px; text-align: center; }
+    #titulo h1 { font-size: 132px; font-weight: 800; letter-spacing: -4px; line-height: 1; }
+    .versao {
+      display: inline-block;
+      background: linear-gradient(110deg, #5558D4 10%, #4FB34A 75%, #8FE584 100%);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    #titulo p { margin-top: 22px; font-size: 34px; color: #4A4F6A; font-weight: 500; }
+
+    /* cabeçalho das cenas do meio */
+    #cabeca { position: absolute; left: 150px; top: 92px; display: flex; align-items: center; gap: 18px; }
+    #manchete { position: absolute; left: 150px; top: 168px; width: 1620px; height: 140px; }
+    .frase { position: absolute; left: 0; top: 0; font-size: 70px; font-weight: 800; letter-spacing: -2px; line-height: 1.05; }
+    .frase em { font-style: normal; color: #5558D4; }
+    #exemplo { position: absolute; right: 64px; bottom: 44px; font-size: 18px; color: #8A8FA8; font-weight: 500; }
+
+    /* cena 2: o compositor do chat */
+    #compositor { position: absolute; left: 360px; top: 470px; width: 1200px; height: 230px; padding: 34px 40px; }
+    #arquivo { position: absolute; left: 860px; top: 300px; width: 120px; height: 150px; }
+    #chip {
+      display: inline-flex; align-items: center; gap: 18px; padding: 14px 26px 14px 16px;
+      background: #EAF7EE; border: 1.5px solid #BFE6C6; border-radius: 18px;
+    }
+    #chip .ico { width: 54px; height: 54px; border-radius: 12px; background: #217346; display: grid; place-items: center; }
+    #chip b { display: block; font-size: 26px; font-weight: 700; }
+    #chip span { font-size: 22px; color: #3D7A4E; font-weight: 500; }
+    #pedido { margin-top: 26px; font-size: 30px; color: #2A2E45; white-space: nowrap; overflow: hidden; width: 0; }
+    #cursor { display: inline-block; width: 3px; height: 34px; background: #5558D4; vertical-align: -6px; margin-left: 2px; }
+    #enviar { position: absolute; right: 32px; bottom: 30px; width: 64px; height: 64px; border-radius: 18px; background: #5558D4; display: grid; place-items: center; }
+
+    /* cena 3: a planilha */
+    #planilha { position: absolute; left: 330px; top: 360px; width: 1260px; padding: 0 0 96px; overflow: hidden; }
+    .abas { display: flex; gap: 6px; padding: 18px 26px 0; background: rgba(240, 242, 250, 0.9); border-bottom: 1.5px solid #E3E5F0; }
+    .aba { padding: 12px 26px; font-size: 22px; font-weight: 600; color: #6B7088; border-radius: 14px 14px 0 0; }
+    .aba.ativa { background: #fff; color: #1A1D2E; }
+    #abaNotas { display: inline-flex; align-items: center; gap: 10px; color: #2F7D3B; background: #EAF7EE; }
+    #abaNotas i { width: 10px; height: 10px; border-radius: 50%; background: #6ECC64; }
+    table { width: 100%; border-collapse: collapse; font-size: 25px; }
+    th { text-align: left; font-size: 19px; text-transform: uppercase; letter-spacing: 1.5px; color: #8A8FA8; font-weight: 600; padding: 20px 30px 14px; }
+    th.nova { color: #2F7D3B; }
+    td { padding: 20px 30px; border-top: 1.5px solid #EEEFF5; font-variant-numeric: tabular-nums; }
+    td.n { text-align: right; } th.n { text-align: right; }
+    td.vazia { position: relative; }
+    td.vazia .val { opacity: 0; display: inline-block; }
+    td.vazia .flash { position: absolute; inset: 4px 8px; border-radius: 10px; background: #D9F3DD; opacity: 0; }
+    td.vazia .val { position: relative; }
+    #selo {
+      position: absolute; right: 30px; bottom: 26px; display: flex; align-items: center; gap: 12px;
+      padding: 12px 22px; border-radius: 999px; background: #1E1F5C; color: #fff; font-size: 21px; font-weight: 600;
+    }
+    #selo i { width: 12px; height: 12px; border-radius: 50%; background: #6ECC64; box-shadow: 0 0 10px #6ECC64; }
+
+    /* cena 4: o print */
+    #print { position: absolute; left: 260px; top: 380px; width: 700px; height: 470px; padding: 34px; overflow: hidden; }
+    #print .barras { position: absolute; left: 60px; right: 60px; bottom: 60px; height: 300px; display: flex; align-items: flex-end; gap: 34px; }
+    #print .barras i { flex: 1; border-radius: 10px 10px 4px 4px; background: linear-gradient(180deg, #8A8EF5, #5558D4); }
+    #print .barras i:nth-child(1) { height: 92%; background: linear-gradient(180deg, #8FDB86, #4FB34A); }
+    #print .barras i:nth-child(2) { height: 74%; } #print .barras i:nth-child(3) { height: 61%; }
+    #print .barras i:nth-child(4) { height: 45%; } #print .barras i:nth-child(5) { height: 30%; }
+    #print .tit { font-size: 22px; font-weight: 700; color: #4A4F6A; }
+    #varredura { position: absolute; left: 0; right: 0; top: 0; height: 6px; background: #6ECC64; box-shadow: 0 0 24px 6px rgba(110, 204, 100, 0.6); opacity: 0; }
+    #resposta { position: absolute; left: 1020px; top: 470px; width: 660px; padding: 34px 38px; }
+    #resposta .de { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+    #resposta .tag { padding: 6px 14px; border-radius: 999px; background: #E3F6FA; color: #1F7F92; font-size: 18px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+    #resposta p { font-size: 32px; line-height: 1.35; font-weight: 500; }
+    #resposta p b { color: #2F7D3B; }
+
+    /* cena 5: a lista */
+    #lista { position: absolute; left: 360px; top: 380px; width: 1200px; display: flex; flex-direction: column; gap: 26px; }
+    .item { display: flex; align-items: center; gap: 30px; padding: 30px 40px; }
+    .item .tique { width: 58px; height: 58px; border-radius: 50%; background: #6ECC64; display: grid; place-items: center; flex-shrink: 0; }
+    .item b { display: block; font-size: 36px; font-weight: 700; letter-spacing: -0.5px; }
+    .item span { font-size: 25px; color: #5B607A; }
+
+    /* cena C: o cérebro */
+    #cerebro { position: absolute; inset: 0; }
+    #ligacoes { position: absolute; inset: 0; width: 1920px; height: 1080px; overflow: visible; }
+    #ligacoes line { stroke-linecap: round; }
+    .lig { stroke: #C3C6F2; stroke-width: 3; }
+    .lig-mkt { stroke: #B9BCD6; stroke-width: 3; stroke-dasharray: 10 12; }
+    .lig-acesa { stroke: #6ECC64; stroke-width: 4; }
+    .pulso { fill: #6ECC64; }
+    #nucleo {
+      position: absolute; left: 870px; top: 600px; width: 180px; height: 180px; border-radius: 50%;
+      background: radial-gradient(circle at 35% 30%, #8A8EF8, #4A4DC4 70%);
+      box-shadow: 0 0 0 14px rgba(85, 88, 212, 0.12), 0 0 70px rgba(85, 88, 212, 0.45);
+      display: grid; place-items: center;
+    }
+    #nucleo svg { width: 92px; height: 92px; }
+    #nucleo b { position: absolute; bottom: -54px; left: 50%; transform: translateX(-50%); font-size: 26px; font-weight: 800; color: #2E3190; letter-spacing: -0.5px; }
+    .no {
+      position: absolute; width: 300px; height: 74px; margin: -37px 0 0 -150px; border-radius: 24px; white-space: nowrap;
+      display: flex; align-items: center; gap: 16px; padding: 0 24px; font-size: 27px; font-weight: 700; color: #1A1D2E;
+    }
+    .no i { width: 14px; height: 14px; border-radius: 50%; background: #6ECC64; box-shadow: 0 0 12px #6ECC64; flex-shrink: 0; }
+    .no.sub { width: 300px; height: 66px; margin: -33px 0 0 -150px; font-size: 24px; }
+    .no.sub i { background: #8FE584; box-shadow: 0 0 10px #8FE584; }
+    #noMkt { width: 290px; margin-left: -145px; }
+    #noMkt .camada { position: absolute; inset: 0; border-radius: 24px; display: flex; align-items: center; gap: 16px; padding: 0 24px; }
+    #mktTravado { background: rgba(255, 255, 255, 0.6); border: 2.5px dashed #A9ACC6; color: #5F6480; }
+    #mktAberto { background: linear-gradient(135deg, #5661E8, #4FB34A); color: #fff; box-shadow: 0 16px 44px rgba(79, 179, 74, 0.45); opacity: 0; }
+    #mktAberto i { background: #fff; box-shadow: 0 0 12px #fff; }
+    #explosao { position: absolute; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; border: 6px solid #8FE584; opacity: 0; }
+
+    /* cena M: Marketing e BI na mesma resposta */
+    #canal { position: absolute; left: 230px; top: 390px; width: 860px; padding: 40px 44px 44px; }
+    #canal .tit { font-size: 24px; font-weight: 700; color: #4A4F6A; }
+    #canal .sub2 { font-size: 19px; color: #626782; margin-top: 4px; }
+    #barra { display: flex; height: 64px; border-radius: 16px; overflow: hidden; margin: 30px 0 30px; background: #EEEFF5; }
+    #barra i { height: 100%; width: 0; }
+    .leg { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 30px; }
+    .leg div { display: flex; align-items: center; gap: 14px; font-size: 24px; font-weight: 600; color: #2A2E45; }
+    .leg span.c { width: 18px; height: 18px; border-radius: 6px; flex-shrink: 0; }
+    .leg b { margin-left: auto; font-variant-numeric: tabular-nums; }
+    .leg .destaque { color: #2F7D3B; }
+    #respostaMkt { position: absolute; left: 1150px; top: 450px; width: 560px; padding: 34px 38px; }
+    #respostaMkt .de { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+    #respostaMkt .tag { padding: 6px 14px; border-radius: 999px; background: #EAF7EE; color: #2F7D3B; font-size: 18px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+    #respostaMkt p { font-size: 31px; line-height: 1.35; font-weight: 500; }
+    #respostaMkt p b { color: #2F7D3B; }
+
+    /* cena 6: o fecho */
+    #botao {
+      position: absolute; left: 790px; top: 900px; width: 340px; height: 88px; border-radius: 22px;
+      background: linear-gradient(180deg, #6A6EF3, #5558D4); color: #fff; font-size: 32px; font-weight: 700;
+      display: grid; place-items: center; box-shadow: 0 18px 40px rgba(85, 88, 212, 0.35);
+    }
+  </style>
+</head>
+<body>
+<div id="root" data-composition-id="main" data-start="0" data-duration="30" data-width="1920" data-height="1080">
+
+  <div id="fundo" class="clip" data-start="0" data-duration="30">
+    <div class="mancha m1"></div><div class="mancha m2"></div><div class="mancha m3"></div>
+  </div>
+
+  <!-- cena C: o cérebro da Ease Labs, e o Marketing desbloqueado -->
+  <div id="cenaCerebro" class="clip" data-start="0" data-duration="30">
+    <div id="cerebro">
+      <svg id="ligacoes" viewBox="0 0 1920 1080"></svg>
+      <div id="nucleo" data-layout-allow-overflow><svg viewBox="0 0 64 64"><rect x="17" y="11.9" width="30" height="40.3" rx="15" fill="#fff" opacity="0.95"/><rect x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9" fill="#1E1F5C"/><circle cx="40" cy="26.5" r="2.6" fill="#6ECC64"/></svg><b>Jarvis</b></div>
+      <div id="nos"></div>
+      <div class="no" id="noMkt">
+        <div class="camada" id="mktTravado">
+          <svg id="cadeado" width="26" height="30" viewBox="0 0 26 30"><path id="arcoCadeado" d="M 7 13 V 9 a 6 6 0 0 1 12 0 v 4" fill="none" stroke="#5F6480" stroke-width="3.2" stroke-linecap="round"/><rect x="3" y="13" width="20" height="15" rx="4" fill="#5F6480"/></svg>Marketing
+        </div>
+        <div class="camada" id="mktAberto"><i></i>Marketing</div>
+      </div>
+      <div id="explosao"></div>
+    </div>
+  </div>
+
+  <!-- cena M: Marketing e BI na mesma resposta -->
+  <div id="cenaMkt" class="clip" data-start="0" data-duration="30">
+    <div id="canal" class="vidro">
+      <div class="tit">PX Ease por canal do médico · último mês</div>
+      <div class="sub2">Força de vendas, bases do Marketing e quem chegou sozinho</div>
+      <div id="barra"><i style="background:#5558D4" data-w="60"></i><i style="background:#4FB34A" data-w="27"></i><i style="background:#9A9EE8" data-w="9"></i><i style="background:#8FE584" data-w="4"></i></div>
+      <div class="leg">
+        <div><span class="c" style="background:#5558D4"></span>Visitados pela FV<b>60%</b></div>
+        <div class="destaque"><span class="c" style="background:#4FB34A"></span>Digital + Orgânico<b>27%</b></div>
+        <div><span class="c" style="background:#9A9EE8"></span>Médicos inativos<b>9%</b></div>
+        <div><span class="c" style="background:#8FE584"></span>Área Médica e E-mail<b>4%</b></div>
+      </div>
+    </div>
+    <div id="respostaMkt" class="vidro">
+      <div class="de">
+        <svg width="46" height="46" viewBox="0 0 64 64">
+          <rect x="17" y="11.9" width="30" height="40.3" rx="15" fill="url(#c3)"/>
+          <rect x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9" fill="#1E1F5C"/>
+          <circle cx="40" cy="26.5" r="2.6" fill="#6ECC64"/>
+        </svg>
+        <span class="tag">Marketing × BI</span>
+      </div>
+      <p>O <b>Digital + Orgânico</b> já responde por <b>27%</b> do PX Ease: médicos que chegaram sem passar pela força de vendas.</p>
+    </div>
+  </div>
+
+  <!-- cena 2: o compositor -->
+  <div id="cena2" class="clip" data-start="0" data-duration="30">
+    <div id="compositor" class="vidro">
+      <div id="chip">
+        <div class="ico"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h8M12 8v8"/></svg></div>
+        <div><b>representantes.xlsx</b><span>33 linhas · 4 colunas · diga o que preencher</span></div>
+      </div>
+      <div id="pedido">Preencha as unidades e o market share de cada representante<span id="cursor"></span></div>
+      <div id="enviar"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></div>
+    </div>
+    <svg id="arquivo" viewBox="0 0 120 150">
+      <path d="M 14 4 H 82 L 116 38 V 140 Q 116 146 110 146 H 14 Q 8 146 8 140 V 10 Q 8 4 14 4 Z" fill="#fff" stroke="#217346" stroke-width="5"/>
+      <path d="M 82 4 V 38 H 116" fill="#E3F2E8" stroke="#217346" stroke-width="5" stroke-linejoin="round"/>
+      <rect x="26" y="62" width="72" height="62" rx="6" fill="#217346"/>
+      <path d="M 26 83 H 98 M 26 103 H 98 M 50 62 V 124 M 74 62 V 124" stroke="#fff" stroke-width="3"/>
+    </svg>
+  </div>
+
+  <!-- cena 3: a planilha -->
+  <div id="cena3" class="clip" data-start="0" data-duration="30">
+    <div id="planilha" class="vidro">
+      <div class="abas"><div class="aba ativa">Base</div><div class="aba" id="abaNotas"><i></i>Notas do Jarvis</div></div>
+      <table>
+        <thead><tr><th>Representante</th><th>Regional</th><th class="n nova">Unidades dispensadas</th><th class="n nova">Market share</th></tr></thead>
+        <tbody>
+          <tr><td>Ana Ribeiro</td><td>Sudeste</td><td class="n vazia"><i class="flash"></i><span class="val">412</span></td><td class="n vazia"><i class="flash"></i><span class="val">18,4%</span></td></tr>
+          <tr><td>Bruno Tavares</td><td>Sul</td><td class="n vazia"><i class="flash"></i><span class="val">286</span></td><td class="n vazia"><i class="flash"></i><span class="val">11,2%</span></td></tr>
+          <tr><td>Carla Mendes</td><td>Nordeste</td><td class="n vazia"><i class="flash"></i><span class="val">198</span></td><td class="n vazia"><i class="flash"></i><span class="val">7,9%</span></td></tr>
+          <tr><td>Diego Prado</td><td>Centro-Oeste</td><td class="n vazia"><i class="flash"></i><span class="val">243</span></td><td class="n vazia"><i class="flash"></i><span class="val">13,6%</span></td></tr>
+          <tr><td>Elisa Furtado</td><td>Sudeste</td><td class="n vazia"><i class="flash"></i><span class="val">131</span></td><td class="n vazia"><i class="flash"></i><span class="val">4,7%</span></td></tr>
+        </tbody>
+      </table>
+      <div id="selo"><i></i>Conferido célula a célula</div>
+    </div>
+  </div>
+
+  <!-- cena 4: o print -->
+  <div id="cena4" class="clip" data-start="0" data-duration="30">
+    <div id="print" class="vidro">
+      <div class="tit">Vendas por rede · setembro</div>
+      <div class="barras"><i></i><i></i><i></i><i></i><i></i></div>
+      <div id="varredura"></div>
+    </div>
+    <div id="resposta" class="vidro">
+      <div class="de">
+        <svg width="46" height="46" viewBox="0 0 64 64">
+          <rect x="17" y="11.9" width="30" height="40.3" rx="15" fill="url(#c3)"/>
+          <rect x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9" fill="#1E1F5C"/>
+          <circle cx="40" cy="26.5" r="2.6" fill="#6ECC64"/>
+        </svg>
+        <span class="tag">Veio da imagem</span>
+      </div>
+      <p>São <b>5 redes</b> no gráfico, e a primeira vende <b>3 vezes</b> mais que a última.</p>
+    </div>
+  </div>
+
+  <!-- cena 5: a lista -->
+  <div id="cena5" class="clip" data-start="0" data-duration="30">
+    <div id="lista">
+      <div class="item vidro"><div class="tique"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div><b>Marketing no cérebro</b><span>Área Médica, Email MKT e o canal do médico, cruzados com o BI todo dia</span></div></div>
+      <div class="item vidro"><div class="tique"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div><b>Planilhas e prints no chat</b><span>Até 20 mil linhas; coluna nova entra no fim, nada é sobrescrito</span></div></div>
+      <div class="item vidro"><div class="tique"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div><b>Nada fica guardado</b><span>O arquivo vive só durante a conversa</span></div></div>
+    </div>
+  </div>
+
+  <!-- textos das cenas do meio -->
+  <div id="textos" class="clip" data-start="0" data-duration="30">
+    <div id="cabeca"><span class="rotulo" id="rotulo">Cérebro 3.0</span></div>
+    <div id="manchete">
+      <div class="frase" id="fc1">Um cérebro com <em>a Ease Labs inteira.</em></div>
+      <div class="frase" id="fc2">Nova área desbloqueada: <em>Marketing.</em></div>
+      <div class="frase" id="fm">Marketing e BI, <em>na mesma resposta.</em></div>
+      <div class="frase" id="f2">Traga a planilha. <em>Ele preenche.</em></div>
+      <div class="frase" id="f3">Colunas vazias, <em>preenchidas com o banco.</em></div>
+      <div class="frase" id="f4">Cole um print. <em>Ele lê.</em></div>
+      <div class="frase" id="f5">Feito para o <em>dia a dia.</em></div>
+    </div>
+    <div id="exemplo">Dados de exemplo</div>
+  </div>
+
+  <!-- o mascote e o título -->
+  <div id="palco" class="clip" data-start="0" data-duration="30">
+    <div id="sombra"></div>
+    <div id="mascote">
+      <svg viewBox="0 0 64 64">
+        <defs>
+          <linearGradient id="c3" x1="0.2" y1="0" x2="0.8" y2="1"><stop offset="0" stop-color="#7C80F7"/><stop offset="1" stop-color="#4A4DC4"/></linearGradient>
+          <linearGradient id="a3" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#4FB34A"/><stop offset="1" stop-color="#A8F09E"/></linearGradient>
+          <filter id="luz" x="-150%" y="-150%" width="400%" height="400%"><feGaussianBlur stdDeviation="1" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <clipPath id="revela"><rect id="revelaRet" x="0" y="0" width="64" height="0"/></clipPath>
+        </defs>
+        <!-- 2.0 -->
+        <g transform="rotate(-14 32 40)"><path d="M 7,40 A 25,8 0 0,0 57,40" fill="none" stroke="#6ECC64" stroke-width="1.8" stroke-linecap="round" opacity="0.55"/></g>
+        <rect x="17" y="11.9" width="30" height="40.3" rx="15" fill="#5558D4"/>
+        <!-- 3.0, revelado de cima para baixo pela faixa de luz -->
+        <g clip-path="url(#revela)">
+          <g transform="rotate(-14 32 40)"><path d="M 7,40 A 25,8 0 0,0 57,40" fill="none" stroke="#3E8F38" stroke-width="1.8" stroke-linecap="round" opacity="0.7"/></g>
+          <rect x="17" y="11.9" width="30" height="40.3" rx="15" fill="url(#c3)"/>
+        </g>
+        <rect x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9" fill="#1E1F5C"/>
+        <path id="reflexo" d="M 22.5 24.2 H 33" stroke="#FFFFFF" stroke-width="0.9" stroke-linecap="round" opacity="0"/>
+        <circle cx="40" cy="26.5" r="2.4" fill="#6ECC64"/>
+        <circle id="olhoLuz" cx="40" cy="26.5" r="2.6" fill="#6ECC64" filter="url(#luz)" opacity="0"/>
+        <g transform="rotate(-14 32 40)"><path d="M 7,40 A 25,8 0 0,1 57,40" fill="none" stroke="#6ECC64" stroke-width="2.4" stroke-linecap="round"/></g>
+        <g clip-path="url(#revela)"><g transform="rotate(-14 32 40)"><path d="M 7,40 A 25,8 0 0,1 57,40" fill="none" stroke="url(#a3)" stroke-width="2.4" stroke-linecap="round"/></g></g>
+        <g transform="rotate(-14 32 40)">
+          <circle cx="51.5" cy="44.9" r="2.9" fill="#6ECC64"/>
+          <circle id="satelite" cx="51.5" cy="44.9" r="2.9" fill="#9BE88F" filter="url(#luz)" opacity="0"/>
+        </g>
+        <rect id="faixa" x="8" y="10" width="48" height="1.2" rx="0.6" fill="#C8F7C0" filter="url(#luz)" opacity="0"/>
+      </svg>
+    </div>
+    <div id="titulo">
+      <h1>Jarvis <span class="versao" id="versao">3.0</span></h1>
+      <p id="lema">O cérebro da Ease Labs ficou maior.</p>
+    </div>
+    <div id="botao">Experimentar</div>
+  </div>
+</div>
+
+<script>
+  const tl = gsap.timeline({ paused: true });
+  const S = (sel) => document.querySelector(sel);
+  const todos = (sel) => gsap.utils.toArray(sel);
+
+  // estados iniciais
+  gsap.set(['#cenaCerebro', '#cenaMkt', '#cena2', '#cena3', '#cena4', '#cena5', '#textos', '#botao'], { opacity: 0 });
+  gsap.set('.frase', { opacity: 0, y: 30 });
+  gsap.set(['#titulo h1', '#lema'], { opacity: 0, y: 40 });
+  gsap.set('#mascote', { opacity: 0, scale: 0.6 });
+  gsap.set('#sombra', { opacity: 0, scale: 0.6 });
+  gsap.set(['#chip', '#abaNotas', '#selo'], { opacity: 0 });
+
+  const FIM = 30;
+  // o fundo anda o tempo todo
+  tl.to('.m1', { x: 180, y: 90, duration: FIM, ease: 'sine.inOut' }, 0)
+    .to('.m2', { x: -160, y: -80, duration: FIM, ease: 'sine.inOut' }, 0)
+    .to('.m3', { x: 120, y: -60, duration: FIM, ease: 'sine.inOut' }, 0);
+
+  // ── 1. o 2.0 vira 3.0 (0 → 3.2 s)
+  tl.to('#mascote', { opacity: 1, scale: 1, duration: 0.6, ease: 'back.out(1.6)' }, 0.25)
+    .to('#sombra', { opacity: 1, scale: 1, duration: 0.6, ease: 'power3.out' }, 0.25)
+    .to('#faixa', { opacity: 1, duration: 0.12 }, 0.95)
+    .to('#faixa', { y: 44, duration: 0.85, ease: 'power2.inOut' }, 0.95)
+    .to('#revelaRet', { attr: { height: 64 }, duration: 0.85, ease: 'power2.inOut' }, 0.95)
+    .to('#faixa', { opacity: 0, duration: 0.15 }, 1.72)
+    .to('#reflexo', { opacity: 0.3, duration: 0.3 }, 1.35)
+    .to('#olhoLuz', { opacity: 1, duration: 0.3 }, 1.4)
+    .to('#satelite', { opacity: 1, duration: 0.3 }, 1.65)
+    .to('#mascote', { scale: 1.06, duration: 0.18, yoyo: true, repeat: 1, ease: 'power2.out' }, 1.8)
+    .to('#titulo h1', { opacity: 1, y: 0, duration: 0.6, ease: 'power3.out' }, 1.9)
+    .fromTo('#versao', { scale: 0.6 }, { scale: 1, duration: 0.6, ease: 'back.out(2.2)' }, 2.05)
+    .to('#lema', { opacity: 1, y: 0, duration: 0.6, ease: 'power3.out' }, 2.3);
+
+  // ── o mascote sobe para o cabeçalho (3.4 s)
+  tl.to(['#titulo h1', '#lema'], { opacity: 0, y: -30, duration: 0.4, ease: 'power2.in' }, 3.3)
+    .to('#sombra', { opacity: 0, duration: 0.3 }, 3.3)
+    // 400 px → 84 px, com o centro em (192, 112): à esquerda do rótulo
+    .to('#mascote', { x: 192 - 960, y: 112 - 370, scale: 0.21, duration: 0.8, ease: 'power3.inOut' }, 3.4)
+    .to('#textos', { opacity: 1, duration: 0.3 }, 3.7)
+    .fromTo('#cabeca', { x: 70 }, { x: 100, duration: 0.6, ease: 'power3.out' }, 3.8);
+
+  const frase = (id, entra, sai) => {
+    tl.to(id, { opacity: 1, y: 0, duration: 0.6, ease: 'power3.out' }, entra);
+    if (sai) tl.to(id, { opacity: 0, y: -24, duration: 0.35, ease: 'power2.in' }, sai);
+  };
+  const rotulo = (texto, t) => {
+    tl.to('#rotulo', { opacity: 0, duration: 0.2 }, t)
+      .set('#rotulo', { textContent: texto }, t + 0.2)
+      .to('#rotulo', { opacity: 1, duration: 0.3 }, t + 0.22);
+  };
+
+  // ── C. o cérebro (3.9 → 9.5 s): as áreas que o Jarvis já conhece, e o
+  // Marketing trancado, que se abre. As posições ficam numa elipse em volta
+  // do núcleo; o Marketing é o nó da direita.
+  const NUCLEO = { x: 960, y: 690 }, RX = 500, RY = 245, PASSO = 360 / 7;
+  const AREAS = ['Sell Out', 'Prescrição', 'PBM', 'Estoque', 'Força de Vendas', 'IC'];
+  const ponto = (k) => {
+    const a = (k * PASSO) * Math.PI / 180;
+    return { x: NUCLEO.x + RX * Math.cos(a), y: NUCLEO.y - RY * Math.sin(a) };
+  };
+  const NS = 'http://www.w3.org/2000/svg';
+  const linha = (de, ate, classe) => {
+    const l = document.createElementNS(NS, 'line');
+    l.setAttribute('x1', de.x); l.setAttribute('y1', de.y); l.setAttribute('x2', ate.x); l.setAttribute('y2', ate.y);
+    l.setAttribute('class', classe);
+    const comp = Math.hypot(ate.x - de.x, ate.y - de.y);
+    l.style.strokeDasharray = classe === 'lig-mkt' ? '10 12' : `${comp} ${comp}`;
+    if (classe !== 'lig-mkt') l.style.strokeDashoffset = comp;
+    S('#ligacoes').appendChild(l);
+    return { l, comp };
+  };
+  const pMkt = ponto(0);
+  const ligMkt = linha(NUCLEO, pMkt, 'lig-mkt');
+  const ligacoes = AREAS.map((nome, k) => {
+    const p = ponto(k + 1);
+    const lig = linha(NUCLEO, p, 'lig');
+    const no = document.createElement('div');
+    no.className = 'no vidro'; no.innerHTML = `<i></i>${nome}`;
+    no.style.left = p.x + 'px'; no.style.top = p.y + 'px';
+    S('#nos').appendChild(no);
+    return { ...lig, no, p };
+  });
+  const acesa = linha(NUCLEO, pMkt, 'lig-acesa');
+  // depois do desbloqueio o cérebro anda para a esquerda; as áreas do
+  // Marketing brotam à direita do nó, já no lugar certo depois do deslize
+  const DESLIZE = -230;
+  const SUBS = ['Área Médica', 'Email MKT', 'Canal do médico'];
+  const subs = SUBS.map((nome, k) => {
+    const p = { x: 1690 - DESLIZE, y: pMkt.y + (k - 1) * 128 };
+    const lig = linha({ x: pMkt.x + 145, y: pMkt.y }, { x: p.x - 150, y: p.y }, 'lig-acesa');
+    const no = document.createElement('div');
+    no.className = 'no sub vidro'; no.innerHTML = `<i></i>${nome}`;
+    no.style.left = p.x + 'px'; no.style.top = p.y + 'px';
+    S('#nos').appendChild(no);
+    return { ...lig, no };
+  });
+  S('#noMkt').style.left = pMkt.x + 'px'; S('#noMkt').style.top = pMkt.y + 'px';
+  S('#explosao').style.left = pMkt.x + 'px'; S('#explosao').style.top = pMkt.y + 'px';
+  // pulsos: dados correndo do núcleo para cada área
+  const pulsos = ligacoes.map(({ p }) => {
+    const c = document.createElementNS(NS, 'circle');
+    c.setAttribute('r', 7); c.setAttribute('class', 'pulso'); c.setAttribute('cx', NUCLEO.x); c.setAttribute('cy', NUCLEO.y);
+    c.style.opacity = 0;
+    S('#ligacoes').appendChild(c);
+    return { c, p };
+  });
+  gsap.set(['#nucleo'], { scale: 0 });
+  gsap.set(ligacoes.map(x => x.no).concat(subs.map(x => x.no), [S('#noMkt')]), { opacity: 0, scale: 0.7 });
+
+  frase('#fc1', 3.95, 6.05);
+  tl.to('#cenaCerebro', { opacity: 1, duration: 0.01 }, 3.95)
+    .to('#nucleo', { scale: 1, duration: 0.6, ease: 'back.out(1.8)' }, 4.0);
+  ligacoes.forEach(({ l, no }, k) => {
+    tl.to(l, { strokeDashoffset: 0, duration: 0.45, ease: 'power2.out' }, 4.3 + k * 0.09)
+      .to(no, { opacity: 1, scale: 1, duration: 0.45, ease: 'back.out(2)' }, 4.5 + k * 0.09);
+  });
+  tl.to('#noMkt', { opacity: 1, scale: 1, duration: 0.45, ease: 'back.out(2)' }, 5.1)
+    .from(ligMkt.l, { opacity: 0, duration: 0.4 }, 5.0);
+  pulsos.forEach(({ c, p }, k) => {
+    for (let v = 0; v < 3; v++) {
+      const t = 5.2 + k * 0.17 + v * 1.25;
+      tl.set(c, { attr: { cx: NUCLEO.x, cy: NUCLEO.y } }, t)
+        .to(c, { opacity: 1, duration: 0.1 }, t)
+        .to(c, { attr: { cx: p.x, cy: p.y }, duration: 0.7, ease: 'power1.in' }, t)
+        .to(c, { opacity: 0, duration: 0.15 }, t + 0.6);
+    }
+  });
+  // o desbloqueio
+  frase('#fc2', 6.35, 9.35);
+  tl.to('#noMkt', { x: -7, duration: 0.06, yoyo: true, repeat: 5, ease: 'none' }, 6.55)
+    .to('#arcoCadeado', { y: -6, duration: 0.25, ease: 'back.out(3)' }, 6.95)
+    .to('#mktTravado', { opacity: 0, duration: 0.3 }, 7.15)
+    .to('#mktAberto', { opacity: 1, duration: 0.3 }, 7.15)
+    .fromTo('#noMkt', { scale: 1 }, { scale: 1.12, duration: 0.2, yoyo: true, repeat: 1, ease: 'power2.out' }, 7.15)
+    .fromTo('#explosao', { opacity: 0.9, scale: 0.6 }, { opacity: 0, scale: 3.2, duration: 0.7, ease: 'power2.out', immediateRender: false }, 7.15)
+    .to(ligMkt.l, { opacity: 0, duration: 0.3 }, 7.2)
+    .to(acesa.l, { strokeDashoffset: 0, duration: 0.5, ease: 'power2.out' }, 7.2)
+    .to('#cerebro', { x: DESLIZE, duration: 0.7, ease: 'power3.inOut' }, 7.75);
+  subs.forEach(({ l, no }, k) => {
+    tl.to(l, { strokeDashoffset: 0, duration: 0.4, ease: 'power2.out' }, 8.35 + k * 0.16)
+      .to(no, { opacity: 1, scale: 1, duration: 0.45, ease: 'back.out(2)' }, 8.5 + k * 0.16);
+  });
+  tl.to('#cenaCerebro', { opacity: 0, scale: 0.97, duration: 0.4, ease: 'power2.in' }, 9.35);
+
+  // ── M. Marketing e BI na mesma resposta (9.7 → 13 s)
+  frase('#fm', 9.75, 12.85);
+  tl.to('#cenaMkt', { opacity: 1, duration: 0.01 }, 9.75)
+    .from('#canal', { opacity: 0, y: 40, scale: 0.96, duration: 0.6, ease: 'power3.out' }, 9.8);
+  todos('#barra i').forEach((i, k) => {
+    tl.to(i, { width: i.dataset.w + '%', duration: 0.55, ease: 'power3.out' }, 10.3 + k * 0.18);
+  });
+  tl.from('.leg div', { opacity: 0, y: 12, duration: 0.4, stagger: 0.08, ease: 'power2.out' }, 10.7)
+    .from('#respostaMkt', { opacity: 0, x: 40, duration: 0.6, ease: 'power3.out' }, 11.3)
+    .to('#cenaMkt', { opacity: 0, x: -60, duration: 0.4, ease: 'power2.in' }, 12.85);
+  rotulo('Motor de anexos', 12.9);
+
+  // ── as cenas de anexos, D segundos depois de onde estavam no corte de 21 s
+  const D = 9.15;
+  // 2. a planilha chega ao chat
+  frase('#f2', 3.95 + D, 6.75 + D);
+  tl.to('#cena2', { opacity: 1, duration: 0.01 }, 4.0 + D)
+    .from('#compositor', { opacity: 0, y: 40, scale: 0.96, duration: 0.6, ease: 'power3.out' }, 4.1 + D)
+    .from('#arquivo', { y: -260, rotation: -14, opacity: 0, duration: 0.6, ease: 'power3.in' }, 4.6 + D)
+    .to('#arquivo', { y: 230, scale: 0.4, opacity: 0, duration: 0.35, ease: 'power2.in' }, 5.2 + D)
+    .fromTo('#chip', { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.45, ease: 'back.out(2.2)' }, 5.45 + D)
+    .to('#pedido', { width: () => S('#pedido').scrollWidth + 40, duration: 1.0, ease: `steps(${S('#pedido').textContent.length})` }, 5.85 + D)
+    .fromTo('#enviar', { scale: 1 }, { scale: 0.86, duration: 0.12, yoyo: true, repeat: 1 }, 6.55 + D)
+    .to('#cena2', { opacity: 0, x: -60, duration: 0.4, ease: 'power2.in' }, 6.75 + D);
+
+  // 3. a planilha é preenchida
+  frase('#f3', 7.1 + D, 11.75 + D);
+  tl.to('#cena3', { opacity: 1, duration: 0.01 }, 7.1 + D)
+    .from('#planilha', { opacity: 0, y: 50, scale: 0.96, duration: 0.6, ease: 'power3.out' }, 7.15 + D);
+  todos('td.vazia').forEach((td, i) => {
+    const t = 7.9 + D + i * 0.22;
+    tl.to(td.querySelector('.flash'), { opacity: 1, duration: 0.12 }, t)
+      .to(td.querySelector('.val'), { opacity: 1, duration: 0.2 }, t + 0.05)
+      .to(td.querySelector('.flash'), { opacity: 0, duration: 0.5 }, t + 0.35);
+  });
+  tl.fromTo('#abaNotas', { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.45, ease: 'back.out(2)' }, 10.4 + D)
+    .fromTo('#selo', { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.45, ease: 'back.out(2)' }, 10.8 + D)
+    .to('#cena3', { opacity: 0, x: -60, duration: 0.4, ease: 'power2.in' }, 11.75 + D);
+
+  // 4. o print
+  frase('#f4', 12.1 + D, 14.75 + D);
+  tl.to('#cena4', { opacity: 1, duration: 0.01 }, 12.1 + D)
+    .from('#print', { opacity: 0, scale: 0.9, rotation: -2, duration: 0.55, ease: 'back.out(1.6)' }, 12.2 + D)
+    .from('#print .barras i', { scaleY: 0, transformOrigin: '50% 100%', duration: 0.5, stagger: 0.06, ease: 'power3.out' }, 12.35 + D)
+    .to('#varredura', { opacity: 1, duration: 0.1 }, 12.95 + D)
+    .to('#varredura', { y: 464, duration: 0.8, ease: 'power1.inOut' }, 12.95 + D)
+    .to('#varredura', { opacity: 0, duration: 0.15 }, 13.7 + D)
+    .from('#resposta', { opacity: 0, x: 40, duration: 0.6, ease: 'power3.out' }, 13.75 + D)
+    .to('#cena4', { opacity: 0, x: -60, duration: 0.4, ease: 'power2.in' }, 14.75 + D);
+
+  // 5. a lista: o 3.0 inteiro
+  rotulo('Jarvis 3.0', 14.9 + D);
+  frase('#f5', 15.1 + D, 17.8 + D);
+  tl.to('#cena5', { opacity: 1, duration: 0.01 }, 15.1 + D);
+  todos('.item').forEach((it, i) => {
+    tl.from(it, { opacity: 0, y: 30, scale: 0.97, duration: 0.55, ease: 'power3.out' }, 15.4 + D + i * 0.55)
+      .from(it.querySelector('.tique'), { scale: 0, duration: 0.4, ease: 'back.out(2.6)' }, 15.65 + D + i * 0.55);
+  });
+  tl.to('#cena5', { opacity: 0, y: 30, duration: 0.4, ease: 'power2.in' }, 17.8 + D);
+
+  // 6. o fecho
+  tl.to('#textos', { opacity: 0, duration: 0.3 }, 17.85 + D)
+    .to('#mascote', { x: 0, y: -10, scale: 0.8, duration: 0.8, ease: 'power3.inOut' }, 18.0 + D)
+    .to('#sombra', { opacity: 0.8, scale: 0.85, y: -50, duration: 0.6 }, 18.3 + D)
+    .set('#lema', { textContent: 'Marketing no cérebro. Planilhas e prints no chat.' }, 18.2 + D)
+    .fromTo('#titulo h1', { opacity: 0, y: 30 }, { opacity: 1, y: -60, duration: 0.6, ease: 'power3.out' }, 18.55 + D)
+    .fromTo('#lema', { opacity: 0, y: 30 }, { opacity: 1, y: -60, duration: 0.6, ease: 'power3.out' }, 18.75 + D)
+    .fromTo('#botao', { opacity: 0, scale: 0.8, y: -50 }, { opacity: 1, scale: 1, y: -50, duration: 0.5, ease: 'back.out(2.2)' }, 19.2 + D)
+    .to('#mascote', { rotation: -6, duration: 0.25, yoyo: true, repeat: 3, ease: 'sine.inOut' }, 19.5 + D)
+    .to('#root', { opacity: 1, duration: FIM - (19.8 + D) }, 19.8 + D);
+
+  window.__timelines = window.__timelines || {};
+  window.__timelines['main'] = tl;
+  tl.seek(0);
+
+  // Fora do HyperFrames (dentro do app), a página toca sozinha e se ajusta à
+  // janela. O modal fica sabendo do fim por postMessage.
+  const params = new URLSearchParams(location.search);
+  if (params.has('tocar') || params.has('fim')) {
+    const ajustar = () => {
+      const escala = Math.min(innerWidth / 1920, innerHeight / 1080);
+      document.body.style.transform = `scale(${escala})`;
+    };
+    ajustar();
+    addEventListener('resize', ajustar);
+    tl.eventCallback('onComplete', () => parent.postMessage({ jarvis: 'anuncio-fim' }, location.origin));
+    const comecar = () => (params.has('fim') ? tl.progress(1) : tl.play(0));
+    // espera a fonte, senão a primeira cena pisca em outra letra
+    (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(comecar);
+    addEventListener('message', (e) => {
+      if (e.origin === location.origin && e.data && e.data.jarvis === 'anuncio-de-novo') tl.play(0);
+    });
+  }
+</script>
+</body>
+</html>

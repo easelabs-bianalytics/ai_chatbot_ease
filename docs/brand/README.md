@@ -32,12 +32,32 @@ qualquer tamanho, pesa cerca de 1 KB e cada parte pode ser animada por CSS.
 
 Medidas do SVG (viewBox 64×64), tiradas do PNG original:
 
-| parte   | geometria                                   | cor                        |
-|---------|---------------------------------------------|----------------------------|
-| corpo   | `rect x=17 y=11.9 w=30 h=40.3 rx=15`        | `--primary-600` `#5558D4`  |
-| viseira | `rect x=18.4 y=21.6 w=27.2 h=9.8 rx=4.9`    | `--primary-950` `#1E1F5C`  |
-| olho    | `circle cx=40 cy=26.5 r=2.4`                | `--brand-green` `#6ECC64`  |
-| órbita  | elipse `cx=32 cy=40 rx=25 ry=8` a -14°, partida em duas metades | `--brand-green` |
+| parte   | geometria                                   | cor (3.0)                                   |
+|---------|---------------------------------------------|---------------------------------------------|
+| corpo   | `rect x=17 y=11.9 w=30 h=40.3 rx=15`        | gradiente `#7C80F7` → `#4A4DC4` (`#jv3Corpo`) |
+| viseira | `rect x=18.4 y=21.6 w=27.2 h=9.8 rx=4.9`    | `--primary-950` `#1E1F5C`                   |
+| reflexo | `path M 22.5 24.2 H 33`, traço 0,9          | branco a 30%                                |
+| olho    | `circle cx=40 cy=26.5 r=2.4`                | `--brand-green` `#6ECC64`, com brilho       |
+| órbita  | elipse `cx=32 cy=40 rx=25 ry=8` a -14°, partida em duas metades | trás `#3E8F38` (opacidade 0,7); frente `#4FB34A` → `#A8F09E` (`#jv3Anel`) |
+| satélite | sobre a órbita                             | `--brand-satelite` `#9BE88F`, a cor da auréola, com brilho |
+
+### Jarvis 3.0 ("anel energizado", 2026-10-05)
+
+A geometria é a mesma do 2.0. O que muda é luz e cor: o corpo ganha volume,
+a viseira ganha um reflexo e o olho brilha. O corpo saiu de
+`jarvis-3.0-propostas.html` (opção 5), em que a folha de planilha no satélite
+foi descartada por ficar feia. O anel saiu de `jarvis-3.0-escolha.html`
+(opção V, "profundidade no verde", escolhida pelo Rubens): verde escuro e firme
+atrás do corpo, e a frente clareando até o satélite, que tem a mesma cor. O
+primeiro corte, do verde ao ciano, misturava as duas cores no meio do traço e
+deixava o anel "lavado"; as alternativas estão em `jarvis-3.0-aneis*.html`. Os gradientes ficam num
+SVG só, `.jarvis-defs`, logo no começo do `<body>` do `index.html`, e o CSS os
+referencia (`fill: url(#jv3Corpo)`). Esse SVG tem tamanho zero e não pode
+receber `display: none`, porque num SVG escondido o navegador não pinta o
+gradiente.
+
+No 2.0 o corpo era `--primary-600` chapado, e o anel e o satélite eram
+`--brand-green`.
 
 A órbita é desenhada em duas partes: a metade de trás vem **antes** do corpo
 no SVG e a da frente **depois**, como anel de planeta. O satélite também é

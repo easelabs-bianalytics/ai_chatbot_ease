@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jarvis 3.0 · escolha animada</title>
+<style>
+  :root { --bg:#F4F5FB; --card:#fff; --tx:#1A1D2E; --mu:#6B7088; --bd:#E6E7F0; --sel:#5558D4; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--tx); font:15px/1.5 Inter, system-ui, sans-serif; }
+  main { max-width:1240px; margin:0 auto; padding:24px 16px 120px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  h2.secao { font-size:17px; margin:34px 0 4px; }
+  p.sub { color:var(--mu); margin:0 0 16px; max-width:880px; }
+  .barra { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:12px 0 0; }
+  .barra button { font:inherit; font-size:13px; border:1px solid var(--bd); background:#fff; border-radius:10px; padding:7px 12px; cursor:pointer; }
+  .grade { display:grid; grid-template-columns:repeat(auto-fill, minmax(268px, 1fr)); gap:14px; }
+  .op { background:var(--card); border:2px solid var(--bd); border-radius:16px; overflow:hidden; cursor:pointer; transition:border-color .15s, box-shadow .15s; }
+  .op:hover { border-color:#C9CBF5; }
+  .op.ativo { border-color:var(--sel); box-shadow:0 0 0 4px rgba(85,88,212,.12); }
+  .op header { padding:12px 14px 0; }
+  .op h3 { font-size:14.5px; margin:0 0 2px; display:flex; justify-content:space-between; gap:8px; }
+  .op h3 em { font-style:normal; font-size:11.5px; color:var(--sel); font-weight:600; visibility:hidden; }
+  .op.ativo h3 em { visibility:visible; }
+  .op small { color:var(--mu); display:block; min-height:54px; font-size:12.5px; }
+  .ref { font-size:11px; color:var(--mu); border:1px dashed #C9CBDA; border-radius:6px; padding:0 5px; margin-left:4px; }
+  .palcos { display:grid; grid-template-columns:1fr 1fr; }
+  .palco { padding:10px 6px 10px; display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .palco.claro { --contorno:#FFFFFF; background:#FFFFFF; }
+  .palco.escuro { --contorno:#151823; background:#151823; }
+  .grande { width:122px; height:122px; overflow:visible; animation:flutua 3.2s ease-in-out infinite alternate; }
+  @keyframes flutua { from { transform:translateY(2px); } to { transform:translateY(-3px); } }
+  .pausado .grande { animation-play-state:paused; }
+  @media (prefers-reduced-motion: reduce) { .grande { animation:none; } }
+  .tam { display:flex; align-items:center; gap:12px; }
+  .tam svg { overflow:visible; }
+  .ico { border-radius:22%; }
+  /* a escolha, sempre à vista */
+  #escolha { position:fixed; left:50%; bottom:14px; transform:translateX(-50%); width:min(760px, calc(100% - 24px));
+             background:#1A1D2E; color:#fff; border-radius:18px; padding:10px 16px; display:flex; align-items:center; gap:16px;
+             box-shadow:0 14px 40px rgba(20,22,45,.35); z-index:5; }
+  #escolha svg { width:70px; height:70px; flex-shrink:0; overflow:visible; --contorno:#1A1D2E; }
+  #escolha b { display:block; font-size:15px; }
+  #escolha span { font-size:13px; color:#B9BCD6; }
+</style>
+</head>
+<body>
+<main id="pagina">
+  <h1>Jarvis 3.0: escolha o anel e o corpo</h1>
+  <p class="sub">Tudo animado como ficaria no app: o satélite orbita e passa por trás do corpo, o olho pisca e o mascote flutua de leve. O brilho foi contido; nada de neon. <b>Clique num anel e num corpo</b>: a combinação aparece embaixo, e o anel escolhido vale para todos os corpos.</p>
+  <div class="barra"><button id="pausa">Pausar animação</button></div>
+
+  <h2 class="secao">1. O anel</h2>
+  <p class="sub">As duas primeiras são referência: o 2.0 e o gradiente que está no app hoje.</p>
+  <div class="grade" id="aneis"></div>
+
+  <h2 class="secao">2. O corpo</h2>
+  <p class="sub">Variações do Jarvis com a viseira acesa e o reflexo da opção 5, todas com o anel escolhido acima.</p>
+  <div class="grade" id="corpos"></div>
+</main>
+<div id="escolha"></div>
+
+<script>
+const V = '#6ECC64', C = '#4FD8E8', AGUA = '#3FD7A6';
+const TRAS = 'M 7,40 A 25,8 0 0,0 57,40', FRENTE = 'M 7,40 A 25,8 0 0,1 57,40';
+// A órbita inteira: a primeira metade é o arco da frente, a segunda o de trás.
+const ORBITA = 'M 7,40 A 25,8 0 0,1 57,40 A 25,8 0 0,1 7,40';
+const grad = (id, paradas) => `<linearGradient id="${id}" x1="0" y1="0" x2="1" y2="0">${paradas.map(([o, c, a = 1]) =>
+  `<stop offset="${o}" stop-color="${c}" stop-opacity="${a}"/>`).join('')}</linearGradient>`;
+
+/* Cada anel devolve { defs, tras, frente, sat } — `frente` pode trazer animação. */
+const ANEIS = [
+  { id: 'v20', ref: true, nome: '2.0', nota: 'Verde chapado, satélite verde. Como hoje no WhatsApp.',
+    f: () => ({ tras: `<path d="${TRAS}" stroke="${V}" stroke-width="1.8" opacity="0.55"/>`, frente: `<path d="${FRENTE}" stroke="${V}" stroke-width="2.4"/>`, sat: V }) },
+  { id: 'atual', ref: true, nome: 'Atual · verde → ciano', nota: 'O gradiente de hoje no app, da esquerda para a direita.',
+    f: (i) => ({ defs: grad(`g${i}`, [[0, V], [1, C]]), tras: `<path d="${TRAS}" stroke="url(#g${i})" stroke-width="1.8" opacity="0.55"/>`, frente: `<path d="${FRENTE}" stroke="url(#g${i})" stroke-width="2.4"/>`, sat: C, luz: true }) },
+  { id: 'reflexo', nome: 'S · Reflexo que corre', nota: 'Anel verde de sempre; um reflexo claro percorre a frente, como luz num metal. A novidade está no movimento, não na cor.',
+    f: (i, anima) => ({ tras: `<path d="${TRAS}" stroke="${V}" stroke-width="1.8" opacity="0.55"/>`,
+      frente: `<path d="${FRENTE}" stroke="${V}" stroke-width="2.4"/>` + (anima
+        ? `<path d="${FRENTE}" stroke="#E4FFF6" stroke-width="1.3" pathLength="100" stroke-dasharray="14 186" opacity="0.9"><animate attributeName="stroke-dashoffset" values="114;-100" dur="2.6s" repeatCount="indefinite"/></path>`
+        : `<path d="${FRENTE}" stroke="#E4FFF6" stroke-width="1.3" pathLength="100" stroke-dasharray="14 186" stroke-dashoffset="-40" opacity="0.9"/>`), sat: V, luz: true }) },
+  { id: 'agua', nome: 'T · Verde-água', nota: 'Uma cor só, entre o verde e o ciano. Mais fresca que o 2.0 e sem a mistura de duas cores no mesmo traço.',
+    f: () => ({ tras: `<path d="${TRAS}" stroke="${AGUA}" stroke-width="1.8" opacity="0.5"/>`, frente: `<path d="${FRENTE}" stroke="${AGUA}" stroke-width="2.4"/>`, sat: AGUA, luz: true }) },
+  { id: 'frente', nome: 'U · Só a frente acesa', nota: 'Atrás do corpo, verde escuro e firme; na frente, verde → verde-água → ciano. O gradiente só aparece onde o anel está mais perto.',
+    f: (i) => ({ defs: grad(`g${i}`, [[0, V], [0.55, AGUA], [1, C]]), tras: `<path d="${TRAS}" stroke="#3E8F38" stroke-width="1.8" opacity="0.7"/>`, frente: `<path d="${FRENTE}" stroke="url(#g${i})" stroke-width="2.4"/>`, sat: C, luz: true }) },
+  { id: 'profundo', nome: 'V · Profundidade no verde', nota: 'Sem ciano no anel: verde escuro atrás, e a frente clareia. Só o satélite é ciano.',
+    f: (i) => ({ defs: grad(`g${i}`, [[0, '#4FB34A'], [1, '#A8F09E']]), tras: `<path d="${TRAS}" stroke="#3E8F38" stroke-width="1.8" opacity="0.7"/>`, frente: `<path d="${FRENTE}" stroke="url(#g${i})" stroke-width="2.4"/>`, sat: C, luz: true }) },
+  { id: 'dados', nome: 'W · Dados fluindo', nota: 'O anel verde leva pontinhos ciano andando por ele, como dados em trânsito. Parado, vira um anel pontilhado discreto.',
+    f: (i, anima) => ({ tras: `<path d="${TRAS}" stroke="${V}" stroke-width="1.8" opacity="0.5"/>`,
+      frente: `<path d="${FRENTE}" stroke="${V}" stroke-width="2.4"/><path d="${FRENTE}" stroke="#DFFBFF" stroke-width="1" pathLength="100" stroke-dasharray="0.1 7.9" opacity="0.95">${anima ? '<animate attributeName="stroke-dashoffset" values="0;-16" dur="1.6s" repeatCount="indefinite"/>' : ''}</path>`, sat: C, luz: true }) },
+  { id: 'dupla', nome: 'X · Órbita dupla', nota: 'Dois anéis finos, verde por dentro e ciano por fora, sem gradiente. O satélite corre no de fora.',
+    f: () => ({ tras: `<path d="${TRAS}" stroke="${V}" stroke-width="1.5" opacity="0.5"/><path d="M 5,40.6 A 27,9 0 0,0 59,40.6" stroke="${C}" stroke-width="0.9" opacity="0.4"/>`,
+      frente: `<path d="${FRENTE}" stroke="${V}" stroke-width="2"/><path d="M 5,40.6 A 27,9 0 0,1 59,40.6" stroke="${C}" stroke-width="1.1" opacity="0.85"/>`, sat: C, luz: true, orbita: 'M 5,40.6 A 27,9 0 0,1 59,40.6 A 27,9 0 0,1 5,40.6' }) },
+  { id: 'pulso', nome: 'Y · Pulso', nota: 'Verde de sempre, que respira devagar em direção ao verde-água, como um aparelho ligado. Parado, é o verde do 2.0.',
+    f: (i, anima) => ({ tras: `<path d="${TRAS}" stroke="${V}" stroke-width="1.8" opacity="0.55"/>`,
+      frente: `<path d="${FRENTE}" stroke="${V}" stroke-width="2.4"/>` + (anima ? `<path d="${FRENTE}" stroke="${AGUA}" stroke-width="2.4" opacity="0"><animate attributeName="opacity" values="0;0.85;0" dur="3.4s" repeatCount="indefinite"/></path>` : ''), sat: V, luz: true }) },
+];
+
+/* O corpo: { antes, corpo } — `antes` fica atrás do anel de trás (raro). */
+const VOL = (i) => `<linearGradient id="vol${i}" x1="0.2" y1="0" x2="0.8" y2="1"><stop offset="0" stop-color="#7C80F7"/><stop offset="1" stop-color="#4A4DC4"/></linearGradient>`;
+const piscar = (anima, r = 2.6) => anima ? `<animate attributeName="ry" values="${r};${r};0.35;${r}" keyTimes="0;0.9;0.95;1" dur="4.2s" repeatCount="indefinite"/>` : '';
+const CORPOS = [
+  { id: 'classico', nome: 'Clássico (opção 5)', nota: 'O corpo aprovado: viseira acesa com reflexo e um olho.',
+    f: (i, a) => `<rect x="17" y="11.9" width="30" height="40.3" rx="15" fill="url(#vol${i})" stroke="var(--contorno)" stroke-width="2.4" paint-order="stroke"/>
+      <rect x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9" fill="#1E1F5C"/>
+      <path d="M 22.5 24.2 H 33" stroke="#fff" stroke-width="0.9" stroke-linecap="round" opacity="0.3"/>
+      <ellipse cx="40" cy="26.5" rx="2.6" ry="2.6" fill="${V}" filter="url(#br${i})">${piscar(a)}</ellipse>` },
+  { id: 'antena', nome: 'Com antena', nota: 'Uma antena curta no topo, com a ponta acesa que pulsa. Lê como "recebendo sinal", "ligado".',
+    f: (i, a) => `<path d="M 32 11.9 V 5.6" stroke="#4A4DC4" stroke-width="1.6" stroke-linecap="round"/>
+      <circle cx="32" cy="4.6" r="1.9" fill="${V}" filter="url(#br${i})">${a ? '<animate attributeName="opacity" values="1;0.45;1" dur="1.8s" repeatCount="indefinite"/>' : ''}</circle>
+      <rect x="17" y="11.9" width="30" height="40.3" rx="15" fill="url(#vol${i})" stroke="var(--contorno)" stroke-width="2.4" paint-order="stroke"/>
+      <rect x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9" fill="#1E1F5C"/>
+      <path d="M 22.5 24.2 H 33" stroke="#fff" stroke-width="0.9" stroke-linecap="round" opacity="0.3"/>
+      <ellipse cx="40" cy="26.5" rx="2.6" ry="2.6" fill="${V}" filter="url(#br${i})">${piscar(a)}</ellipse>` },
+  { id: 'dois', nome: 'Dois olhos', nota: 'A viseira com dois olhos menores. Mais simpático e expressivo, menos "câmera".',
+    f: (i, a) => `<rect x="17" y="11.9" width="30" height="40.3" rx="15" fill="url(#vol${i})" stroke="var(--contorno)" stroke-width="2.4" paint-order="stroke"/>
+      <rect x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9" fill="#1E1F5C"/>
+      <path d="M 21.5 23.6 H 27" stroke="#fff" stroke-width="0.8" stroke-linecap="round" opacity="0.3"/>
+      <ellipse cx="27.5" cy="26.6" rx="2.1" ry="2.1" fill="${V}" filter="url(#br${i})">${piscar(a, 2.1)}</ellipse>
+      <ellipse cx="36.5" cy="26.6" rx="2.1" ry="2.1" fill="${V}" filter="url(#br${i})">${piscar(a, 2.1)}</ellipse>` },
+  { id: 'scanner', nome: 'Olho scanner', nota: 'O olho vira uma barra que varre a viseira de um lado a outro, como quem lê os dados. Parado, fica à direita, como hoje.',
+    f: (i, a) => `<rect x="17" y="11.9" width="30" height="40.3" rx="15" fill="url(#vol${i})" stroke="var(--contorno)" stroke-width="2.4" paint-order="stroke"/>
+      <rect x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9" fill="#1E1F5C"/>
+      <path d="M 22.5 24.2 H 33" stroke="#fff" stroke-width="0.9" stroke-linecap="round" opacity="0.3"/>
+      <rect x="36" y="25.2" width="6" height="2.6" rx="1.3" fill="${V}" filter="url(#br${i})">${a ? '<animate attributeName="x" values="21.5;36.5;21.5" dur="2.8s" calcMode="spline" keySplines="0.45 0 0.55 1;0.45 0 0.55 1" repeatCount="indefinite"/>' : ''}</rect>` },
+  { id: 'compacto', nome: 'Compacto', nota: 'Corpo mais largo e redondo, quase uma cápsula. Fica maior e mais legível nos tamanhos pequenos.',
+    f: (i, a) => `<rect x="14.5" y="14.5" width="35" height="37.5" rx="17.5" fill="url(#vol${i})" stroke="var(--contorno)" stroke-width="2.4" paint-order="stroke"/>
+      <rect x="16" y="23" width="32" height="10.4" rx="5.2" fill="#1E1F5C"/>
+      <path d="M 20.5 25.7 H 32" stroke="#fff" stroke-width="0.9" stroke-linecap="round" opacity="0.3"/>
+      <ellipse cx="41.5" cy="28.2" rx="2.7" ry="2.7" fill="${V}" filter="url(#br${i})">${piscar(a, 2.7)}</ellipse>` },
+  { id: 'fone', nome: 'Com fone', nota: 'Um headset discreto: arco na cabeça, fones dos lados e microfone. Lê como "assistente", "ao seu dispor".',
+    f: (i, a) => `<rect x="17" y="11.9" width="30" height="40.3" rx="15" fill="url(#vol${i})" stroke="var(--contorno)" stroke-width="2.4" paint-order="stroke"/>
+      <path d="M 16.2 27 A 15.8 17 0 0 1 47.8 27" fill="none" stroke="#2A2C78" stroke-width="2.2" stroke-linecap="round"/>
+      <rect x="13.4" y="22.5" width="5.4" height="10" rx="2.7" fill="#2A2C78" stroke="var(--contorno)" stroke-width="1" paint-order="stroke"/>
+      <rect x="45.2" y="22.5" width="5.4" height="10" rx="2.7" fill="#2A2C78" stroke="var(--contorno)" stroke-width="1" paint-order="stroke"/>
+      <path d="M 16.2 31.5 Q 17.5 37.5 24 37.8" fill="none" stroke="#2A2C78" stroke-width="1.3" stroke-linecap="round"/>
+      <circle cx="24.6" cy="37.8" r="1.3" fill="${V}"/>
+      <rect x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9" fill="#1E1F5C"/>
+      <path d="M 22.5 24.2 H 33" stroke="#fff" stroke-width="0.9" stroke-linecap="round" opacity="0.3"/>
+      <ellipse cx="40" cy="26.5" rx="2.6" ry="2.6" fill="${V}" filter="url(#br${i})">${piscar(a)}</ellipse>` },
+];
+
+let anelEscolhido = 'reflexo', corpoEscolhido = 'classico', n = 0;
+const achar = (lista, id) => lista.find(x => x.id === id);
+
+function mascote(anel, corpo, anima) {
+  const i = 'x' + (n++);
+  const a = anel.f(i, anima);
+  const orbita = a.orbita || ORBITA;
+  const satelite = (frente) => anima
+    ? `<circle r="3" fill="${a.sat}" stroke="var(--contorno)" stroke-width="1.2" paint-order="stroke" ${a.luz ? `filter="url(#br${i})"` : ''} ${frente ? 'opacity="0"' : ''}>
+         <animateMotion dur="7s" repeatCount="indefinite" path="${orbita}"/>
+         ${frente ? '<animate attributeName="opacity" values="1;0" keyTimes="0;0.5" calcMode="discrete" dur="7s" repeatCount="indefinite"/>' : ''}
+       </circle>`
+    : (frente ? `<circle cx="51.5" cy="44.9" r="3" fill="${a.sat}" stroke="var(--contorno)" stroke-width="1.2" paint-order="stroke" ${a.luz ? `filter="url(#br${i})"` : ''}/>` : '');
+  return `<defs>${VOL(i)}
+      <filter id="br${i}" x="-150%" y="-150%" width="400%" height="400%"><feGaussianBlur stdDeviation="0.7" result="b"/><feComponentTransfer in="b" result="s"><feFuncA type="linear" slope="0.7"/></feComponentTransfer><feMerge><feMergeNode in="s"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      ${a.defs || ''}</defs>
+    <g transform="rotate(-14 32 40)" fill="none" stroke-linecap="round">${a.tras}${satelite(false)}</g>
+    ${corpo.f(i, anima)}
+    <g transform="rotate(-14 32 40)" fill="none" stroke-linecap="round">${a.frente}${satelite(true)}</g>`;
+}
+
+const svg = (anel, corpo, attrs, anima) => `<svg viewBox="0 0 64 64" ${attrs}>${mascote(anel, corpo, anima)}</svg>`;
+const favicon = (anel, corpo) => `<svg viewBox="0 0 64 64" width="32" height="32" class="ico">
+    <defs><linearGradient id="lad${n}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2E3190"/><stop offset="1" stop-color="#161747"/></linearGradient></defs>
+    <rect width="64" height="64" rx="15" fill="url(#lad${n++})"/>
+    <g transform="translate(32 31.5) scale(1.16) translate(-32 -32)" style="--contorno:#1B1C55">${mascote(anel, corpo, false)}</g></svg>`;
+const palco = (anel, corpo, tema) => `<div class="palco ${tema}">
+    ${svg(anel, corpo, 'class="grande"', true)}
+    <div class="tam">${svg(anel, corpo, 'width="38" height="38"', false)}${favicon(anel, corpo)}</div></div>`;
+
+function cartao(item, tipo, anel, corpo, ativo) {
+  return `<div class="op${ativo ? ' ativo' : ''}" data-tipo="${tipo}" data-id="${item.id}">
+    <header><h3><span>${item.nome}${item.ref ? '<span class="ref">referência</span>' : ''}</span><em>escolhido</em></h3><small>${item.nota}</small></header>
+    <div class="palcos">${palco(anel, corpo, 'claro')}${palco(anel, corpo, 'escuro')}</div></div>`;
+}
+
+function desenhar() {
+  n = 0;
+  const corpo = achar(CORPOS, corpoEscolhido), anel = achar(ANEIS, anelEscolhido);
+  document.getElementById('aneis').innerHTML = ANEIS.map(a => cartao(a, 'anel', a, corpo, a.id === anelEscolhido)).join('');
+  document.getElementById('corpos').innerHTML = CORPOS.map(c => cartao(c, 'corpo', anel, c, c.id === corpoEscolhido)).join('');
+  const letra = anel.nome.split(' · ')[0];
+  document.getElementById('escolha').innerHTML = `${svg(anel, corpo, '', true)}
+    <div><b>Anel: ${anel.nome} · Corpo: ${corpo.nome}</b>
+    <span>Gostou? Me diga: "anel ${letra}, corpo ${corpo.nome.toLowerCase()}". Clique em outro cartão para trocar.</span></div>`;
+  if (pausado) document.querySelectorAll('svg').forEach(s => s.pauseAnimations && s.pauseAnimations());
+}
+
+let pausado = matchMedia('(prefers-reduced-motion: reduce)').matches;
+document.addEventListener('click', (e) => {
+  const op = e.target.closest('.op');
+  if (!op) return;
+  if (op.dataset.tipo === 'anel') anelEscolhido = op.dataset.id; else corpoEscolhido = op.dataset.id;
+  desenhar();
+});
+const botao = document.getElementById('pausa');
+botao.addEventListener('click', () => {
+  pausado = !pausado;
+  document.getElementById('pagina').classList.toggle('pausado', pausado);
+  document.querySelectorAll('svg').forEach(s => pausado ? s.pauseAnimations() : s.unpauseAnimations());
+  botao.textContent = pausado ? 'Retomar animação' : 'Pausar animação';
+});
+desenhar();
+if (pausado) { document.getElementById('pagina').classList.add('pausado'); botao.textContent = 'Retomar animação'; }
+</script>
+</body>
+</html>

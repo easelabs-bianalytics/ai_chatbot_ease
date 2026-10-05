@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jarvis 3.0 · propostas</title>
+<style>
+  :root { --bg:#F7F8FA; --card:#fff; --tx:#1A1D2E; --mu:#6B7088; --bd:#EEEEF3; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--tx); font:15px/1.5 Inter, system-ui, sans-serif; padding:28px 16px; }
+  h1 { font-size:22px; margin:0 0 4px; } p.sub { color:var(--mu); margin:0 0 24px; max-width:900px; }
+  .grade { display:grid; grid-template-columns:repeat(auto-fit, minmax(270px, 1fr)); gap:16px; max-width:1240px; }
+  .op { background:var(--card); border:1px solid var(--bd); border-radius:16px; overflow:hidden; }
+  .op header { padding:16px 18px 0; }
+  .op h2 { font-size:15px; margin:0 0 2px; } .op small { color:var(--mu); display:block; min-height:62px; font-size:12.5px; }
+  .palcos { display:grid; grid-template-columns:1fr 1fr; }
+  .palco { padding:12px 8px 10px; display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .palco.claro { --contorno:#FFFFFF; background:#FFFFFF; }
+  .palco.escuro { --contorno:#151823; background:#151823; }
+  .grande { width:118px; height:118px; overflow:visible; }
+  .tam { display:flex; align-items:center; gap:12px; }
+  .tam svg { overflow:visible; }
+  .ico { border-radius:22%; }
+</style>
+</head>
+<body>
+<h1>Jarvis 3.0: viseira acesa, seis variações</h1>
+<p class="sub">Sem objetos novos: a cápsula, a viseira, o olho e o anel continuam os mesmos, na mesma geometria. Cada variação mexe em luz e cor, e aparece no fundo claro e no escuro, em 118, 38 e 24 px e como favicon.</p>
+<div class="grade" id="grade"></div>
+
+<script>
+const V = '#6ECC64';
+
+/* Cada variação diz só o que muda; o resto é o mascote de hoje. */
+const OPCOES = [
+  { nome: 'Hoje · 2.0', nota: 'Referência para comparar.', p: {} },
+  {
+    nome: '1 · Viseira acesa', nota: 'É a C da rodada anterior, sem a folha: o corpo com volume, um reflexo na viseira e o olho com brilho.',
+    p: { corpo: 'vol', viseira: 'reflexo', olho: 'brilho' },
+  },
+  {
+    nome: '2 · Faixa de LED', nota: 'Uma linha verde fina acesa na base da viseira, como um painel ligado. O corpo continua chapado. É a mudança mais "assinatura" e se lê bem em 38 px.',
+    p: { viseira: 'led', olho: 'brilho' },
+  },
+  {
+    nome: '3 · Viseira em ciano', nota: 'A viseira vai do índigo profundo a um azul-petróleo, como vidro iluminado por dentro. O olho continua verde e ganha um halo.',
+    p: { corpo: 'vol', viseira: 'petroleo', olho: 'halo' },
+  },
+  {
+    nome: '4 · Índigo elétrico', nota: 'O corpo puxa levemente para o violeta (#5B54E8 → #7A6CFF) e a viseira ganha o reflexo. É a mudança de cor mais perceptível, sem sair da família.',
+    p: { corpo: 'eletrico', viseira: 'reflexo', olho: 'brilho' },
+  },
+  {
+    nome: '5 · Anel energizado', nota: 'A viseira acesa, mais o anel com gradiente do verde para o ciano e o satélite brilhando. O 3.0 aparece na órbita, que é a parte mais reconhecível.',
+    p: { corpo: 'vol', viseira: 'reflexo', olho: 'brilho', anel: 'energia' },
+  },
+  {
+    nome: '6 · Tudo aceso', nota: 'Combina a faixa de LED (2), a viseira em ciano (3) e o anel energizado (5). É a versão mais "3.0" de todas; talvez demais para o avatar de 24 px.',
+    p: { corpo: 'vol', viseira: 'petroleo-led', olho: 'halo', anel: 'energia' },
+  },
+];
+
+function defs(id) {
+  return `<defs>
+    <linearGradient id="vol-${id}" x1="0.2" y1="0" x2="0.8" y2="1"><stop offset="0" stop-color="#7C80F7"/><stop offset="1" stop-color="#4A4DC4"/></linearGradient>
+    <linearGradient id="ele-${id}" x1="0.2" y1="0" x2="0.8" y2="1"><stop offset="0" stop-color="#7A6CFF"/><stop offset="1" stop-color="#5B54E8"/></linearGradient>
+    <linearGradient id="pet-${id}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#1E1F5C"/><stop offset="0.6" stop-color="#1E2F66"/><stop offset="1" stop-color="#174A63"/></linearGradient>
+    <linearGradient id="anel-${id}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${V}"/><stop offset="1" stop-color="#4FD8E8"/></linearGradient>
+    <filter id="br-${id}" x="-150%" y="-150%" width="400%" height="400%"><feGaussianBlur stdDeviation="1" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="halo-${id}" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="2"/></filter>
+    <clipPath id="vc-${id}"><rect x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9"/></clipPath>
+  </defs>`;
+}
+
+function mascote(p, id) {
+  const corpo = { vol: `url(#vol-${id})`, eletrico: `url(#ele-${id})` }[p.corpo] || '#5558D4';
+  const anel = p.anel === 'energia' ? `url(#anel-${id})` : V;
+  const sat = p.anel === 'energia' ? `#4FD8E8` : V;
+  const satFiltro = p.anel === 'energia' ? `filter="url(#br-${id})"` : '';
+  const visFundo = p.viseira && p.viseira.startsWith('petroleo') ? `url(#pet-${id})` : '#1E1F5C';
+  let viseira = `<rect x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9" fill="${visFundo}"/>`;
+  if (['reflexo', 'petroleo', 'petroleo-led'].includes(p.viseira))
+    viseira += `<path d="M 22.5 24.2 H 33" stroke="#FFFFFF" stroke-width="0.9" stroke-linecap="round" opacity="0.3"/>`;
+  if (['led', 'petroleo-led'].includes(p.viseira))
+    viseira += `<g clip-path="url(#vc-${id})"><rect x="18.4" y="29.6" width="27.2" height="1.8" fill="${V}" opacity="0.9" filter="url(#br-${id})"/></g>`;
+  let olho = `<circle cx="40" cy="26.5" r="2.4" fill="${V}"/>`;
+  if (p.olho === 'brilho') olho = `<circle cx="40" cy="26.5" r="2.6" fill="${V}" filter="url(#br-${id})"/>`;
+  if (p.olho === 'halo') olho = `<circle cx="40" cy="26.5" r="4.2" fill="${V}" opacity="0.45" filter="url(#halo-${id})"/><circle cx="40" cy="26.5" r="2.5" fill="#9BE893" filter="url(#br-${id})"/>`;
+
+  return `${defs(id)}
+    <g transform="rotate(-14 32 40)"><path d="M 7,40 A 25,8 0 0,1 57,40" fill="none" stroke="${anel}" stroke-width="2.2" stroke-linecap="round" opacity="0.5"/></g>
+    <rect x="17" y="11.9" width="30" height="40.3" rx="15" fill="${corpo}" stroke="var(--contorno)" stroke-width="2.4" paint-order="stroke"/>
+    ${viseira}${olho}
+    <g transform="rotate(-14 32 40)">
+      <path d="M 7,40 A 25,8 0 0,0 57,40" fill="none" stroke="${anel}" stroke-width="2.8" stroke-linecap="round"/>
+      <circle cx="51.5" cy="44.9" r="3" fill="${sat}" stroke="var(--contorno)" stroke-width="1.2" paint-order="stroke" ${satFiltro}/>
+    </g>`;
+}
+
+let n = 0;
+const svg = (p, attrs) => `<svg viewBox="0 0 64 64" ${attrs}>${mascote(p, 'm' + (n++))}</svg>`;
+const favicon = (p) => {
+  const id = 'f' + (n++);
+  return `<svg viewBox="0 0 64 64" width="32" height="32" class="ico">
+    <defs><linearGradient id="lad-${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2E3190"/><stop offset="1" stop-color="#161747"/></linearGradient></defs>
+    <rect width="64" height="64" rx="15" fill="url(#lad-${id})"/>
+    <g transform="translate(32 31.5) scale(1.16) translate(-32 -32)" style="--contorno:#1B1C55">${mascote(p, id + 'i')}</g></svg>`;
+};
+const palco = (p, tema) => `
+  <div class="palco ${tema}">
+    ${svg(p, 'class="grande"')}
+    <div class="tam">${svg(p, 'width="38" height="38"')}${svg(p, 'width="24" height="24"')}${favicon(p)}</div>
+  </div>`;
+
+document.getElementById('grade').innerHTML = OPCOES.map(op => `
+  <div class="op">
+    <header><h2>${op.nome}</h2><small>${op.nota}</small></header>
+    <div class="palcos">${palco(op.p, 'claro')}${palco(op.p, 'escuro')}</div>
+  </div>`).join('');
+</script>
+</body>
+</html>
