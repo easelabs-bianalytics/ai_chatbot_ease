@@ -95,3 +95,16 @@ def test_resultado_sem_linhas_gera_planilha_valida():
     aba = _abrir(("mes", "und"), [])["Dados"]
 
     assert aba.max_row == 1
+
+
+def test_nome_de_aba_valido_e_sem_repetir():
+    """O Excel recusa aba com mais de 31 caracteres, com `/` ou `:`, e duas
+    com o mesmo nome — e o título vem do modelo."""
+    from datasource.export import nome_de_aba
+
+    usados = set()
+    assert nome_de_aba("Médicos por canal: jan/26 a ago/26 (PX Ease, mercado)", usados) == "Médicos por canal jan 26 a ago"
+    assert nome_de_aba("Totais", usados) == "Totais"
+    assert nome_de_aba("Totais", usados) == "Totais (2)"
+    assert nome_de_aba("Informações", usados) == "Informações (2)"
+    assert len(nome_de_aba("x" * 40, usados)) <= 31

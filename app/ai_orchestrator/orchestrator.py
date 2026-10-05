@@ -19,6 +19,7 @@ import logging
 import numbers
 import os
 import re
+import unicodedata
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -1638,7 +1639,7 @@ def _reconhecer(plano, message, provider, executor, catalog, auditoria, historic
 
 
 def _testar_hipotese(passo, rodada, message, executor, catalog, auditoria,
-                     rotulo="Testando", etapa="investigando", entendimento="") -> dict:
+                     rotulo="Testando", etapa="investigando", entendimento="", limite=None) -> dict:
     """Valida e executa a consulta de uma hipótese (ou de uma entrega).
     Registra sempre."""
     hipotese = passo.get("hipotese") or ""
@@ -1652,7 +1653,8 @@ def _testar_hipotese(passo, rodada, message, executor, catalog, auditoria,
         "reference_query_id": passo.get("reference_query_id", ""),
     }
 
-    guard = _validar(passo["sql"], catalog, message, catalog.max_rows)
+    limite = limite or catalog.max_rows
+    guard = _validar(passo["sql"], catalog, message, limite)
     if not guard.approved:
         auditoria.consulta(
             **registro,
@@ -1665,7 +1667,7 @@ def _testar_hipotese(passo, rodada, message, executor, catalog, auditoria,
 
     Message.objects.filter(pk=message.pk).update(status=Message.Status.PROCESSING)
     try:
-        resultado = executor.run(guard.sql, max_rows=catalog.max_rows)
+        resultado = executor.run(guard.sql, max_rows=limite)
     except QueryExecutionError as exc:
         auditoria.consulta(
             **registro,
@@ -1750,6 +1752,7 @@ def _redigir_analise(com_dado, message, provider, auditoria, historico, plano=No
         entendimento=plano.entendimento if entregas else "",
         pedido_nao_atendido=plano.pedido_nao_atendido if entregas else "",
         planilha_devolvida=nota_da_planilha,
+        excel=bool(entregas and plano.excel),
     )
     fonte_da_pergunta = "\n".join(filter(None, [message.content, nota_da_planilha]))
     suporte = [(p["resultado"].columns, p["resultado"].rows, p["sql"], p["resultado"].row_count) for p in com_dado]
@@ -1860,7 +1863,8 @@ def _entregar_varias(plano, message, provider, executor, catalog, auditoria, his
         passo = {"hipotese": consulta.get("titulo") or "", "sql": consulta["sql"],
                  "reference_query_id": consulta.get("reference_query_id") or ""}
         feito = _testar_hipotese(passo, 1, message, executor, catalog, auditoria,
-                                 rotulo="Consultando", etapa="consultando", entendimento=plano.entendimento)
+                                 rotulo="Consultando", etapa="consultando", entendimento=plano.entendimento,
+                                 limite=_limite_de_linhas(plano, catalog))
         if feito["falha"] == "indisponivel":
             return _Decisao(
                 decision=AIReply.Decision.FAILED, reply=canned.BANCO_INDISPONIVEL,
@@ -1872,7 +1876,7 @@ def _entregar_varias(plano, message, provider, executor, catalog, auditoria, his
             if corrigida:
                 feito = _testar_hipotese({**passo, "sql": corrigida}, 1, message, executor, catalog, auditoria,
                                          rotulo="Consultando", etapa="consultando",
-                                         entendimento=plano.entendimento)
+                                         entendimento=plano.entendimento, limite=_limite_de_linhas(plano, catalog))
         passos.append(feito)
 
     registro = [
@@ -1941,7 +1945,11 @@ def _entregar_varias(plano, message, provider, executor, catalog, auditoria, his
         decision=AIReply.Decision.ANSWERED,
         reply=texto,
         rule=raw.pop("rule", ""),
-        raw={**raw, "entregas": registro, "reference_query_id": plano.consultas[0].get("reference_query_id", "")},
+        # `excel`: o pedido de planilha fica no registro — é ele que faz a tela
+        # e o WhatsApp entregarem o arquivo com uma aba por entrega. Faltava
+        # aqui, e "um Excel, um por aba" saía sem arquivo (conversa 71).
+        raw={**raw, "entregas": registro, "excel": plano.excel,
+             "reference_query_id": plano.consultas[0].get("reference_query_id", "")},
     )
 
 
@@ -2159,6 +2167,21 @@ def _colunas_da_tabela(pedidas, resultado, texto: str = "") -> list:
 # `_limite_de_linhas`); o gráfico não precisa disso tudo, e o resultado
 # inteiro iria parar no registro da resposta.
 LINHAS_DO_GRAFICO = 5000
+
+
+# Pedido de arquivo, pela palavra. "Planilha" sozinha fica de fora quando a
+# pessoa anexou uma: ali ela é a planilha DELA, que tem o próprio caminho
+# (ADR-0024/0031).
+_PEDE_ARQUIVO = re.compile(r"\b(?:excel|xlsx|exporta\w*|em\s+arquivo|baixar|download)\b")
+_PEDE_PLANILHA = re.compile(r"\bplanilhas?\b")
+
+
+def _pediu_planilha(message) -> bool:
+    texto = unicodedata.normalize("NFD", (message.content or "").lower())
+    texto = "".join(c for c in texto if unicodedata.category(c) != "Mn")
+    if _PEDE_ARQUIVO.search(texto):
+        return True
+    return bool(_PEDE_PLANILHA.search(texto)) and not getattr(message, "anexo_tipo", "")
 
 
 def _limite_de_linhas(plano, catalog) -> int:
@@ -2637,6 +2660,12 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
         plano = _reconhecer(plano, message, provider, executor, catalog, auditoria, historico)
         if plano is None:
             return _interrompida()
+
+    if not plano.excel and _pediu_planilha(message):
+        # O pedido de arquivo não depende do modelo lembrar de marcar:
+        # "quero um Excel exportado, um por aba" e "E cadê o Excel??" saíram
+        # sem `excel` e sem arquivo nenhum (conversa 71, 2026-10-05).
+        plano = replace(plano, excel=True)
 
     if plano.entendimento and plano.intent in (Plan.Intent.ANSWER_WITH_DATA, Plan.Intent.INVESTIGATE):
         # A tela troca o "Pensando…" pelo que foi entendido: é a hora mais

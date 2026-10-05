@@ -471,3 +471,29 @@ def test_tabela_longa_vai_inteira_na_planilha_e_sem_o_botao_da_tela(paulo, clien
     textos = " ".join(e["texto"] for e in cliente.enviados if e["tipo"] == "texto")
     assert "Baixar Excel" not in textos and "na planilha anexada" in textos
     assert "e mais 335 linhas" in textos
+
+
+def test_excel_pedido_com_duas_entregas_chega_num_arquivo_com_uma_aba_cada(paulo, cliente):
+    """Conversa 71 (2026-10-05), no WhatsApp: "quero um excel, um por aba"
+    com duas contagens de uma linha não mandava arquivo nenhum — tabela curta
+    ia só no texto, e a planilha geral não saía de resposta com entregas."""
+    import io
+
+    from openpyxl import load_workbook
+
+    area = make_result(("medicos_area_medica",), [(3752,)])
+    email = make_result(("medicos_email_mkt",), [(13246,)])
+    consultas = (
+        {"titulo": "Área Médica", "sql": "SELECT COUNT(*) AS medicos_area_medica FROM marketing.area_medica_usuarios",
+         "reference_query_id": "M00"},
+        {"titulo": "Email MKT", "sql": "SELECT COUNT(*) AS medicos_email_mkt FROM marketing.email_contatos",
+         "reference_query_id": "M00"},
+    )
+    _receber(_evento("médicos da área médica e do email mkt, quero um excel, um por aba"), cliente,
+             [plano("", consultas=consultas)], [resposta("São 3752 na Área Médica e 13246 no Email MKT.")],
+             resultados=(area, email, area, email))
+
+    documentos = [e for e in cliente.enviados if e["tipo"] == "document"]
+    assert len(documentos) == 1
+    livro = load_workbook(io.BytesIO(documentos[0]["dados"]))
+    assert livro.sheetnames == ["Área Médica", "Email MKT", "Informações"]

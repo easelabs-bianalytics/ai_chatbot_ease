@@ -64,11 +64,15 @@ class PostgresReadOnlyExecutor(QueryExecutor):
         # Aplicados na própria conexão, além do SET LOCAL: se a sessão cair
         # antes do SET, ela já nasce limitada. lock_timeout evita que a
         # consulta fique presa esperando um lock de outro sistema.
+        # TimeZone: data e hora com fuso voltam na hora de Brasília. Sem ele a
+        # sessão ficava em UTC e a última carga do Marketing (15:46) aparecia
+        # como "18:46" na resposta, na tabela e na planilha (2026-10-05).
         comuns = {
             "connect_timeout": self._connect_timeout,
             "options": (
                 f"-c statement_timeout={self._statement_timeout_ms} "
-                f"-c lock_timeout={self._lock_timeout_ms}"
+                f"-c lock_timeout={self._lock_timeout_ms} "
+                "-c TimeZone=America/Sao_Paulo"
             ),
         }
         if self._dsn:

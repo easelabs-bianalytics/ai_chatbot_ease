@@ -76,7 +76,7 @@ LINHAS_PARA_A_LARGURA = 500
 
 
 def montar_planilha(colunas, linhas, info: dict) -> bytes:
-    """Devolve o `.xlsx` pronto.
+    """Devolve o `.xlsx` pronto, com uma aba de dados.
 
     `info` vai para a aba "Informações": pergunta, momento, linhas, se foi
     cortado, referência e a consulta executada.
@@ -87,11 +87,38 @@ def montar_planilha(colunas, linhas, info: dict) -> bytes:
     linhas × 52 colunas): o download do chat web caía no tempo do balanceador
     e o worker do WhatsApp ficava preso. A zebra é formatação condicional do
     próprio Excel, sem custo por linha."""
+    aba = {"nome": "Dados (cortada)" if info.get("cortada") else "Dados", "colunas": colunas, "linhas": linhas}
+    return montar_livro([aba], info)
+
+
+def nome_de_aba(titulo: str, usados: set) -> str:
+    """Nome de aba válido no Excel: até 31 caracteres, sem colchete, dois
+    pontos, asterisco, interrogação ou barra, sem repetir (o Excel recusa
+    duas abas com o mesmo nome)."""
+    base = re.sub(r"[\[\]:*?/\\]", " ", str(titulo or "")).strip().strip("'") or "Dados"
+    base = re.sub(r"\s+", " ", base)[:31].strip()
+    nome, n = base, 2
+    while nome.lower() in usados or nome.lower() == "informações":
+        sufixo = f" ({n})"
+        nome = base[: 31 - len(sufixo)].strip() + sufixo
+        n += 1
+    usados.add(nome.lower())
+    return nome
+
+
+def montar_livro(abas: list, info: dict) -> bytes:
+    """Um `.xlsx` com uma aba por consulta, mais a aba "Informações".
+
+    `abas`: [{"nome", "colunas", "linhas", e, se houver mais de uma,
+    "linhas_total", "cortada", "sql", "referencia"}]. Pedido de "um Excel,
+    um por aba" com duas entregas não tinha arquivo nenhum: a planilha só
+    sabia ter uma aba de dados (conversa 71, 2026-10-05)."""
     import xlsxwriter
 
     saida = io.BytesIO()
     livro = xlsxwriter.Workbook(saida, {"in_memory": True, "strings_to_numbers": False,
-                                         "strings_to_formulas": False, "strings_to_urls": False})
+                                         "strings_to_formulas": False, "strings_to_urls": False,
+                                         "remove_timezone": True})
     base = {"font_name": _FONTE, "font_size": 10, "border": 1, "border_color": "#" + CINZA_BORDA}
     formatos = {
         None: livro.add_format(base),
@@ -105,10 +132,24 @@ def montar_planilha(colunas, linhas, info: dict) -> bytes:
         "bg_color": "#" + INDIGO, "align": "center", "valign": "vcenter", "text_wrap": True,
         "border": 1, "border_color": "#" + CINZA_BORDA,
     })
+    zebra = livro.add_format({"bg_color": "#" + CINZA_ZEBRA})
+
+    usados = set()
+    for aba in abas:
+        nome = aba["nome"] if len(abas) == 1 else nome_de_aba(aba["nome"], usados)
+        _escrever_aba(livro.add_worksheet(nome), aba["colunas"], aba["linhas"], formatos, cabecalho_fmt, zebra)
+        aba["nome_final"] = nome
 
     # Cortada: o nome da aba já avisa, e o arquivo abre na aba "Informações",
     # onde está o aviso inteiro — quem só olhasse os dados não saberia.
-    dados = livro.add_worksheet("Dados (cortada)" if info.get("cortada") else "Dados")
+    informacoes = _aba_de_informacoes(livro, info, abas if len(abas) > 1 else None)
+    if info.get("cortada"):
+        informacoes.activate()
+    livro.close()
+    return saida.getvalue()
+
+
+def _escrever_aba(dados, colunas, linhas, formatos, cabecalho_fmt, zebra):
     cabecalho = [_titulo_da_coluna(c) for c in colunas]
     dados.write_row(0, 0, cabecalho, cabecalho_fmt)
     dados.set_row(0, 22)
@@ -138,18 +179,13 @@ def montar_planilha(colunas, linhas, info: dict) -> bytes:
         dados.autofilter(0, 0, ultima, len(colunas) - 1)
         if linhas:
             dados.conditional_format(1, 0, len(linhas), len(colunas) - 1, {
-                "type": "formula", "criteria": "=MOD(ROW(),2)=1",
-                "format": livro.add_format({"bg_color": "#" + CINZA_ZEBRA}),
+                "type": "formula", "criteria": "=MOD(ROW(),2)=1", "format": zebra,
             })
 
-    aba = _aba_de_informacoes(livro, info)
-    if info.get("cortada"):
-        aba.activate()
-    livro.close()
-    return saida.getvalue()
 
-
-def _aba_de_informacoes(livro, info: dict):
+def _aba_de_informacoes(livro, info: dict, abas=None):
+    """Com várias abas de dados, cada uma ganha a sua linha de linhas e a
+    sua consulta, pelo nome da aba."""
     aba = livro.add_worksheet("Informações")
     aba.set_column(0, 0, 24)
     aba.set_column(1, 1, 100)
@@ -166,17 +202,29 @@ def _aba_de_informacoes(livro, info: dict):
     campos = [
         ("Pergunta", info.get("pergunta", "")),
         ("Planilha gerada em", info.get("gerada_em", "")),
-        ("Linhas", info.get("linhas", "")),
-        ("Observação", info.get("observacao", "")),
-        ("Referência usada", info.get("referencia") or "nenhuma (consulta escrita pela IA)"),
-        ("Consulta executada", info.get("sql", "")),
     ]
+    if abas:
+        campos.append(("Observação", info.get("observacao", "")))
+        for dados in abas:
+            linhas = dados.get("linhas_total", len(dados["linhas"]))
+            aviso = " — cortada no limite" if dados.get("cortada") else ""
+            campos.append((f"Aba {dados['nome_final']}", f"{linhas} linhas{aviso}"))
+            campos.append((f"Consulta: {dados['nome_final']}"[:60], dados.get("sql", "")))
+    else:
+        campos += [
+            ("Linhas", info.get("linhas", "")),
+            ("Observação", info.get("observacao", "")),
+            ("Referência usada", info.get("referencia") or "nenhuma (consulta escrita pela IA)"),
+            ("Consulta executada", info.get("sql", "")),
+        ]
     for n, (rotulo, valor) in enumerate(campos, start=3):
         aba.write_string(n, 0, rotulo, rotulo_fmt)
-        formato = sql_fmt if rotulo == "Consulta executada" else valor_fmt
+        consulta = rotulo == "Consulta executada" or rotulo.startswith("Consulta: ")
+        formato = sql_fmt if consulta else valor_fmt
         if isinstance(valor, (int, float)) and not isinstance(valor, bool):
             aba.write_number(n, 1, valor, formato)
         else:
             aba.write_string(n, 1, str(valor or ""), formato)
-    aba.set_row(8, min(15 * (str(info.get("sql", "")).count("\n") + 1), 400))
+        if consulta:
+            aba.set_row(n, min(15 * (str(valor or "").count("\n") + 1), 400))
     return aba

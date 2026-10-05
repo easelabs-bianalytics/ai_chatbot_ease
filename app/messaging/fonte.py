@@ -88,21 +88,28 @@ def montar(resposta, mostrar_custo: bool = False):
         fonte["dados_blocos"] = raw.get("dados_blocos") or {}
         fonte.pop("grafico", None)
         fonte.pop("dados", None)
+    pedido = bool(raw.get("excel"))
     if raw.get("entregas"):
         # Várias entregas (ADR-0026): o painel mostra a consulta de cada uma,
-        # no mesmo formato da investigação. A planilha sairia de uma só.
+        # no mesmo formato da investigação. A planilha leva todas, uma por
+        # aba (`planilha_da_resposta.gerar`). Até 2026-10-05 ela era
+        # desligada aqui, e o pedido de "um Excel, um por aba" ficava sem
+        # arquivo nenhum (conversa 71).
         fonte["investigacao"] = [
             {"rodada": 1, "hipotese": e.get("titulo", ""), "sql": e.get("sql", ""),
              "linhas": e.get("linhas"), "erro": e.get("erro", "")}
             for e in raw["entregas"]
         ]
-        fonte["excel"] = False
+        com_linhas = any((d or {}).get("total", 0) > 1 for d in (raw.get("dados_blocos") or {}).values())
+        fonte["excel"] = pedido or com_linhas
+        fonte["excel_pedido"] = pedido
     if raw.get("investigacao"):
         # Uma investigação roda várias consultas: o painel de fonte mostra
-        # todas, cada uma com a hipótese que testou. A planilha de download
-        # sairia de uma só delas, escolhida ao acaso — melhor não oferecer.
+        # todas, cada uma com a hipótese que testou. Planilha só quando foi
+        # pedida — aí com as tabelas da análise, uma por aba.
         fonte["investigacao"] = raw["investigacao"]
-        fonte["excel"] = False
+        fonte["excel"] = pedido
+        fonte["excel_pedido"] = pedido
     if mostrar_custo:
         fonte["custo_usd"] = float(reply.cost_estimate or 0)
         fonte["tokens"] = (reply.tokens_input or 0) + (reply.tokens_output or 0)

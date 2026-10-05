@@ -1265,6 +1265,13 @@
       const texto = v.toLocaleString('pt-BR', { maximumFractionDigits: Number.isInteger(v) ? 0 : 2 });
       return ehPercentual(coluna) ? `${texto}%` : texto;
     }
+    // Data e hora do banco chegam em ISO ("2026-10-01T15:46:41.43-03:00"):
+    // na tabela, no formato de quem lê.
+    const iso = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/.exec(String(v));
+    if (iso && String(v).length <= 35) {
+      const data = `${iso[3]}/${iso[2]}/${iso[1]}`;
+      return iso[4] ? `${data} ${iso[4]}:${iso[5]}` : data;
+    }
     return String(v);
   };
 
@@ -1272,14 +1279,17 @@
   // uma planilha anexada mostrava "Baixar Excel desta tabela" e "Baixar
   // Excel" lado a lado, com o mesmo dado). A ordem decide qual fica:
   // - "planilha": a planilha da pessoa, preenchida — é O arquivo;
-  // - "por-tabela": várias tabelas, cada uma com a sua consulta;
-  // - "geral": uma tabela só (ou nenhuma), o "Baixar Excel" do rodapé.
+  // - "geral": o "Baixar Excel" do rodapé — UM arquivo, com uma aba por
+  //   consulta da resposta. É o modo de toda resposta que oferece planilha,
+  //   inclusive a de várias tabelas: antes ela só ganhava o botão da tabela
+  //   cortada, e quem pediu "um Excel, um por aba" com duas tabelas de uma
+  //   linha ficou sem arquivo nenhum (conversa 71, 2026-10-05);
+  // - "por-tabela": sem planilha oferecida, a tabela cortada ainda tem o seu.
   const modoDeBaixar = (fonte, temPlanilha) => {
     if (temPlanilha) return 'planilha';
+    if (fonte.excel) return 'geral';
     const consultas = new Set((fonte.blocos || []).filter((b) => b.tipo === 'tabela')
       .map((b) => Number(b.consulta) || 0));
-    if (consultas.size > 1) return 'por-tabela';
-    if (fonte.excel) return 'geral';
     return consultas.size ? 'por-tabela' : 'nenhum';
   };
 

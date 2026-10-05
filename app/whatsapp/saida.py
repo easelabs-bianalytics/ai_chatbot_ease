@@ -48,6 +48,9 @@ def montar(resposta, executor=None) -> list:
     # preenchida, ela é O arquivo — a tabela longa vai só no texto, sem
     # planilha própria ao lado. Antes chegavam dois xlsx com o mesmo dado.
     preenchida = _planilha_preenchida(resposta)
+    # Planilha pedida: um arquivo só, com uma aba por tabela da resposta. As
+    # tabelas longas vão resumidas no texto, sem arquivo próprio cada uma.
+    pedido = bool(fonte.get("excel_pedido")) and preenchida is None
 
     if fonte.get("blocos"):
         dados_blocos = fonte.get("dados_blocos") or {}
@@ -58,7 +61,8 @@ def montar(resposta, executor=None) -> list:
             elif bloco["tipo"] == "tabela" and dados.get("rows"):
                 tabela_enviada = True
                 textos.append(_tabela(bloco, dados, arquivos, resposta, executor=executor,
-                                      sem_arquivo=preenchida is not None))
+                                      sem_arquivo=preenchida is not None or pedido,
+                                      onde="na planilha anexada" if pedido else "na planilha preenchida, anexada"))
             elif bloco["tipo"] == "grafico":
                 _grafico(bloco.get("grafico"), dados, imagens)
     else:
@@ -70,8 +74,8 @@ def montar(resposta, executor=None) -> list:
 
     consulta = fonte.get("consulta") or {}
     lista_longa = (consulta.get("linhas") or 0) > LINHAS_NA_CONVERSA
-    if (preenchida is None and executor is not None and fonte.get("excel") and not tabela_enviada
-            and (fonte.get("excel_pedido") or lista_longa)):
+    if (preenchida is None and executor is not None and fonte.get("excel")
+            and (pedido or (not tabela_enviada and lista_longa))):
         planilha = planilha_da_resposta.gerar(resposta, resposta.conversation.user, executor)
         if not planilha.erro:
             arquivos.append(Envio("documento", _legenda(planilha.linhas, planilha.cortada),
@@ -133,7 +137,8 @@ def _planilha_preenchida(resposta):
     return Envio("documento", "Planilha preenchida", dados, nome, tipo)
 
 
-def _tabela(bloco, dados, arquivos, resposta, executor=None, sem_arquivo=False) -> str:
+def _tabela(bloco, dados, arquivos, resposta, executor=None, sem_arquivo=False,
+            onde="na planilha preenchida, anexada") -> str:
     """Tabela curta no texto; longa, em planilha com as primeiras no texto.
 
     A resposta guarda para a tela só as 100 primeiras linhas (a lista inteira
@@ -150,7 +155,12 @@ def _tabela(bloco, dados, arquivos, resposta, executor=None, sem_arquivo=False) 
         return titulo + formato.tabela(colunas, linhas)
     if sem_arquivo:
         quantas = f"{total:,}".replace(",", ".")
-        rodape = f"\n_…{quantas} linhas no total; a lista completa está na planilha preenchida, anexada._"
+        if onde == "na planilha anexada":
+            # A planilha pedida (todas as tabelas, uma por aba): o mesmo
+            # rodapé de quando a tabela levava o arquivo próprio.
+            rodape = f"\n_…e mais {total - 5:,} linhas na planilha anexada._".replace(",", ".")
+        else:
+            rodape = f"\n_…{quantas} linhas no total; a lista completa está {onde}._"
         return titulo + formato.tabela(colunas, linhas[:5]) + rodape
     nome = f"jarvis_tabela_{len(arquivos) + 1}.xlsx"
     inteira = None

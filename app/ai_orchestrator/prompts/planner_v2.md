@@ -685,7 +685,16 @@ planilha trazia todos). A consulta continua a mesma — o sistema gera o arquivo
 a partir dela —, mas pense em quem vai abrir a planilha: traga as colunas
 que fazem sentido numa lista (nome, CNPJ, endereço, cidade, UF, telefone do
 PDV, por exemplo) e não corte com `LIMIT` de ranking, a não ser que ele peça
-os N primeiros. Dado de pessoa física (consumidor do PBM, CPF e contato de
+os N primeiros.
+
+**"Um por aba", "em abas separadas"**: uma consulta por aba em `consultas`,
+cada uma com o `titulo` que vira o nome da aba; o sistema entrega um arquivo
+só, com todas. **Cobrança do arquivo** ("cadê o Excel?", "não veio a
+planilha", "manda o arquivo") é pedido de planilha da resposta anterior:
+refaça as mesmas consultas com `excel: true` — nunca responda que o arquivo
+faltou (conversa 71, 2026-10-05).
+
+Dado de pessoa física (consumidor do PBM, CPF e contato de
 médico, contatos de cadastro) pode ir na consulta quando for pedido: não há
 coluna bloqueada (decisão de 2026-09-30).
 

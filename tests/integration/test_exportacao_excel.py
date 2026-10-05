@@ -290,3 +290,65 @@ def test_excel_de_planilha_que_expirou_avisa(cliente, resposta_da_planilha, monk
     assert r.status_code == 410
     assert executor.executed == []
     assert DataExport.objects.get().status == DataExport.Status.ERROR
+
+
+# ---------------------------------------------------------------- várias abas (conversa 71)
+
+SQL_AREA = "SELECT COUNT(*) AS medicos_area_medica FROM marketing.area_medica_usuarios"
+SQL_EMAIL = "SELECT COUNT(*) AS medicos_email_mkt FROM marketing.email_contatos"
+
+
+@pytest.fixture
+def resposta_com_duas_entregas(resposta):
+    """"Quero um Excel exportado, um por aba": duas entregas de uma linha."""
+    reply = AIReply.objects.get(message=resposta.in_reply_to)
+    reply.raw_response = {
+        "excel": True,
+        "entregas": [{"titulo": "Médicos na Área Médica", "sql": SQL_AREA, "linhas": 1, "erro": ""},
+                     {"titulo": "Médicos no Email MKT", "sql": SQL_EMAIL, "linhas": 1, "erro": ""}],
+        "blocos": [{"tipo": "tabela", "consulta": 0, "titulo": "Médicos na Área Médica"},
+                   {"tipo": "tabela", "consulta": 1, "titulo": "Médicos no Email MKT"}],
+        "dados_blocos": {"0": {"sql": SQL_AREA, "columns": ["medicos_area_medica"], "rows": [[3752]], "total": 1},
+                         "1": {"sql": SQL_EMAIL, "columns": ["medicos_email_mkt"], "rows": [[13246]], "total": 1}},
+    }
+    reply.save()
+    return resposta
+
+
+def test_pedido_de_excel_com_varias_entregas_oferece_a_planilha(cliente, resposta_com_duas_entregas):
+    """Conversa 71 (2026-10-05): a fonte desligava o Excel de toda resposta
+    com várias entregas, e duas tabelas de uma linha não ganhavam nem o botão
+    de tabela cortada — quem pediu "um Excel, um por aba" ficou sem arquivo."""
+    fonte = _mensagens(cliente, resposta_com_duas_entregas)[resposta_com_duas_entregas.pk]["fonte"]
+
+    assert fonte["excel"] is True
+    assert fonte["excel_pedido"] is True
+
+
+def test_varias_entregas_saem_num_arquivo_com_uma_aba_cada(cliente, resposta_com_duas_entregas, monkeypatch):
+    executor = _executor(monkeypatch, FakeQueryExecutor([
+        make_result(("medicos_area_medica",), [(3752,)]),
+        make_result(("medicos_email_mkt",), [(13246,)]),
+    ]))
+
+    r = cliente.get(_url(resposta_com_duas_entregas))
+
+    assert r.status_code == 200
+    livro = load_workbook(io.BytesIO(r.content))
+    assert livro.sheetnames == ["Médicos na Área Médica", "Médicos no Email MKT", "Informações"]
+    assert livro["Médicos na Área Médica"]["A2"].value == 3752
+    assert livro["Médicos no Email MKT"]["A2"].value == 13246
+    assert SQL_AREA in executor.executed[0] and SQL_EMAIL in executor.executed[1]
+    assert DataExport.objects.get().status == DataExport.Status.OK
+
+
+def test_uma_aba_que_falha_nao_entrega_o_arquivo_pela_metade(cliente, resposta_com_duas_entregas, monkeypatch):
+    _executor(monkeypatch, FakeQueryExecutor([
+        make_result(("medicos_area_medica",), [(3752,)]),
+        QueryExecutionError("o banco caiu"),
+    ]))
+
+    r = cliente.get(_url(resposta_com_duas_entregas))
+
+    assert r.status_code == 502
+    assert "Médicos no Email MKT" in DataExport.objects.get().error

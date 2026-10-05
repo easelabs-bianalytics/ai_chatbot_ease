@@ -113,3 +113,58 @@ def test_uma_entrega_so_segue_o_caminho_comum(conversa, catalogo):
     assert provider.answer_requests[0].sql == SQL_EVOLUCAO
     assert provider.answer_requests[0].entregas is False
     assert "entregas" not in reply.raw_response
+
+
+@pytest.mark.parametrize("texto", [
+    "Puxa os médicos da Área Médica e do Email MKT. Quero um excel exportado, um por aba",
+    "E cadê o Excel??",
+    "exporta a evolução e o ranking",
+])
+def test_pedido_de_excel_pela_palavra_fica_no_registro_e_vai_a_redacao(conversa, catalogo, texto):
+    """Conversa 71 (2026-10-05): o plano veio sem `excel` nas duas perguntas
+    ("quero um excel exportado, um por aba" e "E cadê o Excel??"), o
+    registro não guardava o pedido nas entregas, e saiu tabela sem arquivo
+    — a segunda resposta ainda disse que "o arquivo não foi anexado"."""
+    from messaging.planilha_da_resposta import EXPORT_MAX_ROWS
+
+    provider = ScriptedAIProvider(
+        [_plano_de_entregas(_entrega("Evolução mensal", SQL_EVOLUCAO), _entrega("Ranking", SQL_RANKING))],
+        [resposta("Neurologia lidera com 11907 PX.")],
+    )
+    executor = FakeQueryExecutor([EVOLUCAO, RANKING])
+
+    reply = _responder(_pergunta(conversa, texto), catalogo, provider=provider, executor=executor)
+
+    assert reply.raw_response["excel"] is True
+    assert provider.answer_requests[0].excel is True
+    assert executor.max_rows == [EXPORT_MAX_ROWS, EXPORT_MAX_ROWS]
+
+
+def test_sem_pedido_de_arquivo_as_entregas_seguem_no_limite_da_tela(conversa, catalogo):
+    provider = ScriptedAIProvider(
+        [_plano_de_entregas(_entrega("Evolução mensal", SQL_EVOLUCAO), _entrega("Ranking", SQL_RANKING))],
+        [resposta("Neurologia lidera com 11907 PX.")],
+    )
+    executor = FakeQueryExecutor([EVOLUCAO, RANKING])
+
+    reply = _responder(_pergunta(conversa, PERGUNTA), catalogo, provider=provider, executor=executor)
+
+    assert reply.raw_response["excel"] is False
+    assert executor.max_rows == [catalogo.max_rows, catalogo.max_rows]
+
+
+@pytest.mark.parametrize("texto, anexo, esperado", [
+    ("quero em excel", "", True),
+    ("me manda em planilha", "", True),
+    ("preencha a planilha com o sell out de agosto", "planilha", False),
+    ("preencha e me devolva em excel", "planilha", True),
+    ("qual o PX de agosto?", "", False),
+])
+def test_quando_a_mensagem_pede_arquivo(texto, anexo, esperado):
+    """"Planilha" com anexo é a planilha DA pessoa (ADR-0024/0031), com o
+    caminho próprio; sem anexo, é pedido de arquivo."""
+    from types import SimpleNamespace
+
+    from ai_orchestrator.orchestrator import _pediu_planilha
+
+    assert _pediu_planilha(SimpleNamespace(content=texto, anexo_tipo=anexo)) is esperado

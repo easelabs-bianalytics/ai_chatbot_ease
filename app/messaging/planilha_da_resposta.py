@@ -16,7 +16,7 @@ from attachments.limites import AnexoRecusado
 from attachments.planilha import ler_estrutura
 from catalog.loader import get_catalog
 from datasource.executors.base import QueryExecutionError
-from datasource.export import montar_planilha
+from datasource.export import montar_livro, montar_planilha
 from datasource.models import DataExport, QueryRun
 from datasource.sql_guard import validate_sql
 
@@ -96,13 +96,45 @@ def _tabelas_da_planilha(reply):
         return None
 
 
+def consultas_da_resposta(reply) -> list:
+    """[(título, sql)] de cada tabela de uma resposta com várias consultas,
+    na ordem da resposta. O título é o do bloco ou o da entrega: vira o nome
+    da aba."""
+    raw = reply.raw_response or {}
+    titulos = {}
+    for bloco in raw.get("blocos") or []:
+        if bloco.get("tipo") == "tabela" and bloco.get("titulo"):
+            titulos.setdefault(str(bloco.get("consulta", 0)), bloco["titulo"])
+    for indice, entrega in enumerate(raw.get("entregas") or []):
+        if entrega.get("titulo"):
+            titulos.setdefault(str(indice), entrega["titulo"])
+    itens, vistas = [], set()
+    dados = raw.get("dados_blocos") or {}
+    for chave in sorted(dados, key=lambda c: int(c) if str(c).isdigit() else 0):
+        sql = (dados[chave] or {}).get("sql")
+        if sql and sql not in vistas:
+            vistas.add(sql)
+            itens.append((titulos.get(str(chave)) or f"Consulta {len(itens) + 1}", sql))
+    if not itens:
+        for indice, entrega in enumerate(raw.get("entregas") or []):
+            if entrega.get("sql") and not entrega.get("erro") and entrega["sql"] not in vistas:
+                vistas.add(entrega["sql"])
+                itens.append((entrega.get("titulo") or f"Consulta {indice + 1}", entrega["sql"]))
+    return itens
+
+
 def gerar(resposta, user, executor, consulta=None) -> Planilha:
     """`consulta`: o índice da tabela da resposta em blocos. Sem ele, a
-    consulta principal da resposta."""
+    resposta inteira: com várias consultas, um arquivo com uma aba por
+    consulta; com uma, a consulta principal."""
     pergunta = resposta.in_reply_to
     reply = getattr(pergunta, "ai_reply", None) if pergunta is not None else None
     if reply is None:
         return Planilha(erro="esta resposta não tem dados para exportar", status=404)
+    if consulta is None:
+        varias = consultas_da_resposta(reply)
+        if len(varias) > 1:
+            return _gerar_livro(resposta, pergunta, reply, user, executor, varias)
     if consulta is not None:
         sql, referencia = _consulta_da_tabela(reply, consulta)
     else:
@@ -162,3 +194,57 @@ def gerar(resposta, user, executor, consulta=None) -> Planilha:
     nome = slugify(resposta.conversation.title or pergunta.content)[:50] or "consulta"
     return Planilha(conteudo=conteudo, nome=f"jarvis_{nome}_{agora:%Y%m%d-%H%M}.xlsx", linhas=resultado.row_count,
                     cortada=bool(resultado.truncated))
+
+
+def _gerar_livro(resposta, pergunta, reply, user, executor, consultas) -> Planilha:
+    """Um arquivo, uma aba por consulta da resposta (conversa 71,
+    2026-10-05: "quero um Excel, um por aba" com duas entregas saiu sem
+    arquivo nenhum). Cada consulta passa de novo pelo validador e roda com o
+    limite da planilha; se uma falhar, o arquivo não sai pela metade."""
+    registro = DataExport(user=user, message=resposta, sql="\n\n-- próxima aba --\n\n".join(s for _, s in consultas))
+    tabelas = {}
+    if any(anexo_sql.referencias(sql) for _, sql in consultas):
+        tabelas = _tabelas_da_planilha(reply)
+        if tabelas is None:
+            registro.status, registro.error = DataExport.Status.ERROR, "planilha da conversa expirou"
+            registro.save()
+            return Planilha(
+                erro="a planilha desta conversa expirou; envie o arquivo de novo para gerar o Excel", status=410
+            )
+        executor = anexo_sql.ExecutorComAnexo(executor, tabelas)
+
+    abas, total, duracao, cortada = [], 0, 0, False
+    for titulo, sql in consultas:
+        guard = validate_sql(sql, get_catalog(), max_rows=EXPORT_MAX_ROWS, **({"anexo": tabelas} if tabelas else {}))
+        if not guard.approved:
+            registro.status, registro.error = DataExport.Status.ERROR, f"{titulo}: {guard.reason}"
+            registro.save()
+            return Planilha(erro="a consulta não passou no validador", status=400)
+        try:
+            resultado = executor.run(guard.sql, max_rows=EXPORT_MAX_ROWS)
+        except QueryExecutionError as exc:
+            registro.status, registro.error = DataExport.Status.ERROR, f"{titulo}: {exc}"
+            registro.save()
+            return Planilha(erro="não consegui gerar a planilha agora; tente de novo em instantes", status=502)
+        abas.append({"nome": titulo, "colunas": resultado.columns, "linhas": resultado.rows,
+                     "linhas_total": resultado.row_count, "cortada": bool(resultado.truncated), "sql": sql})
+        total += resultado.row_count
+        duracao += resultado.duration_ms
+        cortada = cortada or bool(resultado.truncated)
+
+    agora = timezone.localtime()
+    conteudo = montar_livro(abas, {
+        "pergunta": pergunta.content,
+        "gerada_em": agora.strftime("%d/%m/%Y %H:%M"),
+        "observacao": aviso_de_corte() if cortada else f"{len(abas)} abas, uma por consulta da resposta. Listas completas.",
+        "cortada": cortada,
+    })
+
+    registro.status = DataExport.Status.OK
+    registro.row_count = total
+    registro.truncated = cortada
+    registro.duration_ms = duracao
+    registro.save()
+
+    nome = slugify(resposta.conversation.title or pergunta.content)[:50] or "consulta"
+    return Planilha(conteudo=conteudo, nome=f"jarvis_{nome}_{agora:%Y%m%d-%H%M}.xlsx", linhas=total, cortada=cortada)

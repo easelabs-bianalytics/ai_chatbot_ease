@@ -1013,6 +1013,13 @@ class OpenAIProvider(AIProvider):
                 "os índices das consultas são os números abaixo.\n\n"
             )
         entrada += "\n\n".join(_achado_em_texto(i, c) for i, c in enumerate(request.consultas))
+        if request.excel:
+            entrada += (
+                "\n\n# Planilha\n\nO usuário pediu os dados em Excel. O sistema entrega UM arquivo, com "
+                "uma aba por tabela desta resposta, no botão \"Baixar Excel\" logo abaixo (no WhatsApp, "
+                "anexado). Diga isso em uma frase. Nunca diga que o arquivo faltou, não foi anexado ou "
+                "não pode ser gerado: ele sai junto desta resposta."
+            )
         entrada += _planilha_devolvida(request)
         if request.revision_note:
             entrada += (
