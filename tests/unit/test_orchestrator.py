@@ -1247,3 +1247,41 @@ def test_corte_com_assunto_novo_vai_ao_planejador_mesmo_com_grafico_na_tela(conv
 
     assert reply.rule != "ajuste_de_grafico"
     assert len(provider.plan_requests) == 1
+
+
+def test_pedido_de_planilha_roda_a_consulta_no_tamanho_do_excel(conversa, catalogo):
+    """Conversa 70 (2026-10-05): a resposta rodou com o limite da tela (500),
+    disse "500 adesões" quando eram 2.796, e o "Baixar Excel" refez a
+    consulta inteira no clique — passou de 60 s três vezes, sem chance de
+    correção. Com planilha pedida, a consulta já roda no tamanho do Excel."""
+    from messaging.planilha_da_resposta import EXPORT_MAX_ROWS
+
+    executor = FakeQueryExecutor([MESES])
+    _responder(_pergunta(conversa, "adesões de setembro em planilha"), catalogo,
+               provider=ScriptedAIProvider([plano(excel=True)], [resposta("Foram 777 unidades em ago/2026.")]),
+               executor=executor)
+
+    assert executor.max_rows == [EXPORT_MAX_ROWS]
+
+
+def test_sem_planilha_a_consulta_continua_no_limite_da_tela(conversa, catalogo):
+    executor = FakeQueryExecutor([MESES])
+    _responder(_pergunta(conversa, "unidades por mês"), catalogo,
+               provider=ScriptedAIProvider([plano()], [resposta("Foram 777 unidades em ago/2026.")]),
+               executor=executor)
+
+    assert executor.max_rows == [catalogo.max_rows]
+
+
+def test_planilha_que_estoura_o_tempo_volta_ao_planejador(conversa, catalogo):
+    """O tempo estourado agora aparece na resposta, onde há correção: o
+    planejador recebe o erro e reescreve a consulta (agregar antes de juntar)."""
+    executor = FakeQueryExecutor([QueryTimeout("a consulta passou de 60000 ms e foi cancelada"), MESES])
+    provider = ScriptedAIProvider([plano(excel=True), plano(excel=True)], [resposta("Foram 777 unidades em ago/2026.")])
+
+    reply = _responder(_pergunta(conversa, "adesões e transações em planilha"), catalogo,
+                       provider=provider, executor=executor)
+
+    assert "60000 ms" in provider.plan_requests[1].error_note
+    assert len(executor.executed) == 2
+    assert reply.reply_text.startswith("Foram 777")

@@ -28,10 +28,13 @@ class FakeQueryExecutor(QueryExecutor):
         self.executed = []
         # Parâmetros de cada execução (None sem planilha anexada), na ordem.
         self.params = []
+        # O limite de linhas pedido em cada execução, na ordem.
+        self.max_rows = []
 
     def run(self, sql: str, max_rows: int | None = None, params=None) -> QueryResult:
         self.executed.append(sql)
         self.params.append(params)
+        self.max_rows.append(max_rows)
 
         if not self._resultados:
             return make_result(("valor",), [(1,)])

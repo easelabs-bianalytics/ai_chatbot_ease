@@ -359,7 +359,8 @@ def _executar_com_correcao(plano, message, provider, executor, catalog, auditori
     # consulta refeita é a 3ª ou 4ª, e a tela lê a última pela ordem.
     primeira = tentativa = len(auditoria.consultas) + 1
     while True:
-        guard = _validar(plano.sql, catalog, message, catalog.max_rows)
+        limite = _limite_de_linhas(plano, catalog)
+        guard = _validar(plano.sql, catalog, message, limite)
 
         if not guard.approved:
             auditoria.consulta(
@@ -378,7 +379,7 @@ def _executar_com_correcao(plano, message, provider, executor, catalog, auditori
             progresso.definir(message.pk, "Consultando o banco", etapa="consultando",
                               entendimento=plano.entendimento)
             try:
-                resultado = executor.run(guard.sql, max_rows=catalog.max_rows)
+                resultado = executor.run(guard.sql, max_rows=limite)
             except QueryExecutionError as exc:
                 auditoria.consulta(
                     attempt=tentativa,
@@ -2105,6 +2106,26 @@ def _colunas_da_tabela(pedidas, resultado, texto: str = "") -> list:
     return ficam or colunas
 
 
+# Pedido de planilha roda a consulta da resposta já no tamanho do Excel (ver
+# `_limite_de_linhas`); o gráfico não precisa disso tudo, e o resultado
+# inteiro iria parar no registro da resposta.
+LINHAS_DO_GRAFICO = 5000
+
+
+def _limite_de_linhas(plano, catalog) -> int:
+    """Pedido de planilha roda já no tamanho do Excel.
+
+    Antes a resposta rodava com o limite da tela (500) e o "Baixar Excel"
+    refazia a consulta inteira no clique. Na conversa 70 (2026-10-05) a
+    consulta levou 16 s para as 500 primeiras adesões e passou de 60 s nas
+    2.796: a resposta disse "500 adesões" e o Excel deu erro três vezes, sem
+    chance de correção. Rodando inteira aqui, o total sai certo e o tempo
+    estourado volta ao planejador, que reescreve a consulta."""
+    from messaging.planilha_da_resposta import EXPORT_MAX_ROWS
+
+    return EXPORT_MAX_ROWS if getattr(plano, "excel", False) else catalog.max_rows
+
+
 def _dados_da_consulta(resultado, inteiro: bool = False, sql: str = "") -> dict:
     """As linhas que a tela recebe. Tabela: as primeiras (a lista inteira está
     na planilha). Gráfico: o resultado inteiro — com 237 linhas ordenadas por
@@ -2116,7 +2137,7 @@ def _dados_da_consulta(resultado, inteiro: bool = False, sql: str = "") -> dict:
     várias consultas na resposta, a última era de outra tabela, e a planilha
     saía com 100 linhas ou com o dado errado (2026-09-25). `truncado` diz que
     a consulta parou no limite de linhas da conversa."""
-    linhas = resultado.rows if inteiro else resultado.rows[:LINHAS_DOS_BLOCOS]
+    linhas = resultado.rows[:LINHAS_DO_GRAFICO] if inteiro else resultado.rows[:LINHAS_DOS_BLOCOS]
     return {"columns": list(resultado.columns), "rows": [list(linha) for linha in linhas],
             "total": resultado.row_count, "sql": sql, "truncado": bool(resultado.truncated)}
 

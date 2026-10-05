@@ -2425,6 +2425,10 @@ O PBM tem três visões. **Identifique qual o usuário quer:**
 - **Transação válida = `"STATUS_TRN" = 'CONFIRMADA'`.** Os outros status (`PRE`, `PEN`, `ANU`, `CAN`, `CANCELADA`) não são venda e vêm com data `1900-01-01`.
 - **CRM:** `"UF_PROFISSIONAL" || lpad(ltrim("COD_PROFISSIONAL"::text, '0'), 7, '0')` — o `ltrim` tira o zero a mais que o texto de `fato_pbm_transacoes` pode trazer (sem ele, `lpad` corta `00104608` em `0010460`). Código `0` = profissional não informado: exclua em rankings por médico.
 - **`"MARCA"`** varia de caixa (`ExtratoCannabs` / `EXTRATOCANNABS`): compare com `upper("MARCA")`. `CANABIDIOL` = Isolados; `EXTRATOCANNABS` = Extrato. Para SKU, use `"EAN"`.
+- **Adesão → transação** liga pelo `"ID_CONSUMIDOR"`: `bigint` na adesão, texto na transação
+  (`a."ID_CONSUMIDOR"::text`). Não há índice por consumidor nas 131 mil transações: **nunca procure
+  a transação adesão por adesão** (`LEFT JOIN LATERAL`, subconsulta correlacionada) — agregue as
+  transações uma vez e junte (D15).
 - **`"DESC_ADM"`** é o % de desconto em texto (`'25'`, `'25.00'`, `'99.99'`): converta com `::numeric`.
 - **Nunca exponha dados do consumidor** (`CPF_CONS`, `NOME_CONS`, `E_MAIL`, `CELULAR`, `TELEFONE`, `DATA_NASC`, endereço do consumidor). Conte pacientes por `"ID_CONSUMIDOR"`.
 
@@ -2579,6 +2583,45 @@ WHERE "STATUS_TRN" = 'CONFIRMADA'
 GROUP BY 1
 ORDER BY unidades DESC
 LIMIT 50;
+```
+
+*"Das adesões de setembro e outubro, quais concluíram a transação e quais não?"* / *"conversão de
+adesão em compra"*
+
+```sql
+-- D15 · Adesão × transação concluída: cada adesão com a primeira transação confirmada depois dela
+WITH adesoes AS (
+  SELECT a."DATA_ADESAO" AS data_adesao, upper(a."MARCA") AS marca, a."EAN" AS ean,
+         a."CAMPANHA" AS campanha,
+         a."UF_PROFISSIONAL" || lpad(ltrim(a."COD_PROFISSIONAL"::text, '0'), 7, '0') AS crm_medico,
+         a."NOME_PROFISSIONAL" AS medico, a."NOME_FANTASIA" AS pdv, a."UF_PDV" AS uf_pdv,
+         a."ID_CONSUMIDOR"::text AS id_consumidor
+  FROM pbm.fato_pbm_adesoes a
+  WHERE a."DATA_ADESAO" >= :data_ini AND a."DATA_ADESAO" < :data_fim
+),
+transacoes AS (   -- só as do período: a transação que conta é na data da adesão ou depois
+  SELECT t."ID_CONSUMIDOR" AS id_consumidor, t."DATA_REF" AS data_ref
+  FROM pbm.fato_pbm_transacoes t
+  WHERE t."STATUS_TRN" = 'CONFIRMADA'
+    AND t."DATA_REF" >= :data_ini AND t."DATA_REF" <= :data_corte
+),
+primeira AS (     -- a primeira transação de cada adesão, calculada uma vez e juntada depois
+  SELECT a.id_consumidor, a.data_adesao, MIN(t.data_ref) AS primeira_transacao
+  FROM adesoes a
+  JOIN transacoes t ON t.id_consumidor = a.id_consumidor AND t.data_ref >= a.data_adesao
+  GROUP BY 1, 2
+)
+SELECT date_trunc('month', a.data_adesao)::date AS mes, a.data_adesao, a.marca, a.ean, a.campanha,
+       a.crm_medico, a.medico, a.pdv, a.uf_pdv,
+       CASE WHEN p.primeira_transacao IS NOT NULL THEN 'Aderiu e concluiu a transação'
+            ELSE 'Aderiu e não concluiu a transação' END AS situacao,
+       p.primeira_transacao
+FROM adesoes a
+LEFT JOIN primeira p ON p.id_consumidor = a.id_consumidor AND p.data_adesao = a.data_adesao
+ORDER BY 1, 2, 10;
+-- 01/09 a 05/10/2026: 2.796 adesões, 1.824 concluíram; 1,1 s. A mesma regra com LEFT JOIN
+-- LATERAL (procurar a transação adesão por adesão) passou de 60 s e derrubou o Excel (conversa 70).
+-- Resumo: a contagem por mes e situacao, sobre o mesmo resultado.
 ```
 
 ### 4.3 Vouchers

@@ -144,6 +144,14 @@ errar.
   histórico inteiro.
 - Prefira agregar a trazer linhas soltas. Para rankings, use `LIMIT` como as
   referências (`LIMIT 50`).
+- **Nunca procure linha a linha numa tabela grande.** `LEFT JOIN LATERAL`,
+  subconsulta correlacionada ou `EXISTS` que roda uma vez por linha de fora,
+  contra transações, prescrições ou vendas, multiplica o custo pelo número de
+  linhas: "a primeira transação depois de cada adesão" levou 16 s para 500
+  adesões e passou de 60 s nas 2.796, e o Excel não saiu (conversa 70,
+  2026-10-05). Agregue a tabela grande uma vez (CTE com `GROUP BY` na chave,
+  `MIN`/`MAX`/`SUM`), filtrada pelo período, e junte o resultado (D15: 1,1 s).
+  `IN`/`NOT IN` sobre uma lista pequena (painel, base do Marketing) pode.
 - Uma consulta por **entrega**. A maioria das perguntas tem uma entrega só, e
   aí vai uma consulta, em `sql`. **Pedido com entregas diferentes** — "a
   evolução mês a mês **e** o ranking das especialidades", "as vendas **e** o
