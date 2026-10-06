@@ -233,7 +233,15 @@ na `main` do `sales_force_crm`
 
 **Pré-requisitos dos próximos deploys** (entram aqui assim que surgem):
 
-- [ ] **Arquivos da conversa no S3 (ADR-0034):**
+- [x] **Arquivos da conversa no S3 (ADR-0034) — no ar em 2026-10-06:**
+  imagem `6bda88f`, `.tf` em `3ed9ce6` (merge `dc9aea2` na `main`), bucket
+  e revisão `cockpit-prod-jarvis:47` criados, snapshot
+  `cockpit-prod-db-antes-jarvis-migrate-20261006`, `migrate` de
+  `ai_orchestrator.0007`, `messaging.0008` e `web.0003` (exit 0), service
+  na revisão 47 com o deploy `COMPLETED` e nenhum erro no log. O build saiu
+  de um worktree com `core.autocrlf=false`: com CRLF, dois testes de
+  orçamento do prompt estouram e a imagem levaria o texto com `\r\n`.
+  Passos originais:
   - commit e push de `infra/modules/compute/jarvis_arquivos.tf` e do
     `jarvis.tf` (variável `JARVIS_ARQUIVOS_BUCKET`) na `feat/infra-jarvis`;
   - `plan` conferido em 2026-10-06: 7 a adicionar, 1 a mudar, 1 a destruir
