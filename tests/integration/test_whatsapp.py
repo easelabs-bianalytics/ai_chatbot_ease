@@ -497,3 +497,72 @@ def test_excel_pedido_com_duas_entregas_chega_num_arquivo_com_uma_aba_cada(paulo
     assert len(documentos) == 1
     livro = load_workbook(io.BytesIO(documentos[0]["dados"]))
     assert livro.sheetnames == ["Área Médica", "Email MKT", "Informações"]
+
+
+# ------------------------------------------------------------ o vídeo do 3.0
+
+
+@pytest.mark.parametrize("texto", ["jarvis_3.0", "Jarvis_3.0", "  jarvis 3.0 ", "/jarvis_3.0"])
+def test_comando_jarvis_3_manda_o_video_no_privado(paulo, cliente, texto):
+    """2026-10-06: "jarvis_3.0" sozinho manda o vídeo de anúncio do 3.0,
+    sem passar pela IA."""
+    resultado, provider = _receber(_evento(texto), cliente)
+
+    assert resultado == "video_do_3"
+    assert provider.plan_requests == []
+    [envio] = cliente.enviados
+    assert (envio["tipo"], envio["mimetype"], envio["nome"]) == ("video", "video/mp4", "jarvis-3.0.mp4")
+    assert len(envio["dados"]) > 100_000 and "Jarvis 3.0" in envio["legenda"]
+
+
+def test_comando_jarvis_3_com_texto_a_mais_e_pergunta_normal(paulo, cliente):
+    """Só a mensagem inteira é comando: com texto junto, segue como pergunta."""
+    resultado, provider = _receber(_evento("jarvis_3.0 quanto vendemos em agosto?"), cliente,
+                                   [plano(entendimento="Unidades Ease por mês")], [resposta("Foram 777 unidades em ago/2026.")])
+
+    assert resultado != "video_do_3"
+    assert not any(e["tipo"] == "video" for e in cliente.enviados)
+
+
+@pytest.mark.parametrize("mencao, texto", [(False, "jarvis_3.0"), (True, "@5511900001111 jarvis_3.0")])
+def test_comando_jarvis_3_no_grupo_com_ou_sem_marcar(grupo, cliente, mencao, texto):
+    """No grupo o comando já é o chamado: vale com ou sem marcar o Jarvis."""
+    resultado, _ = _receber(_no_grupo(texto, mencao=mencao), cliente)
+
+    assert resultado == "video_do_3"
+    assert [e["tipo"] for e in cliente.enviados] == ["video"]
+
+
+def test_comando_jarvis_3_em_grupo_nao_liberado_e_ignorado(cliente):
+    assert _receber(_no_grupo("jarvis_3.0", mencao=False), cliente)[0] == "grupo_nao_liberado"
+    assert cliente.enviados == []
+
+
+def test_video_que_nao_sai_vira_aviso_em_texto(paulo, cliente, monkeypatch):
+    monkeypatch.setattr(servicos, "VIDEO_DO_3", servicos.VIDEO_DO_3.with_name("nao-existe.mp4"))
+
+    assert _receber(_evento("jarvis_3.0"), cliente)[0] == "video_do_3_falhou"
+    assert [e["tipo"] for e in cliente.enviados] == ["texto"]
+
+
+# ------------------------------------------------------------ tabela crua
+
+
+def test_tabela_crua_chega_como_tabela_do_celular_e_nao_com_barras(paulo, cliente):
+    """2026-10-06: a redação foi reprovada duas vezes na ancoragem e a saída
+    de segurança (ADR-0010) chegou como colunas soltas separadas por "|",
+    num bloco monoespaçado que o celular quebrava no meio. A tela já
+    desenhava a tabela; no WhatsApp ela vira a tabela do celular."""
+    largo = make_result(
+        ("mes", "faturamento_ease_td", "faturamento_mercado_td", "market_share_pct", "variacao_share_pp"),
+        [("2026-04-01", 140887.61, 1336807.64, 10.54, None), ("2026-08-01", 126202.3, 1545042.39, 8.17, -2.37)],
+    )
+    resultado, _ = _receber(_evento("faturamento abril x agosto"), cliente,
+                            [plano(entendimento="Faturamento Ease e mercado, abril e agosto")],
+                            [resposta("Foram 999.999 reais."), resposta("Foram 888.888 reais.")], [largo])
+
+    assert resultado == "respondida"
+    assert AIReply.objects.get().rule == "resposta_sem_narrativa"
+    [texto] = [e["texto"] for e in cliente.enviados if e["tipo"] == "texto"]
+    assert " | " not in texto and "```" not in texto
+    assert texto.startswith("*01/04/2026*\n  faturamento ease td: ")

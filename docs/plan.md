@@ -233,6 +233,15 @@ na `main` do `sales_force_crm`
 
 **Pré-requisitos dos próximos deploys** (entram aqui assim que surgem):
 
+- [ ] **Arquivos da conversa no S3 (ADR-0034):**
+  - commit e push de `infra/modules/compute/jarvis_arquivos.tf` e do
+    `jarvis.tf` (variável `JARVIS_ARQUIVOS_BUCKET`) na `feat/infra-jarvis`;
+  - `plan` conferido em 2026-10-06: 7 a adicionar, 1 a mudar, 1 a destruir
+    (bucket, criptografia, bloqueio público, ciclo de vida de 730 dias,
+    política só HTTPS, permissão da task e a revisão nova da task);
+  - snapshot, `migrate` da `messaging.0008` e bump da imagem, no mesmo
+    deploy ou depois do bucket — nunca a imagem antes do bucket com a
+    variável (sem bucket o armazém fica desligado: funciona, mas não guarda).
 - [ ] **WhatsApp (Fase 13, ADR-0028):**
   - [x] snapshot, depois a role e o schema `evolution` (script 04, D-07) — 2026-09-24;
   - [x] três secrets novos — 2026-09-24;
@@ -2142,6 +2151,47 @@ da regra deixa a pessoa sem resposta.
 
 ---
 
+### Arquivos da conversa sobrevivem ao deploy (2026-10-06, ADR-0034)
+
+- [x] **O problema:** o anexo e a planilha devolvida viviam só no Redis da
+      task, por até 2 horas. Como o Redis roda dentro da task, todo deploy
+      apagava os anexos de todo mundo na hora — em 2026-10-05 foram umas
+      cinco versões. A pessoa perdia o "Baixar Excel" das respostas sobre a
+      planilha ("a planilha desta conversa expirou"), a continuação da
+      conversa e a auditoria da resposta antiga
+- [x] **Decisão do Rubens:** o arquivo fica na conversa e pode ser baixado
+      de novo; apagar a conversa apaga o arquivo; prazo de dois anos
+- [x] **Código** (começado pelo Rubens, terminado em 2026-10-06):
+  - `attachments/armazem.py`: S3 em produção; memória só em
+    desenvolvimento e testes; desligado em produção sem bucket, para não
+    registrar arquivo que só um processo vê;
+  - `ArquivoDaConversa` (`messaging.0008`) e `deposito.fixar`: o arquivo
+    enviado (inclusive a imagem que vira planilha) e a planilha devolvida
+    vão para `conversas/<id>/<token>`;
+  - `deposito.buscar` volta ao S3 quando o Redis esqueceu e devolve ao
+    Redis;
+  - apagar a conversa apaga os arquivos de verdade;
+  - download do arquivo enviado (`.../anexo/`), com a ficha da conversa
+    virando link;
+  - Admin: lista dos arquivos com o link **Baixar** (nome e tipo originais,
+    do Redis ou do S3), só para quem tem permissão de ver, com cada download
+    no log; não cria nem apaga
+- [x] Guia de acesso: [`docs/arquivos-da-conversa.md`](arquivos-da-conversa.md)
+- [x] **Infra** no `sales_force_crm` (`jarvis_arquivos.tf`, só na árvore de
+      trabalho):
+  - bucket `cockpit-prod-jarvis-arquivos-<conta>`: AES256, acesso público
+    bloqueado, só HTTPS, sem versionamento;
+  - ciclo de vida de 730 dias;
+  - a task do Jarvis só em `conversas/`
+- [x] **Custo:** menos de US$ 2 por mês no teto de dois anos (~36 GB a 50
+      arquivos de ~1 MB por dia)
+- [x] `uv run pytest`: 1222 passaram. Os testes simulam o deploy
+      limpando o cache e conferem anexo, planilha devolvida, exclusão,
+      acesso de outra pessoa, S3 fora do ar e produção sem bucket
+- [ ] Ir ao ar (pré-requisitos na Fase 9)
+
+---
+
 ## Plano de testes
 
 Regra geral: a suíte (`uv run pytest`) nunca acessa rede, OpenAI ou o RDS.
@@ -2235,4 +2285,17 @@ anexos no app com motion graphics (o fluxo do PDF
       - "Anexar uma planilha" fecha o modal e abre o seletor de arquivo;
       - com "reduzir movimento", o filme abre parado no quadro final.
 - [ ] Trocar a foto e o nome ("Jarvis 2.0") do perfil do WhatsApp no
-      celular.
+      celular (foto em `docs/brand/jarvis-3.0-perfil-whatsapp.png`).
+- [x] Comando `jarvis_3.0` no WhatsApp (privado ou grupo, com ou sem
+      marcar): a mensagem inteira igual ao comando manda o vídeo do anúncio
+      (`app/whatsapp/midia/jarvis-3.0.mp4`, 1,3 MB em 720p). Sem IA e sem
+      contar na cota; com texto a mais, segue como pergunta.
+- [x] WhatsApp igual à tela (2026-10-06, print de produção com a tabela crua
+      em colunas separadas por "|"):
+      - a tabela crua (redação reprovada duas vezes, ADR-0010) e a tabela
+        em Markdown no texto viram a tabela do celular: bloco alinhado se
+        couber, senão um registro por vez, uma coluna por linha quando são
+        mais de três;
+      - data do banco como na tela (01/04/2026, com a hora quando há);
+      - `*itálico*` do Markdown sai em itálico, não em negrito;
+      - negrito dentro da célula não deixa asterisco no bloco.

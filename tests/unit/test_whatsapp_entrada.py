@@ -101,6 +101,63 @@ def test_tabela_estreita_vai_em_bloco_e_larga_vira_lista():
     assert larga == "• *Pague Menos Nordeste* — representante: Fulano de Tal · unidades: 1.234"
 
 
+TABELA_CRUA = (
+    "mes | faturamento_ease_td | faturamento_mercado_td | market_share_pct | variacao_faturamento_ease"
+    " | variacao_faturamento_ease_pct | variacao_share_pp\n"
+    "2026-04-01 | 140.887,61 | 1.336.807,64 | 10,54% |  |  | \n"
+    "2026-08-01 | 126.202,3 | 1.545.042,39 | 8,17% | -14.685,31 | -10,4% | -2,37%"
+)
+
+
+def test_tabela_crua_larga_vira_um_registro_por_vez_sem_barras():
+    """2026-10-06: a saída de segurança (redação reprovada duas vezes)
+    chegou ao WhatsApp como bloco monoespaçado de nove colunas separadas por
+    "|", quebrado no meio e ilegível. Larga assim, é um registro por vez,
+    uma coluna por linha; célula vazia não aparece."""
+    texto = formato.tabela_crua(TABELA_CRUA)
+
+    assert "|" not in texto and "```" not in texto
+    abril, agosto = texto.split("\n\n")
+    assert abril == ("*01/04/2026*\n  faturamento ease td: 140.887,61\n"
+                     "  faturamento mercado td: 1.336.807,64\n  market share pct: 10,54%")
+    assert agosto.startswith("*01/08/2026*\n") and "  variacao share pp: -2,37%" in agosto
+
+
+def test_data_do_banco_sai_como_na_tela():
+    """A tela mostra 01/04/2026 (e a hora, quando há); o WhatsApp mostrava
+    2026-04-01. Mês sem dia ("2026-07") continua como está."""
+    texto = formato.tabela(["dia", "und"], [["2026-04-01", 1], ["2026-10-01T15:46:41-03:00", 2], ["2026-07", 3]])
+
+    assert "01/04/2026" in texto and "01/10/2026 15:46" in texto and "2026-07" in texto
+
+
+def test_italico_do_markdown_nao_vira_negrito_no_whatsapp():
+    """`*assim*` é itálico no Markdown (e na tela); no WhatsApp `*` é negrito."""
+    texto = formato.de_markdown("Foram **777** unidades (*dado até 29/09*).\n* item *destaque* fim")
+
+    assert texto == "Foram *777* unidades (_dado até 29/09_).\n• item _destaque_ fim"
+
+
+def test_negrito_dentro_da_tabela_nao_deixa_asterisco_no_bloco():
+    texto = formato.de_markdown("| uf | und |\n|---|---|\n| **SP** | 10 |")
+
+    assert texto == "```\nuf  und\n--  ---\nSP   10\n```"
+
+
+def test_tabela_crua_estreita_vai_em_bloco_alinhado_e_leva_o_rodape():
+    texto = formato.tabela_crua("uf | total\nSP | 10\nRJ | 5\n\n(Mostrando as 2 primeiras de 27 linhas.)")
+
+    assert texto == "```\nuf  total\n--  -----\nSP     10\nRJ      5\n```\n\n_Mostrando as 2 primeiras de 27 linhas._"
+
+
+def test_tabela_markdown_no_texto_segue_a_largura_do_celular():
+    """Tabela que a redação escreve no texto: nunca mais "a | b | c" cru."""
+    larga = formato.de_markdown("Veja:\n\n| rede | representante | unidades |\n|---|---|---|\n"
+                                "| Pague Menos Nordeste | Fulano de Tal | 1.234 |")
+
+    assert larga == "Veja:\n\n• *Pague Menos Nordeste* — representante: Fulano de Tal · unidades: 1.234"
+
+
 def test_texto_longo_sai_em_partes_cortadas_no_paragrafo():
     paragrafo = "x" * 2000
     partes = formato.dividir(f"{paragrafo}\n\n{paragrafo}")

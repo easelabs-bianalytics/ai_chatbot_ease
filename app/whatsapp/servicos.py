@@ -9,7 +9,8 @@ O caminho, na ordem — cada etapa pode encerrar sem gastar nada:
 3. **no grupo, só quando chamado**: marcado com @jarvis, ou respondendo a
    uma mensagem do Jarvis; conversa entre as pessoas nunca é processada;
 4. reação 👍/👎 numa mensagem do Jarvis vira avaliação (ADR-0027);
-5. comandos: "nova conversa", "fonte", "1"/"2"/"3" para as continuações;
+5. comandos: "nova conversa", "fonte", "1"/"2"/"3" para as continuações e
+   "jarvis_3.0" (o vídeo de anúncio, só a mensagem inteira);
 6. anexo (imagem, planilha) pelo mesmo caminho do chat web;
 7. a pergunta é gravada (idempotente pelo id do WhatsApp) e respondida pelo
    MESMO orquestrador do chat web — regras, cota, planejamento, ancoragem e
@@ -26,6 +27,7 @@ import re
 import unicodedata
 from dataclasses import replace
 from datetime import timedelta
+from pathlib import Path
 
 from django.core.cache import cache
 from django.utils import timezone
@@ -90,6 +92,13 @@ def _normalizar(texto: str) -> str:
 _PARAR = {"parar", "pare", "para", "cancelar", "cancela", "stop"}
 _NOVA = {"nova conversa", "novo assunto", "outra conversa", "recomecar", "/nova", "/novo"}
 _FONTE = {"fonte", "sql", "consulta", "qual a fonte", "de onde veio", "como chegou nisso", "/fonte"}
+# O vídeo de anúncio do 3.0 (2026-10-06). Só a mensagem inteira: "jarvis_3.0
+# me explica isso" é pergunta, não comando. No grupo vale sem marcar o
+# Jarvis — o comando já é o chamado. Não passa pela IA nem conta na cota.
+_VIDEO_DO_3 = {"jarvis_3.0", "jarvis 3.0", "jarvis3.0", "/jarvis_3.0", "/jarvis 3.0"}
+VIDEO_DO_3 = Path(__file__).resolve().parent / "midia" / "jarvis-3.0.mp4"
+LEGENDA_DO_VIDEO_DO_3 = ("*Jarvis 3.0*: modo Reconhecer, Marketing no cérebro e planilhas no chat. "
+                         "É só perguntar.")
 
 
 # ------------------------------------------------------------ quem pode falar
@@ -341,6 +350,20 @@ def parar_se_pedido(payload, cliente=None) -> bool:
     return True
 
 
+def _enviar_video_do_3(cliente, recebida) -> str:
+    """O vídeo de anúncio do 3.0, como vídeo do WhatsApp (toca na conversa).
+    Se o envio falhar, avisa em texto em vez de ficar calado."""
+    try:
+        externo = cliente.enviar_arquivo(recebida.jid, VIDEO_DO_3.read_bytes(), "jarvis-3.0.mp4", "video/mp4",
+                                         tipo="video", legenda=LEGENDA_DO_VIDEO_DO_3)
+        EnvioWhatsApp.objects.create(externo_id=externo, jid=recebida.jid, tipo=EnvioWhatsApp.Tipo.AVISO)
+        return "video_do_3"
+    except (WhatsAppIndisponivel, OSError):
+        logger.warning("WhatsApp: o vídeo do 3.0 não saiu", exc_info=True)
+        enviar_texto(cliente, recebida.jid, "Não consegui mandar o vídeo agora. Tente de novo em instantes.")
+        return "video_do_3_falhou"
+
+
 # ------------------------------------------------------------ o caminho todo
 
 
@@ -363,6 +386,10 @@ def receber(payload, cliente=None, provider=None, executor=None, transcritor=Non
         if recebida is None:
             return motivo
         ouvi = recebida.texto
+    if recebida.tipo == entrada.TEXTO and _normalizar(
+        entrada.sem_mencao(recebida.texto, config.numero_do_jarvis(), config.lid_do_jarvis())
+    ) in _VIDEO_DO_3:
+        return _enviar_video_do_3(cliente or cliente_configurado(), recebida)
     if recebida.grupo and not ouvi and not _chamou_o_jarvis(recebida, cliente):
         if recebida.mencionados:
             _guardar_mencao_nao_reconhecida(recebida)

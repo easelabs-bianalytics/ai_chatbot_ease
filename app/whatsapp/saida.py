@@ -65,6 +65,10 @@ def montar(resposta, executor=None) -> list:
                                       onde="na planilha anexada" if pedido else "na planilha preenchida, anexada"))
             elif bloco["tipo"] == "grafico":
                 _grafico(bloco.get("grafico"), dados, imagens)
+    elif fonte.get("regra") == "resposta_sem_narrativa":
+        # A tabela crua (ADR-0010), que a tela desenha como tabela: aqui ela
+        # vira a tabela do celular, nunca colunas soltas separadas por "|".
+        textos.append(formato.tabela_crua(resposta.content))
     else:
         textos.append(formato.de_markdown(resposta.content))
         _grafico(fonte.get("grafico"), fonte.get("dados") or {}, imagens)
