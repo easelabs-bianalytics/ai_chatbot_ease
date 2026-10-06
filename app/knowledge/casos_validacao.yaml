@@ -1346,6 +1346,38 @@ casos:
       Lista longa (2.790 pacientes em set/2026). O que se confere é a consulta: um paciente por
       linha, compras agregadas e juntadas, nunca LATERAL por adesão (conversa 70, Amanda).
 
+  # O pedido semanal da Amanda (conversa 72): lista com nome e contato + resumo por semana.
+  - id: D16-acompanhamento-pbm-com-contato
+    grupo: referencia
+    pergunta: >-
+      Atualiza o acompanhamento do PBM de setembro e outubro: quem aderiu e quem concluiu a compra,
+      com o nome e o contato dos pacientes, em planilha
+    esperado: answer_with_data
+    referencia: D16
+    parametros: {data_ini: "2026-09-01", data_fim: "2026-10-07"}
+    sql_deve_conter: ["NOME_CONS", "CELULAR", "E_MAIL", "CONFIRMADA"]
+    comparar_resultado: false
+    nota: Lista longa (2.913 pacientes em 06/10/2026); o que se confere é a consulta.
+
+  - id: D17-acompanhamento-pbm-por-semana
+    grupo: referencia
+    pergunta: Como foi a conclusão das adesões ao PBM por semana em setembro e outubro?
+    esperado: answer_with_data
+    referencia: D17
+    parametros: {data_ini: "2026-09-01", data_fim: "2026-10-07"}
+    sql_deve_conter: ["date_trunc('week'", "CONFIRMADA"]
+
+  - id: D18-acompanhamento-pbm-ultima-semana
+    grupo: referencia
+    pergunta: Manda as adesões ao PBM da última semana, com quem comprou e quem não, e o contato
+    esperado: answer_with_data
+    referencia: D18
+    sql_deve_conter: ["MAX(\"DATA_ADESAO\")", "date_trunc('week'", "CELULAR", "CONFIRMADA"]
+    comparar_resultado: false
+    nota: >-
+      A semana muda a cada carga; o que se confere é a consulta: a última semana COM DADO
+      (MAX da adesão), não a do calendário, que chega vazia por causa da defasagem da base.
+
   - id: D20-vouchers-2026
     grupo: referencia
     pergunta: Quantos vouchers tivemos mês a mês em 2026?

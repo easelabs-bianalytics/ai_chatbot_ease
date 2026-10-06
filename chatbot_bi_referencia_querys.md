@@ -2651,6 +2651,204 @@ ORDER BY a.data_adesao, situacao;
 -- tem de ser do mesmo EAN. LEFT JOIN LATERAL por adesão passou de 60 s e derrubou o Excel (conversa 70).
 ```
 
+*"Atualiza o acompanhamento do PBM: quem aderiu e quem concluiu a compra"* / *"manda a planilha de
+adesão × transação da semana, com o contato dos pacientes"* — o pedido recorrente do Marketing
+(Amanda, semanal). **São duas entregas** (`consultas`), em planilha (`excel: true`): a lista dos
+pacientes (D16) e o resumo por semana de adesão (D17), que vira a segunda aba e é a comparação
+entre as semanas.
+
+- **Período:** se a pessoa não disser, use o **mês corrente e o anterior** (como no pedido original:
+  setembro e outubro), com a conclusão contada até hoje. Diga o período na resposta.
+- **Até quando vai o dado:** a base do PBM é carregada por lotes, alguns dias depois. Traga na
+  resposta a última adesão e a última transação confirmadas (`dado_ate_adesao`, `dado_ate_compra`)
+  e diga ("dado até 30/09"). **Número que muda de uma semana para outra quase sempre é carga nova**,
+  não erro: em 06/10/2026 a carga trouxe 123 pacientes com adesão em 30/09 (2.790 → 2.913).
+- **Contato e nome do paciente vão sempre** nesta lista: é para o Marketing ligar para quem não
+  comprou. Não precisam ser pedidos.
+
+```sql
+-- D16 · Acompanhamento do PBM: cada paciente que aderiu, se concluiu a compra, com nome e contato
+WITH adesoes AS (   -- a primeira adesão de cada paciente no período
+  SELECT DISTINCT ON (a."ID_CONSUMIDOR")
+         a."ID_CONSUMIDOR"::text AS id_consumidor, a."NOME_CONS" AS nome_paciente,
+         a."E_MAIL" AS email, a."CELULAR" AS celular, a."TELEFONE" AS telefone,
+         a."DATA_ADESAO" AS data_adesao, a."PRODUTO" AS produto_aderido, a."CAMPANHA" AS campanha,
+         a."UF_PROFISSIONAL" || lpad(ltrim(a."COD_PROFISSIONAL"::text, '0'), 7, '0') AS crm_medico,
+         a."NOME_PROFISSIONAL" AS medico, a."NOME_FANTASIA" AS pdv, a."CIDADE_PDV" AS cidade_pdv,
+         a."UF_PDV" AS uf_pdv
+  FROM pbm.fato_pbm_adesoes a
+  WHERE a."DATA_ADESAO" >= :data_ini AND a."DATA_ADESAO" < :data_fim
+  ORDER BY a."ID_CONSUMIDOR", a."DATA_ADESAO"
+),
+produtos_aderidos AS (
+  SELECT a."ID_CONSUMIDOR"::text AS id_consumidor, array_agg(DISTINCT a."EAN") AS eans
+  FROM pbm.fato_pbm_adesoes a
+  WHERE a."DATA_ADESAO" >= :data_ini AND a."DATA_ADESAO" < :data_fim
+  GROUP BY 1
+),
+compras AS (      -- compras confirmadas depois da adesão: agregadas uma vez, nunca linha a linha
+  SELECT a.id_consumidor,
+         COUNT(*) AS compras_confirmadas,
+         MIN(t."DATA_REF") AS primeira_compra,
+         SUM(t."QTDE"::int - t."QTDE_DEVOLVIDA"::int) AS unidades_compradas,
+         bool_or(t."EAN" = ANY(pa.eans)) AS comprou_o_produto_aderido
+  FROM adesoes a
+  JOIN produtos_aderidos pa ON pa.id_consumidor = a.id_consumidor
+  JOIN pbm.fato_pbm_transacoes t
+    ON t."ID_CONSUMIDOR" = a.id_consumidor
+   AND t."STATUS_TRN" = 'CONFIRMADA'
+   AND t."DATA_REF" >= :data_ini
+   AND t."DATA_REF" >= a.data_adesao
+  GROUP BY 1
+),
+iniciadas AS (    -- transação começada e não confirmada (pré-autorizada, pendente, anulada)
+  SELECT DISTINCT t."ID_CONSUMIDOR" AS id_consumidor
+  FROM pbm.fato_pbm_transacoes t
+  WHERE t."STATUS_TRN" IN ('PRE', 'PEN', 'ANU')
+    AND t."ID_CONSUMIDOR" IN (SELECT id_consumidor FROM adesoes)
+),
+frescor AS (
+  SELECT (SELECT MAX("DATA_ADESAO") FROM pbm.fato_pbm_adesoes) AS dado_ate_adesao,
+         (SELECT MAX("DATA_REF") FROM pbm.fato_pbm_transacoes WHERE "STATUS_TRN" = 'CONFIRMADA') AS dado_ate_compra
+)
+SELECT a.nome_paciente, a.email, a.celular, a.telefone,
+       a.data_adesao, date_trunc('week', a.data_adesao)::date AS semana_da_adesao,
+       a.produto_aderido, a.campanha, a.crm_medico, a.medico, a.pdv, a.cidade_pdv, a.uf_pdv,
+       CASE WHEN c.id_consumidor IS NOT NULL THEN 'Aderiu e concluiu a transação'
+            ELSE 'Aderiu e não concluiu a transação' END AS situacao,
+       CASE WHEN c.comprou_o_produto_aderido THEN 'Comprou o produto da adesão'
+            WHEN c.id_consumidor IS NOT NULL THEN 'Comprou outra apresentação'
+            WHEN i.id_consumidor IS NOT NULL THEN 'Começou e não confirmou a compra'
+            ELSE 'Não chegou a comprar' END AS detalhe,
+       c.primeira_compra,
+       c.primeira_compra - a.data_adesao AS dias_ate_a_compra,
+       COALESCE(c.compras_confirmadas, 0) AS compras_confirmadas,
+       COALESCE(c.unidades_compradas, 0) AS unidades_compradas,
+       a.id_consumidor AS paciente,
+       f.dado_ate_adesao, f.dado_ate_compra
+FROM adesoes a
+CROSS JOIN frescor f
+LEFT JOIN compras c   ON c.id_consumidor = a.id_consumidor
+LEFT JOIN iniciadas i ON i.id_consumidor = a.id_consumidor
+ORDER BY a.data_adesao, situacao, a.nome_paciente;
+-- Set/2026 a 06/10/2026 (dado até 30/09): 2.913 pacientes. A lista inteira vai na planilha.
+```
+
+```sql
+-- D17 · Acompanhamento do PBM por semana de adesão: aderiram, concluíram e a taxa
+WITH adesoes AS (
+  SELECT DISTINCT ON (a."ID_CONSUMIDOR")
+         a."ID_CONSUMIDOR"::text AS id_consumidor, a."DATA_ADESAO" AS data_adesao
+  FROM pbm.fato_pbm_adesoes a
+  WHERE a."DATA_ADESAO" >= :data_ini AND a."DATA_ADESAO" < :data_fim
+  ORDER BY a."ID_CONSUMIDOR", a."DATA_ADESAO"
+),
+compras AS (
+  SELECT a.id_consumidor, MIN(t."DATA_REF") AS primeira_compra
+  FROM adesoes a
+  JOIN pbm.fato_pbm_transacoes t
+    ON t."ID_CONSUMIDOR" = a.id_consumidor
+   AND t."STATUS_TRN" = 'CONFIRMADA'
+   AND t."DATA_REF" >= :data_ini
+   AND t."DATA_REF" >= a.data_adesao
+  GROUP BY 1
+)
+SELECT date_trunc('week', a.data_adesao)::date AS semana_da_adesao,
+       COUNT(*) AS pacientes_aderiram,
+       COUNT(c.id_consumidor) AS concluiram,
+       COUNT(*) - COUNT(c.id_consumidor) AS nao_concluiram,
+       ROUND((100.0 * COUNT(c.id_consumidor) / COUNT(*))::numeric, 1) AS taxa_conclusao_pct,
+       COUNT(*) FILTER (WHERE c.primeira_compra = a.data_adesao) AS compraram_no_mesmo_dia
+FROM adesoes a
+LEFT JOIN compras c ON c.id_consumidor = a.id_consumidor
+GROUP BY 1
+ORDER BY 1;
+-- A semana começa na segunda. Semana recente tem taxa menor porque teve menos tempo para comprar:
+-- diga isso ao comparar com as anteriores.
+```
+
+*"Manda as adesões da última semana: quem comprou e quem não"* / *"o acompanhamento só da semana"* —
+**a última semana com dado**, não a do calendário: a base do PBM chega dias depois (em 06/10/2026 a
+última adesão carregada era de 30/09). A D18 descobre a semana sozinha, sem parâmetro. Diga na
+resposta qual semana é ("adesões de 28/09 a 04/10, dado até 30/09") e, se a semana do calendário
+ainda não chegou, diga isso em vez de responder vazio. A conclusão conta as compras até hoje. Para
+comparar com as semanas anteriores, junte a D17 como segunda aba.
+
+```sql
+-- D18 · Acompanhamento do PBM da última semana com dado: cada paciente, se concluiu a compra, com contato
+WITH periodo AS (  -- a última semana COM DADO: a base chega dias depois do calendário
+  SELECT date_trunc('week', MAX("DATA_ADESAO"))::date AS ini,
+         (date_trunc('week', MAX("DATA_ADESAO")) + INTERVAL '7 days')::date AS fim
+  FROM pbm.fato_pbm_adesoes
+),
+adesoes AS (   -- a primeira adesão de cada paciente no período
+  SELECT DISTINCT ON (a."ID_CONSUMIDOR")
+         a."ID_CONSUMIDOR"::text AS id_consumidor, a."NOME_CONS" AS nome_paciente,
+         a."E_MAIL" AS email, a."CELULAR" AS celular, a."TELEFONE" AS telefone,
+         a."DATA_ADESAO" AS data_adesao, a."PRODUTO" AS produto_aderido, a."CAMPANHA" AS campanha,
+         a."UF_PROFISSIONAL" || lpad(ltrim(a."COD_PROFISSIONAL"::text, '0'), 7, '0') AS crm_medico,
+         a."NOME_PROFISSIONAL" AS medico, a."NOME_FANTASIA" AS pdv, a."CIDADE_PDV" AS cidade_pdv,
+         a."UF_PDV" AS uf_pdv
+  FROM pbm.fato_pbm_adesoes a
+  WHERE a."DATA_ADESAO" >= (SELECT ini FROM periodo) AND a."DATA_ADESAO" < (SELECT fim FROM periodo)
+  ORDER BY a."ID_CONSUMIDOR", a."DATA_ADESAO"
+),
+produtos_aderidos AS (
+  SELECT a."ID_CONSUMIDOR"::text AS id_consumidor, array_agg(DISTINCT a."EAN") AS eans
+  FROM pbm.fato_pbm_adesoes a
+  WHERE a."DATA_ADESAO" >= (SELECT ini FROM periodo) AND a."DATA_ADESAO" < (SELECT fim FROM periodo)
+  GROUP BY 1
+),
+compras AS (      -- compras confirmadas depois da adesão: agregadas uma vez, nunca linha a linha
+  SELECT a.id_consumidor,
+         COUNT(*) AS compras_confirmadas,
+         MIN(t."DATA_REF") AS primeira_compra,
+         SUM(t."QTDE"::int - t."QTDE_DEVOLVIDA"::int) AS unidades_compradas,
+         bool_or(t."EAN" = ANY(pa.eans)) AS comprou_o_produto_aderido
+  FROM adesoes a
+  JOIN produtos_aderidos pa ON pa.id_consumidor = a.id_consumidor
+  JOIN pbm.fato_pbm_transacoes t
+    ON t."ID_CONSUMIDOR" = a.id_consumidor
+   AND t."STATUS_TRN" = 'CONFIRMADA'
+   AND t."DATA_REF" >= (SELECT ini FROM periodo)
+   AND t."DATA_REF" >= a.data_adesao
+  GROUP BY 1
+),
+iniciadas AS (    -- transação começada e não confirmada (pré-autorizada, pendente, anulada)
+  SELECT DISTINCT t."ID_CONSUMIDOR" AS id_consumidor
+  FROM pbm.fato_pbm_transacoes t
+  WHERE t."STATUS_TRN" IN ('PRE', 'PEN', 'ANU')
+    AND t."ID_CONSUMIDOR" IN (SELECT id_consumidor FROM adesoes)
+),
+frescor AS (
+  SELECT (SELECT MAX("DATA_ADESAO") FROM pbm.fato_pbm_adesoes) AS dado_ate_adesao,
+         (SELECT MAX("DATA_REF") FROM pbm.fato_pbm_transacoes WHERE "STATUS_TRN" = 'CONFIRMADA') AS dado_ate_compra
+)
+SELECT p.ini AS semana_de, p.fim - 1 AS semana_ate,
+       a.nome_paciente, a.email, a.celular, a.telefone,
+       a.data_adesao, date_trunc('week', a.data_adesao)::date AS semana_da_adesao,
+       a.produto_aderido, a.campanha, a.crm_medico, a.medico, a.pdv, a.cidade_pdv, a.uf_pdv,
+       CASE WHEN c.id_consumidor IS NOT NULL THEN 'Aderiu e concluiu a transação'
+            ELSE 'Aderiu e não concluiu a transação' END AS situacao,
+       CASE WHEN c.comprou_o_produto_aderido THEN 'Comprou o produto da adesão'
+            WHEN c.id_consumidor IS NOT NULL THEN 'Comprou outra apresentação'
+            WHEN i.id_consumidor IS NOT NULL THEN 'Começou e não confirmou a compra'
+            ELSE 'Não chegou a comprar' END AS detalhe,
+       c.primeira_compra,
+       c.primeira_compra - a.data_adesao AS dias_ate_a_compra,
+       COALESCE(c.compras_confirmadas, 0) AS compras_confirmadas,
+       COALESCE(c.unidades_compradas, 0) AS unidades_compradas,
+       a.id_consumidor AS paciente,
+       f.dado_ate_adesao, f.dado_ate_compra
+FROM adesoes a
+CROSS JOIN frescor f
+CROSS JOIN periodo p
+LEFT JOIN compras c   ON c.id_consumidor = a.id_consumidor
+LEFT JOIN iniciadas i ON i.id_consumidor = a.id_consumidor
+ORDER BY a.data_adesao, situacao, a.nome_paciente;
+-- Em 06/10/2026: semana de 28/09 (dado até 30/09), 337 pacientes, 187 concluíram.
+```
+
 ### 4.3 Vouchers
 
 **Quando perguntarem "quantos vouchers", use a coluna `pbm` da `cddd.vw_sell_out`.** É o número que

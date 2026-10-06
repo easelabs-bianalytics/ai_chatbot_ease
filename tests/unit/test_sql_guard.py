@@ -265,9 +265,14 @@ def test_ponto_e_virgula_final_nao_atrapalha(catalogo):
     assert ";" not in resultado.sql
 
 
-def test_todas_as_consultas_de_referencia_sao_aprovadas(catalogo):
+def test_todas_as_consultas_de_referencia_sao_aprovadas():
     """Referência que o próprio validador recusaria seria bug de catálogo: a
-    IA parte delas, e ela nunca conseguiria executar o que copiou."""
+    IA parte delas, e ela nunca conseguiria executar o que copiou.
+
+    Com o catálogo REAL: o do resto deste arquivo traz o bloqueio de dado
+    pessoal que valeu até 2026-09-30 (O-02), e reprovava a D16, que leva o
+    nome e o contato do paciente que o Marketing pediu (conversa 72)."""
+    catalogo = load_catalog()
     reprovadas = {
         r.id: validate_sql(r.sql, catalogo).reason
         for r in catalogo.references
