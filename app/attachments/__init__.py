@@ -3,11 +3,12 @@
 Três regras governam este pacote, e as três existem para o anexo não virar
 uma fatura:
 
-1. **O arquivo nunca é armazenado.** Os bytes ficam no Redis da própria task,
-   com prazo: a imagem até a resposta sair, a planilha duas horas depois do
-   último uso (ela acompanha a conversa, ADR-0031). A conversa guarda o nome
-   e o resumo em texto — o suficiente para a pessoa (e para a auditoria)
-   saber o que foi enviado.
+1. **O arquivo fica com a conversa, não para sempre** (ADR-0034, que
+   substitui a regra antiga de nunca guardar). O Redis da task é o cache
+   rápido; o arquivo enviado e a planilha devolvida vão para um S3 privado e
+   criptografado, na pasta da conversa, enquanto ela existir e até dois anos.
+   Apagar a conversa apaga os arquivos de verdade. Antes, só o Redis, com
+   prazo de duas horas, e todo deploy apagava os anexos de todo mundo.
 2. **O conteúdo não vai para o modelo.** Da planilha sobe o perfil
    (cabeçalhos, tipos, preenchimento, chave, fórmulas e poucos exemplos); as
    linhas vão ao BANCO, como a tabela `anexo.<aba>` da consulta (ADR-0031).

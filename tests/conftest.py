@@ -19,6 +19,9 @@ REAL_SERVICE_ENV_VARS = (
     "WHATSAPP_WEBHOOK_TOKEN",
     "WHATSAPP_NUMERO_JARVIS",
     "WHATSAPP_LID_JARVIS",
+    # O bucket dos arquivos da conversa (ADR-0034): com ele, o teste gravaria
+    # no S3 de produção.
+    "JARVIS_ARQUIVOS_BUCKET",
 )
 
 
@@ -31,6 +34,16 @@ def sem_credenciais_de_servicos_reais(monkeypatch):
     """Nenhum teste enxerga credencial real, venha ela de onde vier."""
     for name in REAL_SERVICE_ENV_VARS:
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def armazem_em_memoria():
+    """Cada teste começa com um armazém de arquivos vazio, em memória."""
+    from attachments import armazem
+
+    armazem.armazem.cache_clear()
+    yield armazem.armazem()
+    armazem.armazem.cache_clear()
 
 
 @pytest.fixture(autouse=True)

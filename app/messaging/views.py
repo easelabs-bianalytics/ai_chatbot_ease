@@ -70,14 +70,17 @@ def _message_json(message, mostrar_custo: bool = False):
         "created_at": message.created_at.isoformat(),
     }
     if message.anexo_tipo:
-        # O que a conversa guarda do anexo: tipo e nome. O arquivo em si não
-        # existe mais (ADR-0024); `planilha_pronta` diz se a preenchida ainda
-        # está no prazo de download.
+        # O anexo fica na conversa (ADR-0034): `baixar` é o arquivo que a
+        # pessoa mandou, para baixar de novo quando quiser.
         dados["anexo"] = {
             "tipo": message.anexo_tipo,
             "nome": message.anexo_nome,
             "planilha_pronta": bool(message.anexo_resposta_token),
         }
+        if message.anexo_token:
+            dados["anexo"]["baixar"] = (
+                f"/api/conversations/{message.conversation_id}/messages/{message.pk}/anexo/"
+            )
         if message.anexo_miniatura:
             dados["anexo"]["miniatura"] = (
                 f"/api/conversations/{message.conversation_id}/messages/{message.pk}/miniatura/"
@@ -226,6 +229,10 @@ class ConversationDetailView(APIView):
         conversation = self._conversation(request, conversation_id)
         conversation.deleted_at = timezone.now()
         conversation.save(update_fields=["deleted_at"])
+        # A conversa some da lista (exclusão lógica, ADR-0018), mas os arquivos
+        # dela — dado pessoal de paciente e de médico — são apagados de
+        # verdade (ADR-0034).
+        deposito.apagar_da_conversa(conversation)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -488,13 +495,45 @@ class AnexoView(APIView):
         return Response(etiqueta, status=status.HTTP_201_CREATED)
 
 
+TIPOS_DE_ARQUIVO = {
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".csv": "text/csv; charset=utf-8",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+}
+
+
+class MessageAnexoView(APIView):
+    """Baixa de novo o arquivo que a pessoa mandou na pergunta (ADR-0034).
+
+    Fica enquanto a conversa existir, até dois anos. Só a dona da conversa
+    baixa; a de outra pessoa dá 404."""
+
+    def get(self, request, conversation_id, message_id):
+        conversation = get_object_or_404(
+            Conversation.objects.visiveis(), pk=conversation_id, user=request.user
+        )
+        pergunta = get_object_or_404(
+            Message, pk=message_id, conversation=conversation, direction=Message.Direction.INBOUND
+        )
+        dados = deposito.buscar(pergunta.anexo_token)
+        if dados is None:
+            return Response({"error": "este arquivo não está mais disponível"}, status=status.HTTP_404_NOT_FOUND)
+        nome = pergunta.anexo_nome or "arquivo"
+        tipo = TIPOS_DE_ARQUIVO.get(Path(nome).suffix.lower(), "application/octet-stream")
+        http = HttpResponse(dados, content_type=tipo)
+        http["Content-Disposition"] = f'attachment; filename="{slugify(Path(nome).stem)[:60] or "arquivo"}{Path(nome).suffix}"'
+        return http
+
+
 class MessagePlanilhaView(APIView):
     """Baixa a planilha que o Jarvis preencheu (ADR-0024).
 
-    Ela vive no depósito, com prazo: passado o prazo, some. É de propósito —
-    o arquivo é da pessoa, e guardar cópia dele aqui seria assumir uma
-    responsabilidade que ninguém pediu. A resposta em texto continua na
-    conversa para sempre.
+    Desde 2026-10-05 ela fica na conversa (ADR-0034), enquanto a conversa
+    existir e até dois anos: a pessoa baixa de novo, igual ao que recebeu,
+    mesmo depois de um deploy.
     """
 
     def get(self, request, conversation_id, message_id):
@@ -507,7 +546,7 @@ class MessagePlanilhaView(APIView):
         dados = deposito.buscar(pergunta.anexo_resposta_token)
         if dados is None:
             return Response(
-                {"error": "a planilha preenchida já expirou; peça de novo com o arquivo anexado"},
+                {"error": "a planilha preenchida não está mais disponível; peça de novo com o arquivo anexado"},
                 status=status.HTTP_404_NOT_FOUND,
             )
 

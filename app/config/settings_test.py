@@ -42,3 +42,7 @@ CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True
 
 CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+
+# Arquivos da conversa (ADR-0034): sem bucket, os testes usam o armazém em
+# memória. Em produção sem bucket ele fica desligado — ver attachments/armazem.py.
+ARMAZEM_EM_MEMORIA = True

@@ -156,7 +156,8 @@ def test_pergunta_com_anexo_guarda_so_a_etiqueta(cliente, conversa, monkeypatch)
     assert (mensagem.anexo_tipo, mensagem.anexo_nome) == ("planilha", "redes.xlsx")
     assert mensagem.anexo_token == etiqueta["token"]
     lista = cliente.get(f"/api/conversations/{conversa.pk}/messages/").json()["messages"]
-    assert lista[0]["anexo"] == {"tipo": "planilha", "nome": "redes.xlsx", "planilha_pronta": False}
+    assert lista[0]["anexo"] == {"tipo": "planilha", "nome": "redes.xlsx", "planilha_pronta": False,
+                                 "baixar": f"/api/conversations/{conversa.pk}/messages/{mensagem.pk}/anexo/"}
 
 
 def _pergunta_preenchida(conversa, dados=b"conteudo preenchido"):
@@ -189,7 +190,7 @@ def test_planilha_vencida_devolve_404_com_explicacao(cliente, conversa):
     r = cliente.get(f"/api/conversations/{conversa.pk}/messages/{pergunta.pk}/planilha/")
 
     assert r.status_code == 404
-    assert "expirou" in r.json()["error"]
+    assert "não está mais disponível" in r.json()["error"]
 
 
 def test_planilha_de_outra_pessoa_nao_e_baixada(conversa, django_user_model):

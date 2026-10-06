@@ -238,6 +238,7 @@ def test_transparencia_vira_fundo_branco():
 # -------------------------------------------------------------- depósito
 
 
+@pytest.mark.django_db
 def test_deposito_guarda_devolve_e_descarta():
     token = deposito.guardar(b"bytes")
 
@@ -255,7 +256,10 @@ def test_tokens_sao_imprevisiveis():
     assert all(len(t) == 32 for t in tokens)
 
 
+@pytest.mark.django_db
 def test_token_vazio_ou_desconhecido_nao_quebra():
+    """Token que o Redis não tem é procurado nos arquivos da conversa
+    (ADR-0034) — e o que não está em lugar nenhum volta None, sem erro."""
     assert deposito.buscar("") is None
     assert deposito.buscar("nao-existe") is None
 

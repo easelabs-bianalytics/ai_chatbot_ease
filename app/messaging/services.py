@@ -5,7 +5,7 @@ import logging
 from django.db import IntegrityError, transaction
 
 from messaging.channels.base import Channel, InboundMessage
-from messaging.models import Message, new_outbound_id
+from messaging.models import ArquivoDaConversa, Message, new_outbound_id
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,13 @@ def ingest_inbound_message(conversation, inbound: InboundMessage) -> tuple[Messa
 
     _ensure_title(conversation, inbound.text)
     _guardar_miniatura(message)
+    if message.anexo_token:
+        # O anexo passa a ser da conversa (ADR-0034): sobrevive ao prazo do
+        # Redis e aos deploys, e a pessoa pode baixá-lo de novo.
+        from attachments import deposito
+
+        deposito.fixar(message.anexo_token, conversa=conversation, mensagem=message,
+                       papel=ArquivoDaConversa.Papel.ENTRADA, nome=message.anexo_nome)
     return message, True
 
 

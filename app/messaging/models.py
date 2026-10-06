@@ -133,3 +133,37 @@ class Avaliacao(models.Model):
 
     def __str__(self):
         return f"{self.get_nota_display()} na mensagem #{self.message_id}"
+
+
+class ArquivoDaConversa(models.Model):
+    """Um arquivo da conversa guardado no S3 (ADR-0034): o anexo que a
+    pessoa mandou ou a planilha que o Jarvis devolveu.
+
+    Até 2026-10-05 os bytes viviam só no Redis da task, por até duas horas, e
+    todo deploy apagava os anexos de todo mundo: o "Baixar Excel" de resposta
+    sobre a planilha dava "expirou" e a conversa sobre o arquivo parava. Agora
+    o Redis é só o cache; o arquivo fica enquanto a conversa existir, até dois
+    anos (regra de ciclo de vida do bucket). Apagar a conversa apaga os
+    arquivos de verdade."""
+
+    class Papel(models.TextChoices):
+        ENTRADA = "entrada", "Enviado pela pessoa"
+        SAIDA = "saida", "Devolvido pelo Jarvis"
+
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="arquivos")
+    message = models.ForeignKey(Message, on_delete=models.SET_NULL, null=True, blank=True, related_name="arquivos")
+    # O mesmo token do depósito: é por ele que todo o código já acha o arquivo.
+    token = models.CharField(max_length=64, unique=True)
+    papel = models.CharField(max_length=10, choices=Papel.choices)
+    nome = models.CharField(max_length=255, blank=True)
+    tamanho = models.PositiveIntegerField(default=0)
+    chave = models.CharField(max_length=512)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-id"]
+        verbose_name = "arquivo da conversa"
+        verbose_name_plural = "arquivos da conversa"
+
+    def __str__(self):
+        return f"{self.get_papel_display()}: {self.nome} (conversa #{self.conversation_id})"

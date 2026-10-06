@@ -2,6 +2,7 @@ from django.urls import path
 
 from messaging.views import (
     AnexoView,
+    MessageAnexoView,
     MessageAvaliacaoView,
     ConversationDetailView,
     ConversationListCreateView,
@@ -49,6 +50,11 @@ urlpatterns = [
         "conversations/<int:conversation_id>/messages/<int:message_id>/planilha/",
         MessagePlanilhaView.as_view(),
         name="message-planilha",
+    ),
+    path(
+        "conversations/<int:conversation_id>/messages/<int:message_id>/anexo/",
+        MessageAnexoView.as_view(),
+        name="message-anexo",
     ),
     path(
         "conversations/<int:conversation_id>/messages/<int:message_id>/miniatura/",

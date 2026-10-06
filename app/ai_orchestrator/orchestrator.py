@@ -57,7 +57,7 @@ from datasource.executors.fake import FakeQueryExecutor
 from datasource.models import QueryRun
 from datasource.sql_guard import validate_sql
 from messaging.channels.fake import FakeChannel
-from messaging.models import Message
+from messaging.models import ArquivoDaConversa, Message
 from messaging.services import deliver_reply
 
 logger = logging.getLogger(__name__)
@@ -1100,6 +1100,8 @@ def _imagem_vira_pedido(message, leitura, auditoria) -> bool:
             message.anexo_nome = NOME_DA_TABELA_DO_PRINT
             message.anexo_resumo = estrutura.resumo
             message.anexo_token = deposito.guardar(dados)
+            deposito.fixar(message.anexo_token, conversa=message.conversation, mensagem=message,
+                           papel=ArquivoDaConversa.Papel.ENTRADA, nome=NOME_DA_TABELA_DO_PRINT)
             auditoria.extras["imagem"] = {**registro, "virou": "planilha"}
             return True
 
@@ -1355,6 +1357,10 @@ def _alterar_planilha(message, itens, executor, catalog, auditoria, ja_executada
         )
 
     token = deposito.guardar(dados, segundos=SEGUNDOS_DA_SAIDA)
+    # A planilha devolvida fica na conversa (ADR-0034): a pessoa baixa de
+    # novo amanhã, igual ao que recebeu, mesmo depois de um deploy.
+    deposito.fixar(token, conversa=message.conversation, mensagem=message,
+                   papel=ArquivoDaConversa.Papel.SAIDA, nome=nome)
     Message.objects.filter(pk=message.pk).update(anexo_resposta_token=token, anexo_resposta_nome=nome)
     message.anexo_resposta_token = token
     message.anexo_resposta_nome = nome
