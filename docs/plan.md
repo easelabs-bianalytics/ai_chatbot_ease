@@ -2307,3 +2307,6 @@ anexos no app com motion graphics (o fluxo do PDF
       - data do banco como na tela (01/04/2026, com a hora quando há);
       - `*itálico*` do Markdown sai em itálico, não em negrito;
       - negrito dentro da célula não deixa asterisco no bloco.
+- [x] Tela inicial: o anexo preso ao campo (planilha ou print) e o aviso de
+      cota sobravam 20px de cada lado (coluna de 860px, campo de 820px);
+      agora acompanham a largura do campo, como na conversa (2026-10-06).

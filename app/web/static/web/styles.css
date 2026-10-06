@@ -1027,6 +1027,11 @@ svg.login-jarvis { width: 52px; height: 52px; margin: 0 auto -2px; }
 .chat-main--inicio .mensagens > .boas-vindas { margin: 0 auto; padding-bottom: 0; }
 .chat-main--inicio .boas-vindas p { margin-bottom: 18px; }
 .chat-main--inicio .composer { max-width: 820px; }
+/* O anexo preso ao campo (planilha ou print) e o aviso de cota acompanham a
+   largura do campo, como na conversa: com a coluna de 860px eles sobravam
+   20px de cada lado na tela inicial (2026-10-06). */
+.chat-main--inicio .anexo-chip,
+.chat-main--inicio .aviso-cota { max-width: 820px; }
 .sugestoes--inicio { flex-shrink: 0; margin: 18px auto auto; }
 .sugestoes--inicio[hidden] { display: none; }
 .sugestoes {
