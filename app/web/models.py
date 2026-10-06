@@ -21,6 +21,11 @@ class PrimeiroAcesso(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="primeiro_acesso"
     )
     passeio_em = models.DateTimeField(auto_now_add=True)
+    # A última versão das novidades (o vídeo do 3.0) que abriu para esta
+    # pessoa. Vazio = nunca viu. Mora aqui pelo mesmo motivo do passeio: é
+    # uma vez por pessoa, não por navegador — até 2026-10-06 ficava no
+    # localStorage, e quem trocava de computador via de novo.
+    novidades_vistas = models.CharField(max_length=20, blank=True, default="")
 
     class Meta:
         verbose_name = "primeiro acesso"

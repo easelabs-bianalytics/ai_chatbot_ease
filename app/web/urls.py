@@ -5,6 +5,7 @@ from web.views import (
     LimitesView,
     LoginView,
     LogoutView,
+    NovidadesView,
     PasseioView,
     SessaoView,
     SolicitarCodigoView,
@@ -18,4 +19,5 @@ urlpatterns = [
     path("logout/", LogoutView.as_view(), name="auth-logout"),
     path("limites/", LimitesView.as_view(), name="auth-limites"),
     path("passeio/", PasseioView.as_view(), name="auth-passeio"),
+    path("novidades/", NovidadesView.as_view(), name="auth-novidades"),
 ]

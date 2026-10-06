@@ -84,3 +84,52 @@ def test_visitante_nao_marca_nada():
 
     assert resposta.status_code in (401, 403)
     assert PrimeiroAcesso.objects.count() == 0
+
+
+# --- o vídeo das novidades (2026-10-06) ---------------------------------------
+
+
+def test_quem_chega_agora_ve_o_passeio_e_o_video(cliente):
+    """Primeiro login: o passeio e, depois dele, o vídeo do 3.0 — os dois.
+    Até 2026-10-06 quem chegava fazia só o passeio, e o vídeo era marcado
+    como visto sem nunca ter aberto."""
+    usuario = _sessao(cliente)["usuario"]
+    assert usuario["passeio_pendente"] is True
+    assert usuario["novidades_pendentes"] is True
+
+    cliente.post("/api/auth/passeio/", {}, format="json")
+
+    assert _sessao(cliente)["usuario"]["novidades_pendentes"] is True
+
+
+def test_quem_ja_conhecia_ve_o_video_uma_vez(cliente, ana):
+    """Fez o passeio antes do 3.0: vê o vídeo no primeiro login depois do
+    deploy, e depois não mais — em nenhum computador."""
+    PrimeiroAcesso.objects.create(user=ana)
+    assert _sessao(cliente)["usuario"] == {**_sessao(cliente)["usuario"], "passeio_pendente": False,
+                                           "novidades_pendentes": True}
+
+    assert cliente.post("/api/auth/novidades/", {}, format="json").status_code == 200
+
+    outro = APIClient()
+    outro.force_authenticate(ana)
+    assert _sessao(outro)["usuario"]["novidades_pendentes"] is False
+
+
+def test_versao_nova_das_novidades_aparece_de_novo(cliente, ana, monkeypatch):
+    """A marca é por versão: quem viu o 3.0 vê o vídeo do 3.1 uma vez."""
+    PrimeiroAcesso.objects.create(user=ana, novidades_vistas="3.0")
+    assert _sessao(cliente)["usuario"]["novidades_pendentes"] is False
+
+    monkeypatch.setattr("web.views.NOVIDADES_VERSAO", "3.1")
+
+    assert _sessao(cliente)["usuario"]["novidades_pendentes"] is True
+
+
+def test_marcar_o_video_nao_pula_o_passeio_de_quem_ainda_vai_fazer(cliente, ana):
+    """O vídeo só abre depois do passeio, mas se a marca chegar antes (outra
+    aba), ela não pode apagar o passeio pendente de outro jeito que não seja
+    criando a linha — que é o que o passeio também faz."""
+    cliente.post("/api/auth/novidades/", {}, format="json")
+
+    assert PrimeiroAcesso.objects.get(user=ana).novidades_vistas == "3.0"

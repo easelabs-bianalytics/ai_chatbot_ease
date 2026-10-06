@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jarvis 3.0 · tela inicial</title>
+<style>
+  :root {
+    --p6:#5558D4; --p7:#4648B8; --p5:#6366F1; --p1:#E8E9FC; --p50:#F4F4FE; --p9:#2A2C7A;
+    --g6:#3FB868; --g1:#E2F8EB; --g7:#2D9655;
+    --tx:#1A1D2E; --t7:#454A66; --t5:#7A80A0; --t4:#9CA1B8; --bd:#EEEEF3; --bd2:#DDDFE6;
+    --pag:#F7F8FA; --lat:#FBFBFD; --card:#fff;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:#E9EAF2; color:var(--tx); font:15px/1.5 Inter, -apple-system, 'Segoe UI', Roboto, sans-serif; padding:28px 16px 80px; }
+  main { max-width:1280px; margin:0 auto; }
+  h1 { font-size:24px; letter-spacing:-0.3px; }
+  .lead { color:var(--t7); max-width:900px; margin:6px 0 22px; }
+  .diag { background:#fff; border:1px solid var(--bd2); border-radius:16px; padding:18px 22px; margin-bottom:34px; }
+  .diag h2 { font-size:15px; margin-bottom:8px; }
+  .diag ul { padding-left:18px; color:var(--t7); font-size:14px; display:grid; gap:4px; }
+  .prop { margin-bottom:44px; }
+  .prop > h2 { font-size:19px; letter-spacing:-0.2px; }
+  .prop > p { color:var(--t7); max-width:900px; margin:4px 0 12px; font-size:14.5px; }
+  .muda { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+  .muda span { font-size:12.5px; font-weight:600; background:#fff; border:1px solid var(--bd2); border-radius:999px; padding:4px 12px; color:var(--t7); }
+
+  /* a janela do app */
+  .app { display:flex; height:720px; background:var(--pag); border-radius:14px; overflow:hidden; border:1px solid var(--bd2); box-shadow:0 24px 60px rgba(30,31,92,.14); }
+  .lat { width:264px; flex-shrink:0; background:var(--lat); border-right:1px solid var(--bd); display:flex; flex-direction:column; padding:16px 12px; gap:12px; }
+  .logo { font-size:21px; font-weight:500; color:var(--p6); letter-spacing:-0.5px; padding:0 6px; }
+  .logo b { font-weight:700; }
+  .marca { display:flex; align-items:center; gap:10px; padding:2px 6px; }
+  .marca b { font-size:14px; } .marca small { display:block; font-size:12px; color:var(--t5); }
+  .v3 { background:linear-gradient(110deg,#5558D4 10%,#4FB34A 75%,#8FE584); -webkit-background-clip:text; background-clip:text; color:transparent; font-weight:700; }
+  .busca { height:34px; border:1px solid var(--bd2); border-radius:9px; background:#fff; font-size:13px; color:var(--t4); display:flex; align-items:center; padding:0 10px; gap:8px; }
+  .nova { height:38px; border-radius:10px; background:var(--p6); color:#fff; font-size:14px; font-weight:600; display:flex; align-items:center; padding:0 14px; gap:8px; }
+  .sec { font-size:11px; font-weight:700; letter-spacing:1.2px; color:var(--t5); text-transform:uppercase; padding:4px 8px 0; }
+  .item { display:flex; align-items:center; gap:9px; font-size:13.5px; color:var(--tx); padding:7px 8px; border-radius:8px; white-space:nowrap; overflow:hidden; }
+  .item:hover, .item.ativo { background:var(--p1); }
+  .item .ic { width:18px; height:18px; flex-shrink:0; display:grid; place-items:center; border-radius:5px; font-size:10px; }
+  .item span.t { overflow:hidden; text-overflow:ellipsis; }
+  .item .wa { margin-left:auto; font-size:10px; font-weight:700; color:#1C8D4F; background:#E3F6EA; border-radius:6px; padding:1px 6px; }
+  .rodape-lat { margin-top:auto; border-top:1px solid var(--bd); padding-top:10px; }
+  .pessoa { display:flex; align-items:center; gap:9px; font-size:13.5px; font-weight:600; padding:4px 6px; }
+  .avatar { width:30px; height:30px; border-radius:50%; background:var(--p1); color:var(--p7); font-size:12px; font-weight:700; display:grid; place-items:center; }
+  .frescor { font-size:11.5px; color:var(--t5); padding:8px; display:grid; gap:3px; }
+  .frescor b { color:var(--t7); font-weight:600; }
+  .frescor i { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--g6); margin-right:6px; }
+  .tela { flex:1; display:flex; flex-direction:column; align-items:center; position:relative; overflow:hidden; }
+
+  /* blocos comuns */
+  .ola { text-align:center; }
+  .ola h3 { font-size:30px; letter-spacing:-0.6px; }
+  .ola p { color:var(--t7); font-size:14.5px; margin-top:6px; }
+  .compositor { width:100%; max-width:720px; background:#fff; border:1px solid var(--bd2); border-radius:18px; box-shadow:0 8px 28px rgba(30,31,92,.08); padding:14px 14px 10px 18px; }
+  .compositor .txt { font-size:15px; color:var(--t4); min-height:48px; }
+  .compositor .acoes { display:flex; align-items:center; gap:8px; }
+  .pill { display:inline-flex; align-items:center; gap:6px; height:30px; padding:0 12px; border-radius:999px; border:1px solid var(--bd2); font-size:12.5px; font-weight:600; color:var(--t7); background:#fff; }
+  .pill.verde { border-color:#BFE6C6; background:#EAF7EE; color:#2F7D3B; }
+  .enviar { margin-left:auto; width:36px; height:36px; border-radius:11px; background:var(--p6); color:#fff; display:grid; place-items:center; font-size:16px; }
+  .chip { display:inline-flex; align-items:center; gap:7px; height:34px; padding:0 14px; border-radius:999px; background:#fff; border:1px solid var(--bd2); font-size:13px; color:var(--tx); }
+  .chip i { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+  .rotulo { font-size:11px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; }
+  .aviso { font-size:11.5px; color:var(--t4); text-align:center; }
+  .novo { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; color:var(--p7); background:var(--p1); border-radius:999px; padding:4px 12px; }
+  .novo i { width:7px; height:7px; border-radius:50%; background:var(--g6); box-shadow:0 0 6px var(--g6); }
+
+  /* proposta 1 */
+  .p1 .tela { justify-content:center; gap:22px; padding:30px; }
+  .p1 .chips { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; max-width:760px; }
+
+  /* proposta 2 */
+  .p2 .tela { padding:34px 40px 18px; gap:20px; justify-content:flex-start; }
+  .p2 .destaques { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; width:100%; max-width:900px; }
+  .dest { background:#fff; border:1px solid var(--bd2); border-radius:16px; padding:16px 18px; display:grid; gap:6px; position:relative; overflow:hidden; }
+  .dest b { font-size:14.5px; } .dest small { font-size:12.5px; color:var(--t7); }
+  .dest .ex { font-size:12.5px; color:var(--p7); font-weight:600; margin-top:4px; }
+  .dest::before { content:''; position:absolute; left:0; top:0; bottom:0; width:4px; }
+  .dest.a::before { background:var(--p6); } .dest.b::before { background:var(--g6); } .dest.c::before { background:#217346; }
+  .p2 .areas { display:grid; grid-template-columns:repeat(3,1fr); gap:10px 24px; width:100%; max-width:900px; }
+  .area .rotulo { margin-bottom:4px; display:block; }
+  .area a { display:block; font-size:13px; color:var(--tx); padding:5px 0; border-bottom:1px dashed var(--bd2); text-decoration:none; }
+  .p2 .soltar { width:100%; max-width:900px; border:1.5px dashed #BFE6C6; background:#F4FBF6; border-radius:14px; padding:10px 16px; font-size:13px; color:#2F7D3B; display:flex; align-items:center; gap:10px; }
+  .p2 .baixo { margin-top:auto; width:100%; display:flex; flex-direction:column; align-items:center; gap:6px; }
+
+  /* proposta 3 */
+  .p3 .tela { padding:30px 44px 18px; gap:18px; align-items:stretch; }
+  .p3 .topo { display:flex; align-items:center; justify-content:space-between; }
+  .p3 .topo h3 { font-size:24px; letter-spacing:-0.4px; }
+  .p3 .status { display:flex; gap:8px; }
+  .p3 .status span { font-size:12px; background:#fff; border:1px solid var(--bd2); border-radius:999px; padding:4px 10px; color:var(--t7); }
+  .p3 .status i { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--g6); margin-right:6px; }
+  .p3 .status span.velho i { background:#F5A623; }
+  .p3 .grade { display:grid; grid-template-columns:1.3fr 1fr; gap:16px; flex:1; min-height:0; }
+  .p3 .box { background:#fff; border:1px solid var(--bd2); border-radius:16px; padding:16px 18px; display:flex; flex-direction:column; gap:10px; }
+  .p3 .box h4 { font-size:13px; letter-spacing:1px; text-transform:uppercase; color:var(--t5); }
+  .linha { display:flex; align-items:center; gap:10px; font-size:13.5px; padding:8px 0; border-top:1px solid var(--bd); }
+  .linha:first-of-type { border-top:0; }
+  .linha .ic { width:28px; height:28px; border-radius:8px; display:grid; place-items:center; font-size:12px; flex-shrink:0; }
+  .linha small { margin-left:auto; color:var(--t5); font-size:12px; white-space:nowrap; }
+  .p3 .baixo { display:flex; flex-direction:column; align-items:center; gap:6px; }
+</style>
+</head>
+<body>
+<main>
+<h1>Jarvis 3.0: a tela inicial</h1>
+<p class="lead">Três propostas para a tela de quem abre o Jarvis, a partir do print atual. Todas mantêm o que já funciona — a saudação, o mascote, a lateral com os projetos e as conversas, o compositor — e mudam o que a pessoa vê primeiro. Dá para misturar: a lateral da 3 com o centro da 1, por exemplo.</p>
+
+<div class="diag">
+  <h2>O que a tela de hoje deixa a desejar</h2>
+  <ul>
+    <li><b>O 3.0 não aparece.</b> As seis sugestões são de BI (sell out, dispensação, mercado, prescrição, estoque, PBM): nenhuma fala de Marketing, do modo Reconhecer ou de planilha.</li>
+    <li><b>O compositor fica longe.</b> Ele mora no rodapé, e entre os cartões e ele sobra um vazio. Quem chega lê a saudação no centro e precisa descer o olho até o fim da tela para perguntar.</li>
+    <li><b>Anexar é invisível.</b> O motor de planilhas é a novidade grande, e o único sinal dele é o clipe 📎 dentro do campo.</li>
+    <li><b>A lateral não ajuda a achar nada.</b> Uma lista corrida, sem data, com "teste real: planilha" repetido quatro vezes; não dá para saber o que é cada conversa (gráfico, planilha, WhatsApp).</li>
+    <li><b>Ninguém sabe de quando é o dado.</b> O Jarvis 3.0 abre a resposta dizendo "dado até 29/09" — a tela inicial poderia dizer isso antes da pergunta.</li>
+  </ul>
+</div>
+
+<!-- ============================================================ 1 -->
+<section class="prop p1">
+  <h2>1 · A pergunta no centro</h2>
+  <p>A mais próxima de hoje, e a mais rápida de fazer. O compositor sobe para o centro, logo abaixo da saudação — é a primeira coisa que se usa, e fica onde o olho já está. As sugestões viram fichas curtas por área, já com Marketing, e o anexo ganha um botão com nome.</p>
+  <div class="muda"><span>compositor no centro</span><span>"Anexar planilha" visível</span><span>fichas por área, com Marketing</span><span>frescor do dado na lateral</span></div>
+  <div class="app">
+    <aside class="lat">
+      <div class="logo">ease <b>labs</b></div>
+      <div class="marca"><svg width="34" height="34" viewBox="0 0 64 64"><use href="#mascote"/></svg><div><b>Jarvis <span class="v3">3.0</span></b><small>Copiloto de Dados</small></div></div>
+      <div class="busca">⌕ Buscar nas conversas</div>
+      <div class="nova">＋ Nova conversa</div>
+      <div class="sec">Projetos</div>
+      <div class="item"><span class="ic">▣</span><span class="t">Força de Vendas - Relatórios</span></div>
+      <div class="sec">Recentes</div>
+      <div class="item"><span class="t">Como evoluiu a prescrição da Ease…</span></div>
+      <div class="item"><span class="t">Como estão as vendas da Ease…</span></div>
+      <div class="item"><span class="t">Quantas unidades de Produto…</span></div>
+      <div class="item"><span class="t">Preencha para mim os dados</span></div>
+      <div class="rodape-lat">
+        <div class="frescor"><span><i></i><b>Dados de hoje</b></span><span>Sell out até 31/08 · Prescrição até ago/26</span><span>Marketing atualizado às 05:00</span></div>
+        <div class="pessoa"><span class="avatar">RF</span>Rubens Filho</div>
+      </div>
+    </aside>
+    <div class="tela">
+      <svg width="64" height="64" viewBox="0 0 64 64"><use href="#mascote"/></svg>
+      <div class="ola"><h3>Bom dia, Rubens!</h3><p>Pergunte sobre vendas, prescrição, PBM, estoque ou Marketing. Eu consulto o banco e mostro de onde veio cada número.</p></div>
+      <div class="compositor">
+        <div class="txt">Pergunte ao Jarvis…</div>
+        <div class="acoes"><span class="pill verde">📎 Anexar planilha ou print</span><span class="pill">🎙 Ditar</span><span class="enviar">↑</span></div>
+      </div>
+      <div class="chips">
+        <span class="chip"><i style="background:#5558D4"></i>Sell out da Ease mês a mês em 2026</span>
+        <span class="chip"><i style="background:#3FB868"></i>Quanto do PX vem do Digital + Orgânico?</span>
+        <span class="chip"><i style="background:#7B83E8"></i>Market share da Ease no varejo</span>
+        <span class="chip"><i style="background:#E5484D"></i>CDs em ruptura de Extrato hoje</span>
+        <span class="chip"><i style="background:#F5A623"></i>Adesões ao PBM por mês</span>
+        <span class="chip"><i style="background:#217346"></i>Preencher uma planilha de representantes</span>
+      </div>
+      <div class="aviso" style="position:absolute;bottom:14px">A IA pode cometer erros: confira a informação. Somente leitura, nunca altera os dados na fonte.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 2 -->
+<section class="prop p2">
+  <h2>2 · O que há de novo, e um caminho por área</h2>
+  <p>Para os próximos dias depois do lançamento: o topo apresenta as três novidades do 3.0, cada uma com uma pergunta de exemplo que se clica e manda. Embaixo, as perguntas viram listas por área (sem cartões gordos), e uma faixa convida a soltar a planilha ali mesmo. O compositor fica onde está.</p>
+  <div class="muda"><span>destaques do 3.0 clicáveis</span><span>perguntas por área, em lista</span><span>área de soltar planilha</span><span>volta ao normal depois de um tempo</span></div>
+  <div class="app">
+    <aside class="lat">
+      <div class="logo">ease <b>labs</b></div>
+      <div class="marca"><svg width="34" height="34" viewBox="0 0 64 64"><use href="#mascote"/></svg><div><b>Jarvis <span class="v3">3.0</span></b><small>Copiloto de Dados</small></div></div>
+      <div class="busca">⌕ Buscar nas conversas</div>
+      <div class="nova">＋ Nova conversa</div>
+      <div class="sec">Projetos</div>
+      <div class="item"><span class="ic">▣</span><span class="t">Força de Vendas - Relatórios</span></div>
+      <div class="sec">Recentes</div>
+      <div class="item"><span class="t">Como evoluiu a prescrição da Ease…</span></div>
+      <div class="item"><span class="t">Como estão as vendas da Ease…</span></div>
+      <div class="item"><span class="t">Quantas unidades de Produto…</span></div>
+      <div class="rodape-lat"><div class="pessoa"><span class="avatar">RF</span>Rubens Filho</div></div>
+    </aside>
+    <div class="tela">
+      <div class="ola" style="display:grid;justify-items:center;gap:8px"><span class="novo"><i></i>Novo no Jarvis 3.0</span><h3>Bom dia, Rubens!</h3></div>
+      <div class="destaques">
+        <div class="dest a"><b>Pergunta nova? Ele reconhece o dado</b><small>Sem consulta pronta, ele confere frescor, grão e valores antes de responder — e diz as premissas.</small><span class="ex">→ Pacientes do PBM que compraram 2+ vezes em setembro</span></div>
+        <div class="dest b"><b>Marketing no cérebro</b><small>Área Médica, Email MKT e o canal de cada médico, cruzados com a prescrição.</small><span class="ex">→ Quanto do PX Ease vem do Digital + Orgânico?</span></div>
+        <div class="dest c"><b>Planilhas no chat</b><small>Anexe a sua e diga o que preencher; coluna nova entra no fim, nada é sobrescrito.</small><span class="ex">→ Preencher unidades e share por representante</span></div>
+      </div>
+      <div class="areas">
+        <div class="area"><span class="rotulo" style="color:#5558D4">Sell out e mercado</span><a>Sell out da Ease mês a mês em 2026</a><a>Unidades da Pague Menos por mês</a><a>Market share no varejo</a></div>
+        <div class="area"><span class="rotulo" style="color:#3FB868">Prescrição e Marketing</span><a>Evolução da prescrição Ease</a><a>Novos prescritores por canal</a><a>Médicos da Área Médica × painel</a></div>
+        <div class="area"><span class="rotulo" style="color:#B7791F">Estoque e PBM</span><a>CDs em ruptura de Extrato hoje</a><a>Estoque de cada rede</a><a>Adesões ao PBM por mês</a></div>
+      </div>
+      <div class="soltar">📎 Solte aqui uma planilha (.xlsx, .csv) ou cole um print com Ctrl+V</div>
+      <div class="baixo">
+        <div class="compositor"><div class="txt" style="min-height:26px">Pergunte ao Jarvis…</div><div class="acoes"><span class="pill">📎</span><span class="pill">🎙</span><span class="enviar">↑</span></div></div>
+        <div class="aviso">A IA pode cometer erros: confira a informação. Somente leitura, nunca altera os dados na fonte.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 3 -->
+<section class="prop p3">
+  <h2>3 · Uma tela de trabalho</h2>
+  <p>A mais ambiciosa: a tela inicial vira um ponto de partida para quem usa todo dia. À esquerda, continuar de onde parou (as últimas conversas, com o tipo de cada uma); à direita, o que o Jarvis sabe fazer hoje. No topo, de quando é cada base — se uma carga atrasou, a pessoa vê antes de perguntar. A lateral agrupa as conversas por data e marca planilha, gráfico e WhatsApp.</p>
+  <div class="muda"><span>frescor de cada base no topo</span><span>"continuar de onde parei"</span><span>lateral por data, com ícones</span><span>testes fora da lista principal</span></div>
+  <div class="app">
+    <aside class="lat">
+      <div class="logo">ease <b>labs</b></div>
+      <div class="marca"><svg width="34" height="34" viewBox="0 0 64 64"><use href="#mascote"/></svg><div><b>Jarvis <span class="v3">3.0</span></b><small>Copiloto de Dados</small></div></div>
+      <div class="busca">⌕ Buscar nas conversas</div>
+      <div class="nova">＋ Nova conversa</div>
+      <div class="sec">Projetos</div>
+      <div class="item"><span class="ic">▣</span><span class="t">Força de Vendas - Relatórios</span></div>
+      <div class="sec">Hoje</div>
+      <div class="item ativo"><span class="ic" style="background:#E8E9FC;color:#4648B8">▤</span><span class="t">Prescrição da Ease mês a mês</span></div>
+      <div class="item"><span class="ic" style="background:#E3F2E8;color:#217346">▦</span><span class="t">Preencha para mim os dados</span></div>
+      <div class="sec">Ontem</div>
+      <div class="item"><span class="ic" style="background:#E8E9FC;color:#4648B8">▤</span><span class="t">Vendas da Ease em agosto</span><span class="wa">WA</span></div>
+      <div class="item"><span class="ic" style="background:#F1F2F7;color:#7A80A0">?</span><span class="t">O que isso está mostrando?</span></div>
+      <div class="sec">Últimos 7 dias</div>
+      <div class="item"><span class="ic" style="background:#E8E9FC;color:#4648B8">▤</span><span class="t">Unidades de Produto por rede</span></div>
+      <div class="item" style="color:#9CA1B8"><span class="ic">⋯</span><span class="t">5 conversas de teste</span></div>
+      <div class="rodape-lat"><div class="pessoa"><span class="avatar">RF</span>Rubens Filho</div></div>
+    </aside>
+    <div class="tela">
+      <div class="topo">
+        <h3>Bom dia, Rubens!</h3>
+        <div class="status"><span><i></i>Sell out até 31/08</span><span><i></i>Prescrição até ago/26</span><span><i></i>Marketing hoje 05:00</span><span class="velho"><i></i>Estoque de ontem</span></div>
+      </div>
+      <div class="grade">
+        <div class="box">
+          <h4>Continuar de onde parou</h4>
+          <div class="linha"><span class="ic" style="background:#E8E9FC;color:#4648B8">▤</span>Prescrição da Ease mês a mês<small>hoje, 09:12</small></div>
+          <div class="linha"><span class="ic" style="background:#E3F2E8;color:#217346">▦</span>Preencha para mim os dados · representantes.xlsx<small>hoje, 08:40</small></div>
+          <div class="linha"><span class="ic" style="background:#E8E9FC;color:#4648B8">▤</span>Vendas da Ease em agosto<small>ontem · WhatsApp</small></div>
+          <div class="linha"><span class="ic" style="background:#FFF4E0;color:#B7791F">◔</span>Por que a prescrição caiu em maio?<small>3 dias</small></div>
+        </div>
+        <div class="box">
+          <h4>O que perguntar hoje</h4>
+          <div class="linha"><span class="ic" style="background:#E2F8EB;color:#2D9655">✦</span>Quanto do PX vem do Digital + Orgânico?</div>
+          <div class="linha"><span class="ic" style="background:#E8E9FC;color:#4648B8">◎</span>Pergunta nova: ele reconhece o dado antes</div>
+          <div class="linha"><span class="ic" style="background:#E3F2E8;color:#217346">▦</span>Traga uma planilha e diga o que preencher</div>
+          <div class="linha"><span class="ic" style="background:#FEECEC;color:#C53030">!</span>CDs em ruptura de Extrato hoje</div>
+        </div>
+      </div>
+      <div class="baixo">
+        <div class="compositor" style="max-width:none"><div class="txt" style="min-height:26px">Pergunte ao Jarvis…</div><div class="acoes"><span class="pill verde">📎 Anexar</span><span class="pill">🎙</span><span class="enviar">↑</span></div></div>
+        <div class="aviso">A IA pode cometer erros: confira a informação. Somente leitura, nunca altera os dados na fonte.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="diag">
+  <h2>Minha recomendação</h2>
+  <ul>
+    <li><b>Agora:</b> a 1 — o compositor no centro e o "Anexar planilha" com nome resolvem os dois problemas que mais custam (o vazio e o anexo escondido), com pouca mudança.</li>
+    <li><b>Na semana do lançamento:</b> os três destaques da 2 em cima da 1, até a pessoa usar cada novidade uma vez — depois somem.</li>
+    <li><b>Da 3, já:</b> a lateral por data, com ícone de planilha/gráfico/WhatsApp e os testes recolhidos, e o frescor de cada base. O resto da 3 é para quando o Jarvis for a ferramenta de todo dia de mais gente.</li>
+  </ul>
+</div>
+</main>
+
+<!-- o mascote 3.0 (anel V), uma vez só, usado por <use> -->
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <linearGradient id="mc" x1="0.2" y1="0" x2="0.8" y2="1"><stop offset="0" stop-color="#7C80F7"/><stop offset="1" stop-color="#4A4DC4"/></linearGradient>
+    <linearGradient id="ma" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#4FB34A"/><stop offset="1" stop-color="#A8F09E"/></linearGradient>
+    <g id="mascote">
+      <g transform="rotate(-14 32 40)"><path d="M 7,40 A 25,8 0 0,1 57,40" fill="none" stroke="#3E8F38" stroke-width="2.2" stroke-linecap="round" opacity="0.75"/></g>
+      <rect x="17" y="11.9" width="30" height="40.3" rx="15" fill="url(#mc)" stroke="#fff" stroke-width="2.6" paint-order="stroke"/>
+      <rect x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9" fill="#14153F"/>
+      <circle cx="40" cy="26.5" r="2.6" fill="#6ECC64"/>
+      <g transform="rotate(-14 32 40)"><path d="M 7,40 A 25,8 0 0,0 57,40" fill="none" stroke="url(#ma)" stroke-width="2.8" stroke-linecap="round"/><circle cx="51.5" cy="44.9" r="3" fill="#9BE88F" stroke="#fff" stroke-width="1.2" paint-order="stroke"/></g>
+    </g>
+  </defs>
+</svg>
+</body>
+</html>

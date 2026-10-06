@@ -29,6 +29,10 @@ from ai_orchestrator import limites
 from web.acesso import INTERVALO_REENVIO, normalizar_email, solicitar_codigo, verificar_codigo
 from web.models import PrimeiroAcesso
 
+# A versão das novidades (o vídeo de anúncio). Trocar aqui faz todo mundo ver o
+# vídeo da versão nova uma vez.
+NOVIDADES_VERSAO = "3.0"
+
 MENSAGEM_LOGIN_INVALIDO = "Usuário ou senha incorretos."
 MENSAGEM_DOMINIO = f"Use o seu e-mail @{settings.DOMINIO_DE_ACESSO}."
 MENSAGEM_CODIGO_INVALIDO = "Código inválido ou expirado. Confira o e-mail ou peça um novo código."
@@ -59,6 +63,12 @@ def usuario_json(user) -> dict:
         # Primeiro login desta pessoa: a tela abre a apresentação antes de
         # qualquer outra coisa. A marca é do usuário, não do navegador.
         "passeio_pendente": not PrimeiroAcesso.objects.filter(user=user).exists(),
+        # O vídeo das novidades da versão atual, uma vez por pessoa. Quem
+        # chega agora vê depois do passeio; quem já conhecia, no primeiro login
+        # depois do deploy.
+        "novidades_pendentes": not PrimeiroAcesso.objects.filter(
+            user=user, novidades_vistas=NOVIDADES_VERSAO
+        ).exists(),
     }
 
 
@@ -119,6 +129,16 @@ class LimitesView(APIView):
             "renova_em": (meia_noite + datetime.timedelta(days=1)).isoformat(),
             "semana_renova_em": (limites.inicio_da_semana() + datetime.timedelta(days=7)).isoformat(),
         })
+
+
+class NovidadesView(APIView):
+    """Registra que o vídeo das novidades da versão atual abriu para esta
+    pessoa. Como o passeio: marcado quando abre, não quando termina, e
+    idempotente."""
+
+    def post(self, request):
+        PrimeiroAcesso.objects.update_or_create(user=request.user, defaults={"novidades_vistas": NOVIDADES_VERSAO})
+        return Response({"novidades_pendentes": False})
 
 
 class PasseioView(APIView):

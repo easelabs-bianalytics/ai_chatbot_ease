@@ -110,6 +110,8 @@ def test_login_certo_abre_a_sessao(ana, senha_ligada):
         "usuario": "ana", "email": "", "nome": "Ana Souza", "iniciais": "AS", "equipe": False,
         # Primeiro login: a tela abre a apresentação do Jarvis antes da conversa.
         "passeio_pendente": True,
+        # e, depois dela, o vídeo das novidades da versão
+        "novidades_pendentes": True,
     }
     assert cliente.get("/api/auth/sessao/").json()["autenticado"] is True
 

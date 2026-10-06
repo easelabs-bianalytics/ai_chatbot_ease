@@ -138,12 +138,19 @@
         </button>
       </div>
       <button class="sidebar-marca" id="btnLogoHome" title="Conheça o Jarvis">
+        <!-- O ícone ao lado de "Jarvis 3.0" é o mascote inteiro do 3.0: anel V
+             e satélite parados, no lugar do favicon e do vídeo. -->
         <span class="marca-jarvis" aria-hidden="true">
           <svg class="jarvis" viewBox="0 0 64 64" focusable="false">
+            <g class="j-orbita-g"><path class="j-orbita j-orbita--tras" d="M 7,40 A 25,8 0 0,0 57,40"/></g>
             <rect class="j-corpo" x="17" y="11.9" width="30" height="40.3" rx="15"/>
             <rect class="j-viseira" x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9"/>
             <path class="j-reflexo" d="M 22.5 24.2 H 33"/>
             <circle class="j-olho" cx="40" cy="26.5" r="2.4"/>
+            <g class="j-orbita-g">
+              <path class="j-orbita j-orbita--frente" d="M 7,40 A 25,8 0 0,1 57,40"/>
+              <circle class="j-satelite-fixo" cx="51.5" cy="44.9" r="2.9"/>
+            </g>
           </svg>
         </span>
         <span class="marca-produto">
@@ -292,6 +299,8 @@
           <svg class="icone-parar" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
         </button>
       </form>
+      <!-- tela inicial: as sugestões logo abaixo do campo de pergunta (app.js, `modoInicio`) -->
+      <div class="sugestoes sugestoes--inicio" id="sugestoesInicio" hidden></div>
       <p class="composer-dica">A IA pode cometer erros: confira a informação. Somente leitura, nunca altera os dados na fonte.</p>
     </section>
   </div>
@@ -336,7 +345,9 @@
     </div>
   </div>
 
-  <!-- Novidades da versão (Jarvis 3.0: Marketing no cérebro e motor de anexos). Abre uma vez, sozinha,
+  <!-- Novidades da versão (Jarvis 3.0: Marketing no cérebro e motor de anexos).
+       Só o vídeo, sem texto embaixo: ele mesmo apresenta tudo. Clicar nele
+       toca de novo. Abre uma vez, sozinha,
        para quem já conhecia o Jarvis; depois, pelo "3.0" da lateral. O filme
        é a mesma composição do vídeo de anúncio (novidades/jarvis-3.0/), que
        toca sozinha dentro do iframe. -->
@@ -345,22 +356,41 @@
       <button class="novidades-fechar" id="novidadesFechar" type="button" aria-label="Fechar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </button>
-      <div class="novidades-tela">
+      <div class="novidades-tela" id="novidadesTela">
         <iframe id="novidadesFilme" title="Anúncio do Jarvis 3.0" tabindex="-1"
                 data-src="{% static 'web/novidades/jarvis-3.0/index.html' %}"></iframe>
+        <!-- clicar pausa e retoma; o ícone mostra que está parado -->
+        <div class="novidades-pausa" id="novidadesPausa" hidden>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>
+        </div>
+        <!-- controles por cima do vídeo: aparecem com o mouse e ficam com ele pausado -->
+        <div class="nov-barra" id="novidadesBarra">
+          <button class="nov-bt" id="novidadesTocar" type="button" aria-label="Pausar">
+            <svg class="ico-pausa" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1.2"/><rect x="14" y="5" width="4" height="14" rx="1.2"/></svg>
+            <svg class="ico-tocar" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>
+          </button>
+          <span class="nov-tempo" id="novidadesTempo">0:00</span>
+          <div class="nov-progresso" id="novidadesProgresso" role="slider" tabindex="0" aria-label="Posição no vídeo" aria-valuemin="0">
+            <div class="nov-cheio" id="novidadesCheio"></div>
+          </div>
+          <span class="nov-tempo" id="novidadesTotal">0:39</span>
+          <button class="nov-bt" id="novidadesTelaCheia" type="button" aria-label="Tela cheia">
+            <svg class="ico-expandir" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+            <svg class="ico-reduzir" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>
+          </button>
+        </div>
       </div>
       <div class="novidades-texto">
         <span class="novidades-rotulo">Novidade</span>
         <h2 id="novidadesTitulo">Jarvis <span class="produto-versao">3.0</span>: o cérebro ficou maior</h2>
-        <p>O Marketing entrou no cérebro do Jarvis: Área Médica, Email MKT e o canal de cada médico, cruzados com prescrição, sell out e força de vendas. E agora ele trabalha com os seus arquivos: anexe uma planilha e diga o que preencher, ou cole um print.</p>
         <ul class="novidades-lista">
-          <li>Marketing: Área Médica, Email MKT e o Digital + Orgânico, atualizados todo dia</li>
-          <li>Planilhas xlsx, xlsm e csv de até 20 mil linhas, e prints colados com Ctrl+V</li>
-          <li>Nada fica guardado: o arquivo vive só durante a conversa</li>
+          <li><strong>Pergunta nova?</strong> Ele reconhece o dado antes de responder e diz o critério que usou.</li>
+          <li><strong>Marketing no cérebro:</strong> Área Médica, Email MKT e Digital + Orgânico, cruzados com o BI.</li>
+          <li><strong>Planilhas no chat:</strong> anexe e diga o que preencher; coluna nova entra no fim.</li>
         </ul>
         <div class="novidades-acoes">
           <button class="walk-link" id="novidadesDeNovo" type="button">Ver de novo</button>
-          <button class="btn btn-primary" id="novidadesExperimentar" type="button">Anexar uma planilha</button>
+          <button class="btn btn-primary" id="novidadesExperimentar" type="button">Fazer uma pergunta</button>
         </div>
       </div>
     </div>

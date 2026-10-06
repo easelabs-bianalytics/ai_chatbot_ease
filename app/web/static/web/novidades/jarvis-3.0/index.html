@@ -7,7 +7,8 @@
      - app: o modal de novidades abre esta página num iframe com `?tocar=1`, e
        ela mesma toca a timeline, ajustada ao tamanho da janela. Com `?fim=1`
        (reduzir movimento) mostra direto o quadro final.
-     Os números da planilha, do print e do canal são de exemplo, e a tela diz isso. -->
+     Os números da planilha, do print e do canal são de exemplo, na ordem de
+     grandeza real; os nomes dos representantes são fictícios. -->
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
@@ -49,7 +50,7 @@
     #mascote svg { width: 100%; height: 100%; overflow: visible; }
     #sombra { position: absolute; left: 860px; top: 590px; width: 200px; height: 26px; border-radius: 50%; background: rgba(46, 49, 144, 0.16); filter: blur(6px); }
 
-    #titulo { position: absolute; left: 0; right: 0; top: 640px; text-align: center; }
+    #titulo { position: absolute; left: 0; right: 0; top: 680px; text-align: center; }
     #titulo h1 { font-size: 132px; font-weight: 800; letter-spacing: -4px; line-height: 1; }
     .versao {
       display: inline-block;
@@ -57,13 +58,13 @@
       -webkit-background-clip: text; background-clip: text; color: transparent;
     }
     #titulo p { margin-top: 22px; font-size: 34px; color: #4A4F6A; font-weight: 500; }
+    #titulo #intro { position: absolute; left: 0; right: 0; top: -56px; margin: 0; font-size: 30px; font-weight: 700; letter-spacing: 8px; text-transform: uppercase; color: #5558D4; }
 
     /* cabeçalho das cenas do meio */
     #cabeca { position: absolute; left: 150px; top: 92px; display: flex; align-items: center; gap: 18px; }
     #manchete { position: absolute; left: 150px; top: 168px; width: 1620px; height: 140px; }
     .frase { position: absolute; left: 0; top: 0; font-size: 70px; font-weight: 800; letter-spacing: -2px; line-height: 1.05; }
     .frase em { font-style: normal; color: #5558D4; }
-    #exemplo { position: absolute; right: 64px; bottom: 44px; font-size: 18px; color: #8A8FA8; font-weight: 500; }
 
     /* cena 2: o compositor do chat */
     #compositor { position: absolute; left: 360px; top: 470px; width: 1200px; height: 230px; padding: 34px 40px; }
@@ -101,27 +102,57 @@
     }
     #selo i { width: 12px; height: 12px; border-radius: 50%; background: #6ECC64; box-shadow: 0 0 10px #6ECC64; }
 
-    /* cena 4: o print */
-    #print { position: absolute; left: 260px; top: 380px; width: 700px; height: 470px; padding: 34px; overflow: hidden; }
-    #print .barras { position: absolute; left: 60px; right: 60px; bottom: 60px; height: 300px; display: flex; align-items: flex-end; gap: 34px; }
-    #print .barras i { flex: 1; border-radius: 10px 10px 4px 4px; background: linear-gradient(180deg, #8A8EF5, #5558D4); }
-    #print .barras i:nth-child(1) { height: 92%; background: linear-gradient(180deg, #8FDB86, #4FB34A); }
-    #print .barras i:nth-child(2) { height: 74%; } #print .barras i:nth-child(3) { height: 61%; }
-    #print .barras i:nth-child(4) { height: 45%; } #print .barras i:nth-child(5) { height: 30%; }
-    #print .tit { font-size: 22px; font-weight: 700; color: #4A4F6A; }
-    #varredura { position: absolute; left: 0; right: 0; top: 0; height: 6px; background: #6ECC64; box-shadow: 0 0 24px 6px rgba(110, 204, 100, 0.6); opacity: 0; }
-    #resposta { position: absolute; left: 1020px; top: 470px; width: 660px; padding: 34px 38px; }
-    #resposta .de { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
-    #resposta .tag { padding: 6px 14px; border-radius: 999px; background: #E3F6FA; color: #1F7F92; font-size: 18px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
-    #resposta p { font-size: 32px; line-height: 1.35; font-weight: 500; }
-    #resposta p b { color: #2F7D3B; }
-
     /* cena 5: a lista */
     #lista { position: absolute; left: 360px; top: 380px; width: 1200px; display: flex; flex-direction: column; gap: 26px; }
     .item { display: flex; align-items: center; gap: 30px; padding: 30px 40px; }
     .item .tique { width: 58px; height: 58px; border-radius: 50%; background: #6ECC64; display: grid; place-items: center; flex-shrink: 0; }
     .item b { display: block; font-size: 36px; font-weight: 700; letter-spacing: -0.5px; }
     .item span { font-size: 25px; color: #5B607A; }
+
+    /* cena R: o modo Reconhecer — o fluxo de um analista, quatro etapas */
+    #fluxo { position: absolute; left: 150px; top: 296px; width: 1620px; height: 130px; }
+    #fluxo .trilho, #fluxo .progresso { position: absolute; left: 31px; width: 1380px; top: 29px; height: 4px; border-radius: 2px; }
+    #fluxo .trilho { background: #DDDFF0; }
+    #fluxo .progresso { background: linear-gradient(90deg, #5558D4, #6ECC64); transform-origin: 0 50%; transform: scaleX(0); }
+    .etapa { position: absolute; top: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; white-space: nowrap; }
+    .etapa .n {
+      position: relative; width: 62px; height: 62px; border-radius: 50%; display: grid; place-items: center;
+      background: #fff; border: 3px solid #D3D5EC; color: #8A8FA8; font-size: 26px; font-weight: 800;
+    }
+    .etapa .n svg { position: absolute; width: 28px; height: 28px; opacity: 0; }
+    .etapa b { font-size: 27px; font-weight: 700; color: #8A8FA8; letter-spacing: -0.3px; }
+    .etapa span { display: block; font-size: 19px; color: #A3A7BD; font-weight: 500; margin-top: 2px; white-space: nowrap; }
+    #perguntaRec { position: absolute; left: 150px; top: 462px; width: 700px; padding: 34px 40px 36px; }
+    .rec-tag { display: inline-block; padding: 6px 14px; border-radius: 999px; font-size: 17px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 18px; background: #EEF0FB; color: #4648B8; }
+    #perguntaRec p { font-size: 34px; line-height: 1.35; font-weight: 600; color: #1A1D2E; }
+    #perguntaRec mark { background: none; color: inherit; border-radius: 8px; padding: 0 4px; margin: 0 -4px; box-shadow: inset 0 -0.42em 0 rgba(85, 88, 212, 0); }
+    #captura { margin-top: 24px; display: flex; flex-wrap: wrap; gap: 12px; }
+    .capt { display: inline-flex; align-items: center; gap: 10px; padding: 9px 16px; border-radius: 14px; background: #F4F5FB; border: 1.5px solid #E3E5F0; font-size: 21px; color: #2A2E45; font-weight: 600; }
+    .capt i { font-style: normal; font-size: 15px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #5558D4; }
+    .painel { position: absolute; left: 900px; top: 462px; width: 870px; padding: 26px 34px 28px; }
+    .painel .tit { font-size: 19px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; color: #5558D4; padding: 4px 0 8px; }
+    .sonda { display: flex; align-items: center; gap: 22px; padding: 15px 0; border-top: 1.5px solid #EEEFF5; }
+    .sonda .ico { position: relative; width: 48px; height: 48px; border-radius: 50%; background: #EEF0FB; flex-shrink: 0; }
+    .sonda .ico svg { position: absolute; inset: 0; margin: auto; width: 24px; height: 24px; }
+    .sonda .ok { opacity: 0; }
+    .sonda b { display: block; font-size: 26px; font-weight: 700; letter-spacing: -0.3px; }
+    .sonda span { display: block; font-size: 20px; color: #5B607A; margin-top: 2px; }
+    .sonda .achado { margin-left: auto; font-size: 21px; font-weight: 700; color: #2F7D3B; background: #EAF7EE; padding: 8px 16px; border-radius: 12px; white-space: nowrap; opacity: 0; }
+    .regra { display: flex; align-items: center; gap: 18px; padding: 16px 0; border-top: 1.5px solid #EEEFF5; font-size: 26px; color: #2A2E45; font-weight: 500; }
+    .regra .chk { width: 34px; height: 34px; border-radius: 10px; background: #5558D4; display: grid; place-items: center; flex-shrink: 0; }
+    .regra b { font-weight: 700; color: #1A1D2E; }
+    #consultaRec .grao { margin-top: 18px; display: inline-flex; gap: 12px; align-items: center; padding: 12px 18px; border-radius: 14px; background: #1E1F5C; color: #fff; font-size: 22px; font-weight: 600; }
+    #consultaRec .grao i { width: 10px; height: 10px; border-radius: 50%; background: #6ECC64; box-shadow: 0 0 10px #6ECC64; }
+    #respostaRec .rec-tag { background: #EAF7EE; color: #2F7D3B; }
+    #respostaRec p { font-size: 34px; line-height: 1.3; font-weight: 500; }
+    #respostaRec p b { color: #2F7D3B; font-weight: 800; }
+    #premissas { margin-top: 20px; padding: 16px 20px; border-radius: 16px; background: #F4F5FB; border: 1.5px solid #E3E5F0; font-size: 21px; line-height: 1.5; color: #4A4F6A; }
+    #premissas strong { display: block; font-size: 15px; letter-spacing: 1.5px; text-transform: uppercase; color: #5558D4; margin-bottom: 4px; }
+    #volta {
+      position: absolute; left: 900px; top: 800px; width: 870px; display: flex; align-items: center; gap: 16px;
+      padding: 18px 26px; border-radius: 20px; background: #1E1F5C; color: #fff; font-size: 23px; font-weight: 600;
+    }
+    #volta i { width: 12px; height: 12px; border-radius: 50%; background: #6ECC64; box-shadow: 0 0 10px #6ECC64; flex-shrink: 0; }
 
     /* cena C: o cérebro */
     #cerebro { position: absolute; inset: 0; }
@@ -131,14 +162,9 @@
     .lig-mkt { stroke: #B9BCD6; stroke-width: 3; stroke-dasharray: 10 12; }
     .lig-acesa { stroke: #6ECC64; stroke-width: 4; }
     .pulso { fill: #6ECC64; }
-    #nucleo {
-      position: absolute; left: 870px; top: 600px; width: 180px; height: 180px; border-radius: 50%;
-      background: radial-gradient(circle at 35% 30%, #8A8EF8, #4A4DC4 70%);
-      box-shadow: 0 0 0 14px rgba(85, 88, 212, 0.12), 0 0 70px rgba(85, 88, 212, 0.45);
-      display: grid; place-items: center;
-    }
-    #nucleo svg { width: 92px; height: 92px; }
-    #nucleo b { position: absolute; bottom: -54px; left: 50%; transform: translateX(-50%); font-size: 26px; font-weight: 800; color: #2E3190; letter-spacing: -0.5px; }
+    #nucleo { position: absolute; left: 816px; top: 570px; width: 288px; height: 240px; }
+    #nucleo svg { width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 18px 40px rgba(74, 77, 196, 0.45)); }
+    #nucleo b { position: absolute; bottom: -50px; left: 50%; transform: translateX(-50%); font-size: 26px; font-weight: 800; color: #2E3190; letter-spacing: -0.5px; white-space: nowrap; }
     .no {
       position: absolute; width: 300px; height: 74px; margin: -37px 0 0 -150px; border-radius: 24px; white-space: nowrap;
       display: flex; align-items: center; gap: 16px; padding: 0 24px; font-size: 27px; font-weight: 700; color: #1A1D2E;
@@ -170,26 +196,80 @@
     #respostaMkt p { font-size: 31px; line-height: 1.35; font-weight: 500; }
     #respostaMkt p b { color: #2F7D3B; }
 
-    /* cena 6: o fecho */
-    #botao {
-      position: absolute; left: 790px; top: 900px; width: 340px; height: 88px; border-radius: 22px;
-      background: linear-gradient(180deg, #6A6EF3, #5558D4); color: #fff; font-size: 32px; font-weight: 700;
-      display: grid; place-items: center; box-shadow: 0 18px 40px rgba(85, 88, 212, 0.35);
-    }
   </style>
 </head>
 <body>
-<div id="root" data-composition-id="main" data-start="0" data-duration="30" data-width="1920" data-height="1080">
+<div id="root" data-composition-id="main" data-start="0" data-duration="39" data-width="1920" data-height="1080">
 
-  <div id="fundo" class="clip" data-start="0" data-duration="30">
+  <div id="fundo" class="clip" data-start="0" data-duration="39">
     <div class="mancha m1"></div><div class="mancha m2"></div><div class="mancha m3"></div>
   </div>
 
+  <!-- cena R: o modo Reconhecer (ADR-0033) — o fluxo de um analista. Os números
+       são de exemplo, na ordem de grandeza real (o teste de 2026-10-05: 310
+       pacientes, dado até 29/09). -->
+  <div id="cenaRec" class="clip" data-start="0" data-duration="39">
+    <div id="fluxo">
+      <div class="trilho"></div><div class="progresso"></div>
+      <div class="etapa" style="left:0px"><div class="n">1<svg class="ok" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div><b>Entender</b><span>o que foi pedido</span></div></div>
+      <div class="etapa" style="left:460px"><div class="n">2<svg class="ok" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div><b>Reconhecer</b><span>o dado, antes de usar</span></div></div>
+      <div class="etapa" style="left:920px"><div class="n">3<svg class="ok" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div><b>Consultar</b><span>no grão pedido</span></div></div>
+      <div class="etapa" style="left:1380px"><div class="n">4<svg class="ok" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div><b>Responder</b><span>com as premissas</span></div></div>
+    </div>
+    <div id="perguntaRec" class="vidro">
+      <span class="rec-tag">Pergunta nova</span>
+      <p>Quantos <mark id="mk1">pacientes</mark> do PBM compraram <mark id="mk2">mais de uma vez</mark> em <mark id="mk3">setembro</mark>?</p>
+      <div id="captura">
+        <span class="capt" id="cp1"><i>Grão</i>paciente</span>
+        <span class="capt" id="cp2"><i>Critério</i>2+ compras</span>
+        <span class="capt" id="cp3"><i>Período</i>setembro</span>
+      </div>
+    </div>
+    <div id="sondas" class="painel vidro">
+      <div class="tit">Reconhece o dado antes de usar</div>
+        <div class="sonda"><div class="ico"><svg class="lupa" viewBox="0 0 24 24" fill="none" stroke="#5558D4" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg><svg class="ok" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div><b>Frescor</b><span>até quando vai o dado de cada tabela</span></div><div class="achado">até 29/09</div></div>
+        <div class="sonda"><div class="ico"><svg class="lupa" viewBox="0 0 24 24" fill="none" stroke="#5558D4" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg><svg class="ok" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div><b>Grão e chave</b><span>o que é uma linha, como as tabelas se ligam</span></div><div class="achado">1 linha = 1 compra</div></div>
+        <div class="sonda"><div class="ico"><svg class="lupa" viewBox="0 0 24 24" fill="none" stroke="#5558D4" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg><svg class="ok" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div><b>Valores</b><span>status que existem e datas falsas (1900-01-01)</span></div><div class="achado">só confirmadas</div></div>
+        <div class="sonda"><div class="ico"><svg class="lupa" viewBox="0 0 24 24" fill="none" stroke="#5558D4" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg><svg class="ok" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div><b>Ambiguidade</b><span>quanto cada leitura muda o número</span></div><div class="achado">paciente ≠ compra</div></div>
+    </div>
+    <div id="consultaRec" class="painel vidro">
+      <div class="tit">Escreve a consulta no grão pedido</div>
+        <div class="regra"><div class="chk"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div>Conta <b>pacientes</b>, não compras</div></div>
+        <div class="regra"><div class="chk"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div>Só compras <b>confirmadas</b>, sem datas falsas</div></div>
+        <div class="regra"><div class="chk"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div><b>Setembro</b>, com o dado até 29/09</div></div>
+      <div class="grao"><i></i>Uma linha por paciente</div>
+    </div>
+    <div id="respostaRec" class="painel vidro">
+      <span class="rec-tag">Resposta</span>
+      <p><b>310 pacientes</b> compraram mais de uma vez em setembro.</p>
+      <div id="premissas"><strong>Premissas</strong>Paciente com duas ou mais compras confirmadas · dado até 29/09</div>
+    </div>
+    <div id="volta"><i></i>Duas leituras, números bem diferentes? Ele mostra as duas e pergunta qual você quer.</div>
+  </div>
+
   <!-- cena C: o cérebro da Ease Labs, e o Marketing desbloqueado -->
-  <div id="cenaCerebro" class="clip" data-start="0" data-duration="30">
+  <div id="cenaCerebro" class="clip" data-start="0" data-duration="39">
     <div id="cerebro">
       <svg id="ligacoes" viewBox="0 0 1920 1080"></svg>
-      <div id="nucleo" data-layout-allow-overflow><svg viewBox="0 0 64 64"><rect x="17" y="11.9" width="30" height="40.3" rx="15" fill="#fff" opacity="0.95"/><rect x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9" fill="#1E1F5C"/><circle cx="40" cy="26.5" r="2.6" fill="#6ECC64"/></svg><b>Jarvis</b></div>
+      <div id="nucleo" data-layout-allow-overflow><svg viewBox="0 0 240 190">
+        <defs>
+          <linearGradient id="hemi" x1="0.15" y1="0" x2="0.85" y2="1"><stop offset="0" stop-color="#9DA1FB"/><stop offset="0.55" stop-color="#6366E6"/><stop offset="1" stop-color="#3E41B8"/></linearGradient>
+          <radialGradient id="brilho" cx="0.32" cy="0.22" r="0.6"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.45"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>
+          <filter id="neon" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="1.6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <!-- um hemisfério: lobos frontal, parietal, temporal e occipital,
+               desenhados uma vez e espelhados -->
+          <path id="hemiForma" d="M 116 18 C 104 7 85 5 72 13 C 57 7 38 13 33 29 C 17 31 7 47 13 62 C 2 74 4 95 16 104 C 8 121 17 140 35 144 C 39 161 59 172 77 166 C 89 176 108 176 116 168 Z"/>
+        </defs>
+        <g id="hemisferios">
+          <use href="#hemiForma" fill="url(#hemi)"/>
+          <use href="#hemiForma" fill="url(#hemi)" transform="translate(240 0) scale(-1 1)"/>
+          <use href="#hemiForma" fill="url(#brilho)"/>
+          <use href="#hemiForma" fill="url(#brilho)" transform="translate(240 0) scale(-1 1)" opacity="0.6"/>
+          <!-- as dobras: cada uma acende sozinha, como uma sinapse -->
+          <g id="dobrasEsq" fill="none" stroke="#DADCFF" stroke-width="3" stroke-linecap="round"><path class="dobra" d="M 106 28 C 94 32 94 47 81 49 C 70 51 66 41 55 43"/><path class="dobra" d="M 28 60 C 41 55 50 66 63 64 C 77 62 79 75 93 74 C 101 73 105 67 111 69"/><path class="dobra" d="M 20 92 C 33 86 43 97 56 93"/><path class="dobra" d="M 66 96 C 77 89 90 100 106 95"/><path class="dobra" d="M 28 123 C 41 115 53 126 66 120 C 79 114 87 125 102 120"/><path class="dobra" d="M 52 151 C 63 142 76 151 90 144 C 98 140 104 146 110 146"/></g>
+          <g id="dobrasDir" fill="none" stroke="#DADCFF" stroke-width="3" stroke-linecap="round" transform="translate(240 0) scale(-1 1)"><path class="dobra" d="M 106 28 C 94 32 94 47 81 49 C 70 51 66 41 55 43"/><path class="dobra" d="M 28 60 C 41 55 50 66 63 64 C 77 62 79 75 93 74 C 101 73 105 67 111 69"/><path class="dobra" d="M 20 92 C 33 86 43 97 56 93"/><path class="dobra" d="M 66 96 C 77 89 90 100 106 95"/><path class="dobra" d="M 28 123 C 41 115 53 126 66 120 C 79 114 87 125 102 120"/><path class="dobra" d="M 52 151 C 63 142 76 151 90 144 C 98 140 104 146 110 146"/></g>
+        </g>
+      </svg><b>Jarvis</b></div>
       <div id="nos"></div>
       <div class="no" id="noMkt">
         <div class="camada" id="mktTravado">
@@ -202,7 +282,7 @@
   </div>
 
   <!-- cena M: Marketing e BI na mesma resposta -->
-  <div id="cenaMkt" class="clip" data-start="0" data-duration="30">
+  <div id="cenaMkt" class="clip" data-start="0" data-duration="39">
     <div id="canal" class="vidro">
       <div class="tit">PX Ease por canal do médico · último mês</div>
       <div class="sub2">Força de vendas, bases do Marketing e quem chegou sozinho</div>
@@ -228,7 +308,7 @@
   </div>
 
   <!-- cena 2: o compositor -->
-  <div id="cena2" class="clip" data-start="0" data-duration="30">
+  <div id="cena2" class="clip" data-start="0" data-duration="39">
     <div id="compositor" class="vidro">
       <div id="chip">
         <div class="ico"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h8M12 8v8"/></svg></div>
@@ -246,7 +326,7 @@
   </div>
 
   <!-- cena 3: a planilha -->
-  <div id="cena3" class="clip" data-start="0" data-duration="30">
+  <div id="cena3" class="clip" data-start="0" data-duration="39">
     <div id="planilha" class="vidro">
       <div class="abas"><div class="aba ativa">Base</div><div class="aba" id="abaNotas"><i></i>Notas do Jarvis</div></div>
       <table>
@@ -263,52 +343,34 @@
     </div>
   </div>
 
-  <!-- cena 4: o print -->
-  <div id="cena4" class="clip" data-start="0" data-duration="30">
-    <div id="print" class="vidro">
-      <div class="tit">Vendas por rede · setembro</div>
-      <div class="barras"><i></i><i></i><i></i><i></i><i></i></div>
-      <div id="varredura"></div>
-    </div>
-    <div id="resposta" class="vidro">
-      <div class="de">
-        <svg width="46" height="46" viewBox="0 0 64 64">
-          <rect x="17" y="11.9" width="30" height="40.3" rx="15" fill="url(#c3)"/>
-          <rect x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9" fill="#1E1F5C"/>
-          <circle cx="40" cy="26.5" r="2.6" fill="#6ECC64"/>
-        </svg>
-        <span class="tag">Veio da imagem</span>
-      </div>
-      <p>São <b>5 redes</b> no gráfico, e a primeira vende <b>3 vezes</b> mais que a última.</p>
-    </div>
-  </div>
-
   <!-- cena 5: a lista -->
-  <div id="cena5" class="clip" data-start="0" data-duration="30">
+  <div id="cena5" class="clip" data-start="0" data-duration="39">
     <div id="lista">
-      <div class="item vidro"><div class="tique"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div><b>Marketing no cérebro</b><span>Área Médica, Email MKT e o canal do médico, cruzados com o BI todo dia</span></div></div>
-      <div class="item vidro"><div class="tique"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div><b>Planilhas e prints no chat</b><span>Até 20 mil linhas; coluna nova entra no fim, nada é sobrescrito</span></div></div>
-      <div class="item vidro"><div class="tique"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div><b>Nada fica guardado</b><span>O arquivo vive só durante a conversa</span></div></div>
+      <div class="item vidro"><div class="tique"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div><b>Modo Reconhecer</b><span>Pergunta nova: ele entende, reconhece o dado e responde com as premissas</span></div></div>
+      <div class="item vidro"><div class="tique"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div><b>Marketing no cérebro</b><span>Área Médica, Email MKT e o Digital + Orgânico, cruzados com o BI todo dia</span></div></div>
+      <div class="item vidro"><div class="tique"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div><b>Planilhas no chat</b><span>Até 20 mil linhas, coluna nova no fim; o arquivo vive só durante a conversa</span></div></div>
     </div>
   </div>
 
   <!-- textos das cenas do meio -->
-  <div id="textos" class="clip" data-start="0" data-duration="30">
-    <div id="cabeca"><span class="rotulo" id="rotulo">Cérebro 3.0</span></div>
+  <div id="textos" class="clip" data-start="0" data-duration="39">
+    <div id="cabeca"><span class="rotulo" id="rotulo">Modo Reconhecer</span></div>
     <div id="manchete">
+      <div class="frase" id="fr1">Pergunta nova? <em>Ele pensa como analista.</em></div>
+      <div class="frase" id="fr2">Reconhece o dado <em>antes de usar.</em></div>
+      <div class="frase" id="fr3">Escreve a consulta <em>no grão pedido.</em></div>
+      <div class="frase" id="fr4">E responde <em>com as premissas na mesa.</em></div>
       <div class="frase" id="fc1">Um cérebro com <em>a Ease Labs inteira.</em></div>
       <div class="frase" id="fc2">Nova área desbloqueada: <em>Marketing.</em></div>
       <div class="frase" id="fm">Marketing e BI, <em>na mesma resposta.</em></div>
       <div class="frase" id="f2">Traga a planilha. <em>Ele preenche.</em></div>
       <div class="frase" id="f3">Colunas vazias, <em>preenchidas com o banco.</em></div>
-      <div class="frase" id="f4">Cole um print. <em>Ele lê.</em></div>
       <div class="frase" id="f5">Feito para o <em>dia a dia.</em></div>
     </div>
-    <div id="exemplo">Dados de exemplo</div>
   </div>
 
   <!-- o mascote e o título -->
-  <div id="palco" class="clip" data-start="0" data-duration="30">
+  <div id="palco" class="clip" data-start="0" data-duration="39">
     <div id="sombra"></div>
     <div id="mascote">
       <svg viewBox="0 0 64 64">
@@ -323,27 +385,28 @@
         <rect x="17" y="11.9" width="30" height="40.3" rx="15" fill="#5558D4"/>
         <!-- 3.0, revelado de cima para baixo pela faixa de luz -->
         <g clip-path="url(#revela)">
-          <g transform="rotate(-14 32 40)"><path d="M 7,40 A 25,8 0 0,0 57,40" fill="none" stroke="#3E8F38" stroke-width="1.8" stroke-linecap="round" opacity="0.7"/></g>
+          <g transform="rotate(-14 32 40)"><path d="M 7,40 A 25,8 0 0,0 57,40" fill="none" stroke="#3E8F38" stroke-width="1.8" stroke-linecap="round" opacity="0.7"/>
+            <circle id="sateliteTras" cx="51.5" cy="44.9" r="2.9" fill="#9BE88F" opacity="0"/></g>
           <rect x="17" y="11.9" width="30" height="40.3" rx="15" fill="url(#c3)"/>
         </g>
         <rect x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9" fill="#1E1F5C"/>
         <path id="reflexo" d="M 22.5 24.2 H 33" stroke="#FFFFFF" stroke-width="0.9" stroke-linecap="round" opacity="0"/>
-        <circle cx="40" cy="26.5" r="2.4" fill="#6ECC64"/>
-        <circle id="olhoLuz" cx="40" cy="26.5" r="2.6" fill="#6ECC64" filter="url(#luz)" opacity="0"/>
+        <g id="olho"><circle cx="40" cy="26.5" r="2.4" fill="#6ECC64"/>
+        <circle id="olhoLuz" cx="40" cy="26.5" r="2.6" fill="#6ECC64" filter="url(#luz)" opacity="0"/></g>
         <g transform="rotate(-14 32 40)"><path d="M 7,40 A 25,8 0 0,1 57,40" fill="none" stroke="#6ECC64" stroke-width="2.4" stroke-linecap="round"/></g>
         <g clip-path="url(#revela)"><g transform="rotate(-14 32 40)"><path d="M 7,40 A 25,8 0 0,1 57,40" fill="none" stroke="url(#a3)" stroke-width="2.4" stroke-linecap="round"/></g></g>
         <g transform="rotate(-14 32 40)">
-          <circle cx="51.5" cy="44.9" r="2.9" fill="#6ECC64"/>
+          <circle id="satelite20" cx="51.5" cy="44.9" r="2.9" fill="#6ECC64"/>
           <circle id="satelite" cx="51.5" cy="44.9" r="2.9" fill="#9BE88F" filter="url(#luz)" opacity="0"/>
         </g>
         <rect id="faixa" x="8" y="10" width="48" height="1.2" rx="0.6" fill="#C8F7C0" filter="url(#luz)" opacity="0"/>
       </svg>
     </div>
     <div id="titulo">
+      <p id="intro">Introduzindo</p>
       <h1>Jarvis <span class="versao" id="versao">3.0</span></h1>
       <p id="lema">O cérebro da Ease Labs ficou maior.</p>
     </div>
-    <div id="botao">Experimentar</div>
   </div>
 </div>
 
@@ -353,18 +416,22 @@
   const todos = (sel) => gsap.utils.toArray(sel);
 
   // estados iniciais
-  gsap.set(['#cenaCerebro', '#cenaMkt', '#cena2', '#cena3', '#cena4', '#cena5', '#textos', '#botao'], { opacity: 0 });
+  gsap.set(['#cenaRec', '#cenaCerebro', '#cenaMkt', '#cena2', '#cena3', '#cena5', '#textos'], { opacity: 0 });
   gsap.set('.frase', { opacity: 0, y: 30 });
-  gsap.set(['#titulo h1', '#lema'], { opacity: 0, y: 40 });
+  gsap.set(['#intro', '#titulo h1', '#lema'], { opacity: 0, y: 40 });
   gsap.set('#mascote', { opacity: 0, scale: 0.6 });
   gsap.set('#sombra', { opacity: 0, scale: 0.6 });
   gsap.set(['#chip', '#abaNotas', '#selo'], { opacity: 0 });
 
   const FIM = 30;
+  // a cena do modo Reconhecer entra antes do cérebro e empurra o resto
+  const REC = 11.8, INICIO_REC = 3.9;
+  // a seção do print saiu (os prints terão anúncio próprio): o resto recua
+  const PRINTS = 3.0;
   // o fundo anda o tempo todo
-  tl.to('.m1', { x: 180, y: 90, duration: FIM, ease: 'sine.inOut' }, 0)
-    .to('.m2', { x: -160, y: -80, duration: FIM, ease: 'sine.inOut' }, 0)
-    .to('.m3', { x: 120, y: -60, duration: FIM, ease: 'sine.inOut' }, 0);
+  tl.to('.m1', { x: 180, y: 90, duration: FIM + REC - PRINTS, ease: 'sine.inOut' }, 0)
+    .to('.m2', { x: -160, y: -80, duration: FIM + REC - PRINTS, ease: 'sine.inOut' }, 0)
+    .to('.m3', { x: 120, y: -60, duration: FIM + REC - PRINTS, ease: 'sine.inOut' }, 0);
 
   // ── 1. o 2.0 vira 3.0 (0 → 3.2 s)
   tl.to('#mascote', { opacity: 1, scale: 1, duration: 0.6, ease: 'back.out(1.6)' }, 0.25)
@@ -376,13 +443,15 @@
     .to('#reflexo', { opacity: 0.3, duration: 0.3 }, 1.35)
     .to('#olhoLuz', { opacity: 1, duration: 0.3 }, 1.4)
     .to('#satelite', { opacity: 1, duration: 0.3 }, 1.65)
+    .to('#satelite20', { opacity: 0, duration: 0.3 }, 1.65)
     .to('#mascote', { scale: 1.06, duration: 0.18, yoyo: true, repeat: 1, ease: 'power2.out' }, 1.8)
+    .to('#intro', { opacity: 1, y: 0, duration: 0.5, ease: 'power3.out' }, 1.75)
     .to('#titulo h1', { opacity: 1, y: 0, duration: 0.6, ease: 'power3.out' }, 1.9)
     .fromTo('#versao', { scale: 0.6 }, { scale: 1, duration: 0.6, ease: 'back.out(2.2)' }, 2.05)
     .to('#lema', { opacity: 1, y: 0, duration: 0.6, ease: 'power3.out' }, 2.3);
 
   // ── o mascote sobe para o cabeçalho (3.4 s)
-  tl.to(['#titulo h1', '#lema'], { opacity: 0, y: -30, duration: 0.4, ease: 'power2.in' }, 3.3)
+  tl.to(['#intro', '#titulo h1', '#lema'], { opacity: 0, y: -30, duration: 0.4, ease: 'power2.in' }, 3.3)
     .to('#sombra', { opacity: 0, duration: 0.3 }, 3.3)
     // 400 px → 84 px, com o centro em (192, 112): à esquerda do rótulo
     .to('#mascote', { x: 192 - 960, y: 112 - 370, scale: 0.21, duration: 0.8, ease: 'power3.inOut' }, 3.4)
@@ -402,8 +471,8 @@
   // ── C. o cérebro (3.9 → 9.5 s): as áreas que o Jarvis já conhece, e o
   // Marketing trancado, que se abre. As posições ficam numa elipse em volta
   // do núcleo; o Marketing é o nó da direita.
-  const NUCLEO = { x: 960, y: 690 }, RX = 500, RY = 245, PASSO = 360 / 7;
-  const AREAS = ['Sell Out', 'Prescrição', 'PBM', 'Estoque', 'Força de Vendas', 'IC'];
+  const NUCLEO = { x: 960, y: 690 }, RX = 520, RY = 230, PASSO = 360 / 6;
+  const AREAS = ['Sell Out', 'Prescrição', 'PBM', 'Estoque', 'Força de Vendas'];
   const ponto = (k) => {
     const a = (k * PASSO) * Math.PI / 180;
     return { x: NUCLEO.x + RX * Math.cos(a), y: NUCLEO.y - RY * Math.sin(a) };
@@ -434,7 +503,7 @@
   // depois do desbloqueio o cérebro anda para a esquerda; as áreas do
   // Marketing brotam à direita do nó, já no lugar certo depois do deslize
   const DESLIZE = -230;
-  const SUBS = ['Área Médica', 'Email MKT', 'Canal do médico'];
+  const SUBS = ['Área Médica', 'Email MKT', 'Digital + Orgânico'];
   const subs = SUBS.map((nome, k) => {
     const p = { x: 1690 - DESLIZE, y: pMkt.y + (k - 1) * 128 };
     const lig = linha({ x: pMkt.x + 145, y: pMkt.y }, { x: p.x - 150, y: p.y }, 'lig-acesa');
@@ -459,7 +528,21 @@
 
   frase('#fc1', 3.95, 6.05);
   tl.to('#cenaCerebro', { opacity: 1, duration: 0.01 }, 3.95)
-    .to('#nucleo', { scale: 1, duration: 0.6, ease: 'back.out(1.8)' }, 4.0);
+    .to('#nucleo', { scale: 1, duration: 0.6, ease: 'back.out(1.8)' }, 4.0)
+    // o cérebro respira e as dobras acendem, como sinapses
+    .to('#hemisferios', { scale: 1.035, transformOrigin: '50% 50%', duration: 0.9, yoyo: true, repeat: 5, ease: 'sine.inOut' }, 4.6);
+  // sinapses: as dobras acendem em branco, uma de cada vez, alternando os
+  // hemisférios. Sem pontos soltos: as faíscas verdes pareciam sujeira no
+  // cérebro (2026-10-06).
+  const dobras = todos('#dobrasEsq .dobra').flatMap((d, k) => [d, todos('#dobrasDir .dobra')[k]]);
+  gsap.set(dobras, { opacity: 0.55 });
+  dobras.forEach((d, k) => {
+    for (let v = 0; v < 2; v++) {
+      const t = 4.8 + k * 0.2 + v * 2.0;
+      tl.to(d, { opacity: 1, stroke: '#FFFFFF', strokeWidth: 4, duration: 0.3, ease: 'power2.out' }, t)
+        .to(d, { opacity: 0.55, stroke: '#DADCFF', strokeWidth: 3, duration: 0.7, ease: 'power2.in' }, t + 0.35);
+    }
+  });
   ligacoes.forEach(({ l, no }, k) => {
     tl.to(l, { strokeDashoffset: 0, duration: 0.45, ease: 'power2.out' }, 4.3 + k * 0.09)
       .to(no, { opacity: 1, scale: 1, duration: 0.45, ease: 'back.out(2)' }, 4.5 + k * 0.09);
@@ -469,7 +552,8 @@
   pulsos.forEach(({ c, p }, k) => {
     for (let v = 0; v < 3; v++) {
       const t = 5.2 + k * 0.17 + v * 1.25;
-      tl.set(c, { attr: { cx: NUCLEO.x, cy: NUCLEO.y } }, t)
+      const borda = { x: NUCLEO.x + (p.x - NUCLEO.x) * 0.3, y: NUCLEO.y + (p.y - NUCLEO.y) * 0.3 };
+      tl.set(c, { attr: { cx: borda.x, cy: borda.y } }, t)
         .to(c, { opacity: 1, duration: 0.1 }, t)
         .to(c, { attr: { cx: p.x, cy: p.y }, duration: 0.7, ease: 'power1.in' }, t)
         .to(c, { opacity: 0, duration: 0.15 }, t + 0.6);
@@ -531,17 +615,8 @@
     .fromTo('#selo', { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.45, ease: 'back.out(2)' }, 10.8 + D)
     .to('#cena3', { opacity: 0, x: -60, duration: 0.4, ease: 'power2.in' }, 11.75 + D);
 
-  // 4. o print
-  frase('#f4', 12.1 + D, 14.75 + D);
-  tl.to('#cena4', { opacity: 1, duration: 0.01 }, 12.1 + D)
-    .from('#print', { opacity: 0, scale: 0.9, rotation: -2, duration: 0.55, ease: 'back.out(1.6)' }, 12.2 + D)
-    .from('#print .barras i', { scaleY: 0, transformOrigin: '50% 100%', duration: 0.5, stagger: 0.06, ease: 'power3.out' }, 12.35 + D)
-    .to('#varredura', { opacity: 1, duration: 0.1 }, 12.95 + D)
-    .to('#varredura', { y: 464, duration: 0.8, ease: 'power1.inOut' }, 12.95 + D)
-    .to('#varredura', { opacity: 0, duration: 0.15 }, 13.7 + D)
-    .from('#resposta', { opacity: 0, x: 40, duration: 0.6, ease: 'power3.out' }, 13.75 + D)
-    .to('#cena4', { opacity: 0, x: -60, duration: 0.4, ease: 'power2.in' }, 14.75 + D);
-
+  // (a seção do print saiu: os prints terão um anúncio próprio)
+  // Tudo depois dela volta PRINTS segundos (definido no topo).
   // 5. a lista: o 3.0 inteiro
   rotulo('Jarvis 3.0', 14.9 + D);
   frase('#f5', 15.1 + D, 17.8 + D);
@@ -556,33 +631,152 @@
   tl.to('#textos', { opacity: 0, duration: 0.3 }, 17.85 + D)
     .to('#mascote', { x: 0, y: -10, scale: 0.8, duration: 0.8, ease: 'power3.inOut' }, 18.0 + D)
     .to('#sombra', { opacity: 0.8, scale: 0.85, y: -50, duration: 0.6 }, 18.3 + D)
-    .set('#lema', { textContent: 'Marketing no cérebro. Planilhas e prints no chat.' }, 18.2 + D)
+    .set('#lema', { textContent: 'Reconhece o dado. Cruza o Marketing. Preenche planilhas.' }, 18.2 + D)
     .fromTo('#titulo h1', { opacity: 0, y: 30 }, { opacity: 1, y: -60, duration: 0.6, ease: 'power3.out' }, 18.55 + D)
     .fromTo('#lema', { opacity: 0, y: 30 }, { opacity: 1, y: -60, duration: 0.6, ease: 'power3.out' }, 18.75 + D)
-    .fromTo('#botao', { opacity: 0, scale: 0.8, y: -50 }, { opacity: 1, scale: 1, y: -50, duration: 0.5, ease: 'back.out(2.2)' }, 19.2 + D)
-    .to('#mascote', { rotation: -6, duration: 0.25, yoyo: true, repeat: 3, ease: 'sine.inOut' }, 19.5 + D)
+    .to('#olho', { scaleY: 0.12, svgOrigin: '40 26.5', duration: 0.09, yoyo: true, repeat: 1, ease: 'power1.inOut' }, 20.5 + D)
     .to('#root', { opacity: 1, duration: FIM - (19.8 + D) }, 19.8 + D);
 
+  // a volta do satélite: elipse do anel (centro 32,40; raios 25 e 8). Na
+  // metade de cima ele passa na frente do corpo; na de baixo, por trás.
+  const A0 = Math.atan2((44.9 - 40) / 8, (51.5 - 32) / 25);
+  const volta = { a: A0 };
+  const posicionar = () => {
+    const x = 32 + 25 * Math.cos(volta.a), y = 40 + 8 * Math.sin(volta.a);
+    const frente = Math.sin(volta.a) < 0 || Math.abs(x - 32) > 15;
+    gsap.set(['#satelite', '#sateliteTras'], { attr: { cx: x, cy: y } });
+    gsap.set('#satelite', { opacity: frente ? 1 : 0 });
+    gsap.set('#sateliteTras', { opacity: 1 });
+  };
+  tl.to(volta, { a: A0 + 2 * Math.PI, duration: 1.6, ease: 'sine.inOut', onUpdate: posicionar }, 18.8 + D)
+    .set('#sateliteTras', { opacity: 0 }, FIM - 0.01);
+
+  // ── R. o modo Reconhecer (ADR-0033), a primeira seção depois da abertura.
+  // Tudo que vinha a partir do cérebro anda REC segundos para a frente; o
+  // rótulo volta a "Cérebro 3.0" quando o cérebro entra.
+  tl.shiftChildren(-PRINTS, true, 14.8 + D);
+  rotulo('Cérebro 3.0', INICIO_REC);
+  tl.shiftChildren(REC, true, INICIO_REC);
+  {
+    const S = INICIO_REC;
+    const etapas = todos('.etapa');
+    const POS = [0, 460, 920, 1380].map((x) => x / 1380);
+    const ativar = (k, t) => {
+      const e = etapas[k];
+      tl.to(e.querySelector('.n'), { borderColor: '#5558D4', backgroundColor: '#5558D4', color: '#fff', duration: 0.3 }, t)
+        .to(e.querySelector('b'), { color: '#1A1D2E', duration: 0.3 }, t)
+        .to(e.querySelector('span'), { color: '#5B607A', duration: 0.3 }, t)
+        .fromTo(e.querySelector('.n'), { scale: 1 }, { scale: 1.12, duration: 0.18, yoyo: true, repeat: 1 }, t)
+        .to('#fluxo .progresso', { scaleX: POS[k], duration: 0.5, ease: 'power2.inOut' }, t - 0.2);
+    };
+    const concluir = (k, t) => {
+      const e = etapas[k];
+      tl.to(e.querySelector('.n'), { backgroundColor: '#6ECC64', borderColor: '#6ECC64', color: 'rgba(255,255,255,0)', duration: 0.3 }, t)
+        .to(e.querySelector('.n svg'), { opacity: 1, duration: 0.25 }, t + 0.05);
+    };
+    const painel = (id, entra, sai) => {
+      tl.fromTo(id, { opacity: 0, x: 40 }, { opacity: 1, x: 0, duration: 0.55, ease: 'power3.out' }, entra);
+      if (sai) tl.to(id, { opacity: 0, x: -30, duration: 0.35, ease: 'power2.in' }, sai);
+    };
+    gsap.set(['#sondas', '#consultaRec', '#respostaRec', '#volta', '.capt'], { opacity: 0 });
+    gsap.set('.sonda, .regra', { opacity: 0, x: 24 });
+    gsap.set('#fluxo', { opacity: 0, y: 16 });
+
+    tl.to('#cenaRec', { opacity: 1, duration: 0.01 }, S)
+      .to('#fluxo', { opacity: 1, y: 0, duration: 0.5, ease: 'power3.out' }, S + 0.25)
+      .from('#perguntaRec', { opacity: 0, y: 40, scale: 0.96, duration: 0.6, ease: 'power3.out' }, S + 0.4);
+
+    // 1. Entender: marca na pergunta o que foi pedido
+    frase('#fr1', S + 0.05, S + 3.55);
+    ativar(0, S + 1.0);
+    ['#mk1', '#mk2', '#mk3'].forEach((mk, k) => {
+      const t = S + 1.35 + k * 0.45;
+      tl.to(mk, { boxShadow: 'inset 0 -0.42em 0 rgba(85, 88, 212, 0.22)', color: '#2E3190', duration: 0.3 }, t)
+        .fromTo(`#cp${k + 1}`, { opacity: 0, y: 12, scale: 0.9 }, { opacity: 1, y: 0, scale: 1, duration: 0.4, ease: 'back.out(2)' }, t + 0.1);
+    });
+    concluir(0, S + 3.0);
+
+    // 2. Reconhecer: quatro consultas pequenas, cada uma checando uma coisa
+    frase('#fr2', S + 3.75, S + 6.6);
+    ativar(1, S + 3.25);
+    painel('#sondas', S + 3.35, S + 6.75);
+    todos('.sonda').forEach((sonda, k) => {
+      const t = S + 3.8 + k * 0.62;
+      tl.to(sonda, { opacity: 1, x: 0, duration: 0.35, ease: 'power3.out' }, t)
+        .fromTo(sonda.querySelector('.lupa'), { rotation: -18, transformOrigin: '50% 50%' },
+          { rotation: 18, duration: 0.16, yoyo: true, repeat: 1, ease: 'sine.inOut' }, t + 0.08)
+        .to(sonda.querySelector('.ico'), { backgroundColor: '#6ECC64', duration: 0.22 }, t + 0.42)
+        .to(sonda.querySelector('.lupa'), { opacity: 0, duration: 0.12 }, t + 0.42)
+        .fromTo(sonda.querySelector('.ok'), { opacity: 0, scale: 0.4, transformOrigin: '50% 50%' },
+          { opacity: 1, scale: 1, duration: 0.3, ease: 'back.out(2.4)' }, t + 0.46)
+        .fromTo(sonda.querySelector('.achado'), { opacity: 0, x: 12 }, { opacity: 1, x: 0, duration: 0.3, ease: 'power3.out' }, t + 0.5);
+    });
+    concluir(1, S + 6.4);
+
+    // 3. Consultar: no grão pedido, com o que viu
+    ativar(2, S + 6.65);
+    painel('#consultaRec', S + 6.95, S + 9.0);
+    todos('.regra').forEach((r, k) => tl.to(r, { opacity: 1, x: 0, duration: 0.35, ease: 'power3.out' }, S + 7.35 + k * 0.32));
+    tl.from('#consultaRec .grao', { opacity: 0, y: 12, duration: 0.35, ease: 'back.out(2)' }, S + 8.4);
+    concluir(2, S + 8.75);
+
+    // 4. Responder: premissas na mesa, e a pergunta de volta
+    frase('#fr3', S + 6.85, S + 8.8);
+    frase('#fr4', S + 9.05, S + 11.35);
+    ativar(3, S + 9.0);
+    painel('#respostaRec', S + 9.25);
+    tl.fromTo('#premissas', { backgroundColor: '#F4F5FB' }, { backgroundColor: '#E3F6E6', duration: 0.4, yoyo: true, repeat: 1 }, S + 9.95)
+      .fromTo('#volta', { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.5, ease: 'back.out(1.8)' }, S + 10.4);
+    concluir(3, S + 10.9);
+    tl.to('#cenaRec', { opacity: 0, x: -60, duration: 0.4, ease: 'power2.in' }, S + 11.35);
+  }
+
+  // `filme` é o que o HyperFrames comanda (e o app, no iframe).
+  tl.paused(false);
+  const filme = gsap.timeline({ paused: true });
+  filme.add(tl, 0);
+
   window.__timelines = window.__timelines || {};
-  window.__timelines['main'] = tl;
-  tl.seek(0);
+  window.__timelines['main'] = filme;
+  filme.seek(0);
 
   // Fora do HyperFrames (dentro do app), a página toca sozinha e se ajusta à
   // janela. O modal fica sabendo do fim por postMessage.
   const params = new URLSearchParams(location.search);
   if (params.has('tocar') || params.has('fim')) {
+    // centrado: em tela cheia (outra proporção que 16:9) sobra faixa dos lados
     const ajustar = () => {
       const escala = Math.min(innerWidth / 1920, innerHeight / 1080);
-      document.body.style.transform = `scale(${escala})`;
+      const dx = (innerWidth - 1920 * escala) / 2, dy = (innerHeight - 1080 * escala) / 2;
+      document.body.style.transform = `translate(${dx}px, ${dy}px) scale(${escala})`;
     };
     ajustar();
     addEventListener('resize', ajustar);
-    tl.eventCallback('onComplete', () => parent.postMessage({ jarvis: 'anuncio-fim' }, location.origin));
-    const comecar = () => (params.has('fim') ? tl.progress(1) : tl.play(0));
+    const avisar = (extra = {}) => parent.postMessage({
+      jarvis: 'anuncio-estado', t: filme.time(), duracao: filme.duration(),
+      tocando: !filme.paused() && filme.progress() < 1, ...extra,
+    }, location.origin);
+    filme.eventCallback('onUpdate', () => avisar());
+    filme.eventCallback('onComplete', () => {
+      avisar({ fim: true });
+      parent.postMessage({ jarvis: 'anuncio-fim' }, location.origin);
+    });
+    const comecar = () => {
+      if (params.has('fim')) filme.progress(1).pause(); else filme.play(0);
+      avisar();
+    };
     // espera a fonte, senão a primeira cena pisca em outra letra
     (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(comecar);
+    // Comandos do player do app.
     addEventListener('message', (e) => {
-      if (e.origin === location.origin && e.data && e.data.jarvis === 'anuncio-de-novo') tl.play(0);
+      if (e.origin !== location.origin || !e.data) return;
+      const { jarvis: cmd } = e.data;
+      if (cmd === 'anuncio-de-novo') filme.play(0);
+      else if (cmd === 'anuncio-pausar') filme.pause();
+      else if (cmd === 'anuncio-tocar') (filme.progress() >= 1 ? filme.play(0) : filme.play());
+      else if (cmd === 'anuncio-ir') { filme.seek(Math.max(0, Math.min(e.data.t, filme.duration()))); if (e.data.tocar) filme.play(); }
+      else return;
+      avisar();
     });
   }
 </script>

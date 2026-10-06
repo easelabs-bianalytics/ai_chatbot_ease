@@ -219,6 +219,31 @@
     setTimeout(() => el.remove(), duracao);
   };
 
+  // O ritmo da órbita em cada estado do mascote. O CSS tem UMA animação do
+  // satélite (7 s) para os três estados; trocar a duração pela classe fazia a
+  // bolinha pular ou voltar ao começo do anel a cada troca (login, 2026-10-06).
+  // `updatePlaybackRate` muda a velocidade a partir de onde ela está.
+  const RITMO_DA_ORBITA = { 'jarvis--consultando': 7 / 1.6, 'jarvis--pensando': 7 / 4, 'jarvis--vivo': 1 };
+  const ritmoDaOrbita = (svg) => {
+    const estado = Object.keys(RITMO_DA_ORBITA).find((c) => svg.classList.contains(c));
+    if (!estado) return;
+    svg.querySelectorAll('.j-satelite').forEach((sat) => (sat.getAnimations?.() || []).forEach((a) => {
+      if (a.playbackRate !== RITMO_DA_ORBITA[estado]) a.updatePlaybackRate(RITMO_DA_ORBITA[estado]);
+    }));
+  };
+  new MutationObserver((mudancas) => mudancas.forEach((m) => {
+    if (m.type === 'attributes') {
+      if (m.target.classList?.contains('jarvis')) ritmoDaOrbita(m.target);
+      return;
+    }
+    m.addedNodes.forEach((n) => {
+      if (n.nodeType !== 1) return;
+      if (n.classList.contains('jarvis')) ritmoDaOrbita(n);
+      n.querySelectorAll('svg.jarvis').forEach(ritmoDaOrbita);
+    });
+  })).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+  document.querySelectorAll('svg.jarvis').forEach(ritmoDaOrbita);
+
   const novoId = () => (window.crypto?.randomUUID
     ? crypto.randomUUID()
     : `web-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -400,13 +425,12 @@
     // acontece, antes de a conversa entrar em cena. Quem chega sem nunca ter
     // visto o Jarvis precisa saber o que ele faz antes de olhar para um campo
     // de pergunta em branco.
-    // Quem já conhecia o Jarvis vê as novidades da versão uma vez. Quem está
-    // chegando agora faz o passeio, que já mostra os anexos, e não ganha os
-    // dois de uma vez.
+    // O vídeo das novidades da versão, uma vez por pessoa (a marca é do
+    // servidor, não do navegador): quem está chegando vê depois do passeio
+    // (`fecharPasseio`); quem já conhecia, no primeiro login depois do deploy.
     if (usuario.passeio_pendente) {
-      gravarChave(CHAVE_NOVIDADES, '1');
       setTimeout(() => abrirPasseio(), 320);
-    } else if (!lerChave(CHAVE_NOVIDADES)) {
+    } else if (usuario.novidades_pendentes) {
       setTimeout(() => abrirNovidades(), 600);
     }
     avisarDaCota();
@@ -1039,15 +1063,35 @@
             : 'Primeira vez por aqui? <strong>Conheça o Jarvis em 1 minuto</strong>'}</span>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         </button>` : ''}
-        <div class="sugestoes">${SUGESTOES.map((s, i) => `
+      </div>`;
+    // Os cartões moram fora de #mensagens, logo abaixo do campo de pergunta
+    // (ver `modoInicio`).
+    $('#sugestoesInicio').innerHTML = `${SUGESTOES.map((s, i) => `
           <button class="sugestao" type="button" data-texto="${esc(s.texto)}" style="--tema-cor:${s.cor};animation-delay:${80 + i * 45}ms">
             <span class="sugestao-tema">${esc(s.tema)}</span>
             <span class="sugestao-texto">${esc(s.texto)}</span>
-          </button>`).join('')}
-        </div>
-      </div>`;
+          </button>`).join('')}`;
     convidarParaPasseio();
   };
+
+  // A pergunta no centro (2026-10-06): na tela inicial o campo de pergunta
+  // fica logo abaixo da saudação, e os cartões de sugestão logo abaixo dele —
+  // no rodapé o campo ficava longe, com um vazio entre os cartões e ele.
+  // O formulário NUNCA sai do lugar: a primeira versão o movia para dentro de
+  // #mensagens, e quando a conversa redesenhava a área ele era apagado junto
+  // (a tela mostrou "nullnullnull" no lugar do campo). Quem muda é o CSS
+  // (`.chat-main--inicio`) e os cartões, que moram fora de #mensagens.
+  const modoInicio = () => {
+    const inicio = Boolean($('#mensagens > #boasVindas'));
+    $('.chat-main').classList.toggle('chat-main--inicio', inicio);
+    $('#sugestoesInicio').hidden = !inicio;
+  };
+  new MutationObserver(modoInicio).observe($('#mensagens'), { childList: true });
+  modoInicio();
+  $('#sugestoesInicio').addEventListener('click', (ev) => {
+    const sugestao = ev.target.closest('.sugestao');
+    if (sugestao) enviar(sugestao.dataset.texto);
+  });
 
   // O cartão de cabeçalho saiu da tela; o título continua existindo na aba
   // do navegador e na lista de conversas, que é onde ele é útil.
@@ -1192,10 +1236,16 @@
     // `white-space: pre-wrap` (a pergunta preserva os parágrafos de quem
     // escreveu), então cada quebra de linha do HTML virava espaço em branco
     // desenhado na tela — era daí o vão em cima e embaixo da ficha.
-    const ficha = (icone, nome, tipo, variante = '') =>
-      `<div><div class="bolha-anexo"><span class="bolha-anexo-ladrilho ${variante}">${icone}</span>`
-      + `<span class="bolha-anexo-texto"><span class="bolha-anexo-nome">${esc(nome)}</span>`
-      + `<span class="bolha-anexo-tipo">${esc(tipo)}</span></span></div></div>`;
+    // Com `baixar`, a ficha é o link do arquivo enviado: ele fica na conversa
+    // (ADR-0034) e a pessoa baixa de novo quando quiser.
+    const ficha = (icone, nome, tipo, variante = '', baixar = '') => {
+      const abre = baixar
+        ? `<a class="bolha-anexo bolha-anexo-link" href="${esc(baixar)}" download title="Baixar o arquivo enviado">`
+        : '<div class="bolha-anexo">';
+      return `<div>${abre}<span class="bolha-anexo-ladrilho ${variante}">${icone}</span>`
+        + `<span class="bolha-anexo-texto"><span class="bolha-anexo-nome">${esc(nome)}</span>`
+        + `<span class="bolha-anexo-tipo">${esc(tipo)}</span></span>${baixar ? '</a>' : '</div>'}</div>`;
+    };
     let anexo = '';
     if (m.anexo?.tipo === 'imagem') {
       const src = m.anexo.miniatura || m.anexo.previa;
@@ -1207,7 +1257,8 @@
         ? `<button class="bolha-imagem" type="button" data-visor="${esc(cheia)}" title="Abrir a imagem"><img src="${esc(src)}" alt="Imagem enviada"></button>`
         : ficha(ICONES.imagem, 'Imagem enviada', 'Imagem', 'ladrilho-imagem');
     } else if (m.anexo) {
-      anexo = ficha(ICONES.xlsx, m.anexo.nome, /\.csv$/i.test(m.anexo.nome || '') ? 'CSV' : 'Planilha');
+      anexo = ficha(ICONES.xlsx, m.anexo.nome, /\.csv$/i.test(m.anexo.nome || '') ? 'CSV' : 'Planilha', '',
+        m.anexo.baixar || '');
     }
     // A hora sai do balão e vira o título: numa conversa de trabalho ela quase
     // nunca importa, e repetida em toda pergunta vira ruído.
@@ -2626,9 +2677,9 @@
       estado: 'jarvis--consultando',
       objetos: `
         <span class="cena-sql">
-          <span><b>SELECT</b> rede, <b>SUM</b>(und)</span>
-          <span><b>FROM</b> cddd.vendas</span>
-          <span><b>WHERE</b> competencia = 202608</span>
+          <span><b>SELECT</b> date, <b>SUM</b>(cdd)</span>
+          <span><b>FROM</b> cddd.vw_sell_out</span>
+          <span><b>GROUP BY</b> 1</span>
         </span>
         <span class="cena-tabela">
           <i style="--w:70%"></i><i style="--w:44%"></i><i style="--w:58%"></i>
@@ -2854,7 +2905,10 @@
       $('.convite-passeio')?.remove();
     }
     if (destino === lateral) acenarNaLateral();
-    if (perguntar) $('#campoPergunta').focus();
+    // Primeiro acesso: depois do passeio vem o vídeo das novidades (o botão
+    // "Fazer uma pergunta" dele leva ao campo).
+    if (state.usuario?.novidades_pendentes) setTimeout(() => abrirNovidades(), 450);
+    else if (perguntar) $('#campoPergunta').focus();
   };
 
   // O pouso: o mascote da lateral acena ao receber o Jarvis de volta — é o
@@ -2914,23 +2968,28 @@
   convidarParaPasseio();
 
   // ---------------------------------------------------------- novidades
-  // O anúncio do 3.0 (motor de anexos). A chave é por versão: o 3.1 terá a
-  // dele. Fica no navegador, como as do passeio: quem trocar de computador
-  // vê de novo uma vez, o que não incomoda ninguém.
-  const CHAVE_NOVIDADES = 'jarvis:novidades-3.0';
+  // O anúncio do 3.0 (modo Reconhecer, Marketing no cérebro, planilhas). A
+  // marca de "já viu" é do servidor e por versão (NOVIDADES_VERSAO, em
+  // web/views.py): uma vez por pessoa, em qualquer computador.
   let focoAntesDasNovidades = null;
 
   const abrirNovidades = () => {
     const caixa = $('#novidades');
     if (!caixa.hidden || !$('#walk').hidden) return;
-    gravarChave(CHAVE_NOVIDADES, '1');
+    if (state.usuario?.novidades_pendentes) {
+      state.usuario.novidades_pendentes = false;
+      api('/api/auth/novidades/', { method: 'POST', body: {} }).catch(() => {});
+    }
     focoAntesDasNovidades = document.activeElement;
     // Com "reduzir movimento", o filme abre parado no quadro final.
     const filme = $('#novidadesFilme');
-    filme.src = `${filme.dataset.src}?${semMovimento() ? 'fim' : 'tocar'}=1`;
+    // `&v=`: o iframe não recarrega com o Ctrl+Shift+R da página, e sem ele o
+    // navegador mostrava o filme antigo de cache depois de cada mudança.
+    filme.src = `${filme.dataset.src}?${semMovimento() ? 'fim' : 'tocar'}=1&v=${Date.now()}`;
+    $('#novidadesPausa').hidden = true;
     $('#novidadesDeNovo').hidden = semMovimento();
     caixa.hidden = false;
-    $('#novidadesExperimentar').focus({ preventScroll: true });
+    $('#novidadesFechar').focus({ preventScroll: true });
   };
 
   const fecharNovidades = () => {
@@ -2938,6 +2997,10 @@
     if (caixa.hidden) return;
     caixa.hidden = true;
     $('#novidadesFilme').src = 'about:blank';   // para o filme
+    $('#novidadesPausa').hidden = true;
+    $('#novidadesTela').classList.remove('parado');
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    estadoNov = null;
     focoAntesDasNovidades?.focus?.({ preventScroll: true });
     focoAntesDasNovidades = null;
   };
@@ -2945,17 +3008,73 @@
   $('#novidadesFechar').addEventListener('click', fecharNovidades);
   // clicar fora do cartão fecha, como no visor
   $('#novidades').addEventListener('click', (ev) => { if (ev.target.id === 'novidades') fecharNovidades(); });
-  $('#novidadesDeNovo').addEventListener('click', () => {
-    $('#novidadesFilme').contentWindow?.postMessage({ jarvis: 'anuncio-de-novo' }, location.origin);
+  // O filme é uma página animada no iframe: ele avisa a cada quadro se está
+  // tocando (`anuncio-estado`), e o clique nele pausa e retoma. Antes o
+  // clique recomeçava do zero, e quem queria ler uma cena perdia o fio.
+  const comandoNov = (jarvis, extra = {}) =>
+    $('#novidadesFilme').contentWindow?.postMessage({ jarvis, ...extra }, location.origin);
+  let estadoNov = null;
+  const relogioNov = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+  window.addEventListener('message', (ev) => {
+    if (ev.origin !== location.origin || ev.data?.jarvis !== 'anuncio-estado' || $('#novidades').hidden) return;
+    estadoNov = ev.data;
+    const { t, duracao, tocando } = ev.data;
+    const acabou = ev.data.fim || t >= duracao - 0.05;
+    $('#novidadesPausa').hidden = tocando || acabou;
+    $('#novidadesTela').classList.toggle('parado', !tocando);
+    $('#novidadesTocar').setAttribute('aria-label', tocando ? 'Pausar' : 'Tocar');
+    $('#novidadesTempo').textContent = relogioNov(t);
+    $('#novidadesTotal').textContent = relogioNov(duracao);
+    $('#novidadesCheio').style.width = `${Math.min(100, (t / duracao) * 100)}%`;
+    const barra = $('#novidadesProgresso');
+    barra.setAttribute('aria-valuemax', String(Math.round(duracao)));
+    barra.setAttribute('aria-valuenow', String(Math.round(t)));
   });
-  // O convite é usar: fecha e abre o seletor de arquivo do compositor. O
-  // clique ainda é do usuário, então o navegador deixa o seletor abrir.
+
+  const alternarNov = () => {
+    if (!estadoNov) return;
+    comandoNov(estadoNov.tocando ? 'anuncio-pausar' : 'anuncio-tocar');
+  };
+  const telaCheiaNov = () => {
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    else $('#novidadesTela').requestFullscreen?.().catch(() => {});
+  };
+
+  // clicar no vídeo pausa e retoma; duplo clique alterna a tela cheia
+  $('#novidadesTela').addEventListener('click', (ev) => {
+    if (semMovimento() || ev.target.closest('#novidadesBarra')) return;
+    alternarNov();
+  });
+  $('#novidadesTela').addEventListener('dblclick', (ev) => {
+    if (ev.target.closest('#novidadesBarra')) return;
+    telaCheiaNov();
+  });
+  $('#novidadesTocar').addEventListener('click', alternarNov);
+  $('#novidadesTelaCheia').addEventListener('click', telaCheiaNov);
+  $('#novidadesProgresso').addEventListener('click', (ev) => {
+    if (!estadoNov) return;
+    const caixa = ev.currentTarget.getBoundingClientRect();
+    const f = Math.max(0, Math.min(1, (ev.clientX - caixa.left) / caixa.width));
+    comandoNov('anuncio-ir', { t: f * estadoNov.duracao, tocar: estadoNov.tocando });
+  });
+  $('#novidadesProgresso').addEventListener('keydown', (ev) => {
+    if (!estadoNov || !['ArrowLeft', 'ArrowRight'].includes(ev.key)) return;
+    ev.preventDefault();
+    comandoNov('anuncio-ir', { t: estadoNov.t + (ev.key === 'ArrowRight' ? 5 : -5), tocar: estadoNov.tocando });
+  });
+  $('#novidadesDeNovo').addEventListener('click', () => comandoNov('anuncio-de-novo'));
+  // O convite é usar: fecha e põe o cursor no campo de pergunta.
   $('#novidadesExperimentar').addEventListener('click', () => {
     fecharNovidades();
-    $('#btnAnexar').click();
+    $('#campoPergunta')?.focus({ preventScroll: true });
   });
+
   document.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape' && !$('#novidades').hidden) fecharNovidades();
+    if ($('#novidades').hidden) return;
+    // em tela cheia, o Esc só sai dela (o navegador cuida); não fecha o modal
+    if (ev.key === 'Escape' && !document.fullscreenElement) fecharNovidades();
+    else if (ev.key === ' ' && !ev.target.closest('button, [role="slider"]')) { ev.preventDefault(); alternarNov(); }
   });
 
   // ---------------------------------------------------------- limites
@@ -3249,11 +3368,16 @@
   // O palco do login: uma pergunta de exemplo entra, o Jarvis consulta a
   // tabela de onde a resposta sairia, e a resposta chega com a fonte. Sem
   // número: o que ele mostra é o caminho, que é o que o produto promete.
-  // As tabelas são as do catálogo, para ninguém do BI estranhar o nome.
+  // Cada exemplo é uma pergunta que o Jarvis responde de verdade, com a tabela
+  // que a consulta de referência usa (chatbot_bi_referencia_querys.md). Até
+  // 2026-10-06 o palco mostrava "sell-in por rede", que ele não responde, e
+  // uma view de prescrição que nenhuma consulta usa.
   const DEMOS = [
-    { pergunta: 'Quantas adesões ao PBM tivemos por mês em 2026?', onde: 'pbm.fato_pbm_adesoes' },
-    { pergunta: 'Como evoluiu a prescrição da Ease mês a mês?', onde: 'audit.vw_fato_prescricao_remota' },
-    { pergunta: 'Qual foi o sell-in por rede em agosto?', onde: 'estoque_redes.fato_sell_in' },
+    { pergunta: 'Como evoluiu a prescrição da Ease mês a mês?', onde: 'audit.prescricao' },          // A01/A04
+    { pergunta: 'Qual foi o sell out da Ease em agosto?', onde: 'cddd.vw_sell_out' },                 // B01
+    { pergunta: 'Quantas adesões ao PBM tivemos por mês em 2026?', onde: 'pbm.fato_pbm_adesoes' },    // D01
+    { pergunta: 'Quanto do PX Ease vem do Digital + Orgânico?', onde: 'audit.prescricao × marketing' }, // M08
+    { pergunta: 'Qual o estoque de cada rede hoje?', onde: 'estoque_redes.vw_estoque_cd_recente' },   // C01
     { pergunta: 'Por que a prescrição caiu em maio?', onde: '3 hipóteses, uma por uma', porque: true },
   ];
   const palco = { demo: 0, timers: [] };

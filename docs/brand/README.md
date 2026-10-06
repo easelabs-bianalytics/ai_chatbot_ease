@@ -11,13 +11,15 @@ O Jarvis é o copiloto de dados da Ease Labs (o nome do produto; o papel,
 
 ## Ícone do app (favicon)
 
-`app/web/static/web/favicon.svg` é o ícone: o mascote, com a órbita, sobre
-um ladrilho índigo profundo (`#2E3190` → `#161747`) com um brilho verde no
-canto. O ladrilho existe porque a silhueta solta sumia na aba escura do
-navegador e virava uma mancha roxa em 16 px. Dele saem, renderizados do
-mesmo SVG:
+`app/web/static/web/favicon.svg` é o ícone: a opção **H** de
+`jarvis-3.0-favicons.html`, escolhida em 2026-10-06 depois de testar a G (só
+a viseira) na prática — um close no rosto do mascote 3.0 (viseira, olho e o
+anel atravessando, cortados pelas bordas) sobre um ladrilho lavanda claro
+(`#EEF0FF`). O close deixa o Jarvis legível em 16 px; o ladrilho existe
+porque a silhueta solta sumia na aba escura do navegador. Do SVG saem,
+renderizados:
 
-- `favicon-32.png` — reserva para navegador que não lê SVG;
+- `favicon.png` (512 px) e `favicon-32.png` — reserva para navegador que não lê SVG;
 - `apple-touch-icon.png` (180 px) — tela inicial do iPhone, sem cantos
   arredondados (o iOS arredonda sozinho).
 

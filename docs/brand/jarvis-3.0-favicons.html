@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jarvis 3.0 · favicon</title>
+<style>
+  :root { --bg:#F4F5FB; --card:#fff; --tx:#1A1D2E; --mu:#6B7088; --bd:#E6E7F0; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--tx); font:15px/1.5 Inter, system-ui, sans-serif; padding:24px 16px 60px; }
+  main { max-width:1180px; margin:0 auto; }
+  h1 { font-size:22px; margin:0 0 4px; } h2.secao { font-size:17px; margin:30px 0 4px; }
+  p.sub { color:var(--mu); margin:0 0 16px; max-width:860px; }
+  .grade { display:grid; grid-template-columns:repeat(auto-fill, minmax(340px, 1fr)); gap:16px; }
+  .op { background:var(--card); border:1px solid var(--bd); border-radius:16px; padding:16px 18px 18px; }
+  .op h3 { font-size:15px; margin:0 0 2px; } .op small { color:var(--mu); display:block; min-height:40px; font-size:12.5px; margin-bottom:12px; }
+  .tamanhos { display:flex; align-items:flex-end; gap:18px; margin-bottom:14px; }
+  .tamanhos div { display:flex; flex-direction:column; align-items:center; gap:4px; font-size:11px; color:var(--mu); }
+  .aba { display:flex; align-items:center; gap:8px; height:34px; padding:0 12px; border-radius:10px 10px 0 0; width:220px; font-size:12.5px; margin-top:6px; }
+  .aba.clara { background:#FFFFFF; color:#1F2330; border:1px solid #DADCE5; border-bottom:0; }
+  .aba.escura { background:#35363A; color:#E8EAED; }
+  .barra { height:8px; border-radius:0 0 6px 6px; margin-bottom:4px; width:220px; }
+  .barra.clara { background:#DEE1E6; } .barra.escura { background:#202124; }
+  .aba svg { flex-shrink:0; }
+  /* a lateral do app */
+  .laterais { display:flex; gap:16px; flex-wrap:wrap; }
+  .lateral { width:280px; border-radius:16px; padding:16px; display:flex; align-items:center; gap:12px; border:1px solid var(--bd); }
+  .lateral.clara { background:#FBFBFD; --contorno:#FBFBFD; }
+  .lateral.escura { background:#171A24; --contorno:#171A24; border-color:#262A38; }
+  .lateral b { display:block; font-size:14px; font-weight:600; }
+  .lateral.clara b { color:#1A1D2E; } .lateral.escura b { color:#E8EAF2; }
+  .lateral span { font-size:12px; color:#6B7088; }
+  .versao { background:linear-gradient(110deg, #5558D4 10%, #4FB34A 75%, #8FE584 100%); -webkit-background-clip:text; background-clip:text; color:transparent; }
+</style>
+</head>
+<body>
+<main>
+<h1>Jarvis 3.0: favicon a partir do logo</h1>
+<p class="sub">Todas as opções são o mascote 3.0 que escolhemos — corpo da opção 5 e anel V. Muda o fundo, o recorte e a escala. Cada uma em 64, 32 e 16 px (o tamanho real da aba), numa aba clara e numa escura.</p>
+
+<h2 class="secao">Ao lado do nome, no app (já trocado no código local)</h2>
+<p class="sub">O ícone da lateral era só o corpo, sem o anel. Agora é o mascote inteiro do 3.0.</p>
+<div class="laterais" id="laterais"></div>
+
+<h2 class="secao">As escolhidas: C, F e G</h2>
+<p class="sub">As três que ficaram da primeira leva, como estavam.</p>
+<div class="grade" id="grade"></div>
+
+<h2 class="secao">Opções novas</h2>
+<p class="sub">Cruzamentos das escolhidas e caminhos que ainda não tinham aparecido.</p>
+<div class="grade" id="gradeNovas"></div>
+
+<h2 class="secao">Variações da G (só a viseira)</h2>
+<p class="sub">A G reduz o Jarvis ao que mais o identifica: a viseira e o olho verde. Aqui ela muda de fundo, de forma e ganha (ou não) o anel do 3.0.</p>
+<div class="grade" id="gradeG"></div>
+</main>
+<script>
+const V = '#6ECC64', SAT = '#9BE88F';
+/* O mascote 3.0 (anel V), no desenho do favicon: a metade de cima passa atrás. */
+function mascote(i, contorno, satContorno = contorno) {
+  return `<defs>
+      <linearGradient id="c${i}" x1="0.2" y1="0" x2="0.8" y2="1"><stop offset="0" stop-color="#7C80F7"/><stop offset="1" stop-color="#4A4DC4"/></linearGradient>
+      <linearGradient id="a${i}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#4FB34A"/><stop offset="1" stop-color="#A8F09E"/></linearGradient>
+      <filter id="l${i}" x="-150%" y="-150%" width="400%" height="400%"><feGaussianBlur stdDeviation="0.9" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    </defs>
+    <g transform="rotate(-14 32 40)"><path d="M 7,40 A 25,8 0 0,1 57,40" fill="none" stroke="#3E8F38" stroke-width="2.2" stroke-linecap="round" opacity="0.75"/></g>
+    <rect x="17" y="11.9" width="30" height="40.3" rx="15" fill="url(#c${i})" ${contorno ? `stroke="${contorno}" stroke-width="2.6" paint-order="stroke"` : ''}/>
+    <rect x="18.4" y="21.6" width="27.2" height="9.8" rx="4.9" fill="#14153F"/>
+    <path d="M 22.5 24.2 H 33" stroke="#FFFFFF" stroke-width="0.9" stroke-linecap="round" opacity="0.3"/>
+    <circle cx="40" cy="26.5" r="2.9" fill="${V}" filter="url(#l${i})"/>
+    <g transform="rotate(-14 32 40)">
+      <path d="M 7,40 A 25,8 0 0,0 57,40" fill="none" stroke="url(#a${i})" stroke-width="2.8" stroke-linecap="round"/>
+      <circle cx="51.5" cy="44.9" r="3.2" fill="${SAT}" ${satContorno ? `stroke="${satContorno}" stroke-width="1.4" paint-order="stroke"` : ''} filter="url(#l${i})"/>
+    </g>`;
+}
+const escala = (s, conteudo) => `<g transform="translate(32 32) scale(${s}) translate(-32 -32)">${conteudo}</g>`;
+const INDIGO = (i) => `<linearGradient id="f${i}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2E3190"/><stop offset="1" stop-color="#161747"/></linearGradient>`;
+const close = (i, contorno, s = 1.75) => `<g transform="translate(32 40) scale(${s}) translate(-32 -32)">${mascote(i, contorno)}</g>`;
+
+/* A viseira: o rosto do Jarvis. `fundo` é o que vai atrás; o resto é igual. */
+function viseira(i, { fundo = '', x = 8, y = 22, w = 48, h = 20, olho = 5.2, contorno = '', anel = false } = {}) {
+  const r = h / 2, ox = x + w - r - 2, oy = y + h / 2;
+  return `<defs><linearGradient id="g${i}" x1="0.2" y1="0" x2="0.8" y2="1"><stop offset="0" stop-color="#7C80F7"/><stop offset="1" stop-color="#4A4DC4"/></linearGradient>
+      <linearGradient id="an${i}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#4FB34A"/><stop offset="1" stop-color="#A8F09E"/></linearGradient>
+      <filter id="v${i}" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="1.6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+    ${fundo}
+    ${anel ? `<g transform="rotate(-12 32 46)"><path d="M 5,46 A 27,7 0 0,1 59,46" fill="none" stroke="#3E8F38" stroke-width="2.6" stroke-linecap="round" opacity="0.8"/></g>` : ''}
+    <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" fill="#14153F" ${contorno ? `stroke="${contorno}" stroke-width="3" paint-order="stroke"` : ''}/>
+    <path d="M ${x + 7} ${y + h * 0.28} H ${x + w * 0.45}" stroke="#fff" stroke-width="1.8" stroke-linecap="round" opacity="0.35"/>
+    <circle cx="${ox}" cy="${oy}" r="${olho}" fill="${V}" filter="url(#v${i})"/>
+    ${anel ? `<g transform="rotate(-12 32 46)"><path d="M 5,46 A 27,7 0 0,0 59,46" fill="none" stroke="url(#an${i})" stroke-width="3.2" stroke-linecap="round"/>
+      <circle cx="54" cy="50.5" r="3.4" fill="${SAT}" stroke="#2E3190" stroke-width="1.2" paint-order="stroke" filter="url(#v${i})"/></g>` : ''}`;
+}
+
+/* As três escolhidas, como estavam. */
+const ESCOLHIDAS = [
+  { nome: 'C · Ladrilho claro', nota: 'Fundo lavanda bem claro e o mascote colorido por cima. Limpo, combina com o login e a tela inicial do app.',
+    svg: (i) => `<rect width="64" height="64" rx="15" fill="#EEF0FF"/>${escala(1.16, mascote(i, '#EEF0FF'))}` },
+  { nome: 'F · Close no ladrilho', nota: 'O mascote bem maior, cortado pelas bordas: a viseira e o olho ocupam o ícone, e o anel atravessa. O mais legível em 16 px.',
+    svg: (i) => `<defs>${INDIGO(i)}<clipPath id="k${i}"><rect width="64" height="64" rx="15"/></clipPath></defs>
+      <rect width="64" height="64" rx="15" fill="url(#f${i})"/><g clip-path="url(#k${i})">${close(i, '#1B1C55')}</g>` },
+  { nome: 'G · Só a viseira', nota: 'O Jarvis reduzido ao que o reconhece: a viseira escura e o olho verde aceso, sobre o corpo índigo. Em 16 px continua legível.',
+    svg: (i) => viseira(i, { fundo: `<rect width="64" height="64" rx="15" fill="url(#g${i})"/>` }) },
+];
+
+/* Novas: cruzamentos das escolhidas e caminhos que ainda não tinham aparecido. */
+const NOVAS = [
+  { nome: 'H · Close no ladrilho claro (C + F)', nota: 'O enquadramento da F no fundo da C: o rosto do Jarvis grande, sobre lavanda. Leve como a C, legível como a F.',
+    svg: (i) => `<defs><clipPath id="k${i}"><rect width="64" height="64" rx="15"/></clipPath></defs>
+      <rect width="64" height="64" rx="15" fill="#EEF0FF"/><g clip-path="url(#k${i})">${close(i, '#EEF0FF')}</g>` },
+  { nome: 'I · Close no círculo', nota: 'A F num selo redondo, como foto de perfil. Casa com a foto do Jarvis no WhatsApp e com avatares.',
+    svg: (i) => `<defs>${INDIGO(i)}<clipPath id="k${i}"><circle cx="32" cy="32" r="31"/></clipPath></defs>
+      <circle cx="32" cy="32" r="31" fill="url(#f${i})"/><g clip-path="url(#k${i})">${close(i, '#1B1C55', 1.6)}</g>` },
+  { nome: 'J · Gradiente pastel da marca', nota: 'Fundo lavanda → menta bem claros (o índigo e o verde da Ease, suaves) e o mascote inteiro. Mais quente que a C.',
+    svg: (i) => `<defs><linearGradient id="f${i}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#E4E6FD"/><stop offset="1" stop-color="#DDF5E5"/></linearGradient></defs>
+      <rect width="64" height="64" rx="15" fill="url(#f${i})"/>${escala(1.16, mascote(i, '#E9EDF8'))}` },
+  { nome: 'K · O anel sai do ladrilho', nota: 'Ladrilho índigo menor e o anel passando para fora dele. O 3.0 em destaque: a órbita quebra a moldura.',
+    svg: (i) => `<defs>${INDIGO(i)}</defs><rect x="9" y="5" width="46" height="54" rx="14" fill="url(#f${i})"/>${escala(1.18, mascote(i, '#1B1C55', '#FFFFFF'))}` },
+  { nome: 'L · Selo claro', nota: 'Círculo branco com borda lavanda e o mascote dentro. O mais discreto na aba clara, e se destaca na escura.',
+    svg: (i) => `<circle cx="32" cy="32" r="30" fill="#FFFFFF" stroke="#D9DCF7" stroke-width="2.5"/>${escala(1.05, mascote(i, '#FFFFFF'))}` },
+];
+
+const VARIACOES_G = [
+  { nome: 'G1 · Viseira no ladrilho claro', nota: 'A G no fundo lavanda da C. A viseira escura e o olho verde saltam do fundo claro.',
+    svg: (i) => viseira(i, { fundo: `<rect width="64" height="64" rx="15" fill="#EEF0FF"/>` }) },
+  { nome: 'G2 · Viseira com o anel do 3.0', nota: 'A viseira um pouco mais alta e o anel verde passando embaixo, com o satélite. A G que diz "3.0".',
+    svg: (i) => viseira(i, { fundo: `<rect width="64" height="64" rx="15" fill="url(#g${i})"/>`, y: 16, h: 19, anel: true }) },
+  { nome: 'G3 · Viseira no gradiente da marca', nota: 'Fundo índigo → verde da Ease, o do "3.0" do vídeo. A mais colorida das G.',
+    svg: (i) => viseira(i, { fundo: `<defs><linearGradient id="b${i}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3B3FB0"/><stop offset="1" stop-color="#2F8A3A"/></linearGradient></defs><rect width="64" height="64" rx="15" fill="url(#b${i})"/>` }) },
+  { nome: 'G4 · Viseira no círculo', nota: 'A G redonda, como avatar. Combina com a I (close no círculo) se o Jarvis tiver selo redondo em todo lugar.',
+    svg: (i) => viseira(i, { fundo: `<circle cx="32" cy="32" r="31" fill="url(#g${i})"/>`, x: 7, w: 50 }) },
+  { nome: 'G5 · Corpo do Jarvis com a viseira', nota: 'Em vez do ladrilho quadrado, a própria silhueta do corpo (a cápsula) com a viseira. Lê como o mascote, sem o anel.',
+    svg: (i) => viseira(i, { fundo: `<rect x="11" y="3" width="42" height="58" rx="21" fill="url(#g${i})" stroke="#FFFFFF" stroke-width="2.5" paint-order="stroke"/>`, x: 13, y: 20, w: 38, h: 17, olho: 4.6 }) },
+  { nome: 'G6 · Só a viseira, sem fundo', nota: 'Nada além da viseira, grande, com contorno branco que a separa da aba escura. O mínimo do Jarvis.',
+    svg: (i) => viseira(i, { x: 3, y: 17, w: 58, h: 30, olho: 7.4, contorno: '#FFFFFF' }) },
+  { nome: 'G7 · Olho em destaque', nota: 'A viseira mais curta e o olho maior, com halo. O olho verde vira o ícone; em 16 px é um ponto verde aceso.',
+    svg: (i) => viseira(i, { fundo: `<rect width="64" height="64" rx="15" fill="url(#g${i})"/>`, x: 12, y: 22, w: 40, h: 20, olho: 6.6 }) },
+];
+
+let n = 0;
+const icone = (op, px) => `<svg width="${px}" height="${px}" viewBox="0 0 64 64" style="overflow:visible">${op.svg('i' + (n++))}</svg>`;
+const cartao = (op) => `
+  <div class="op"><h3>${op.nome}</h3><small>${op.nota}</small>
+    <div class="tamanhos"><div>${icone(op, 64)}64</div><div>${icone(op, 32)}32</div><div>${icone(op, 16)}16</div></div>
+    <div class="aba clara">${icone(op, 16)}Jarvis · copiloto de dados</div><div class="barra clara"></div>
+    <div class="aba escura">${icone(op, 16)}Jarvis · copiloto de dados</div><div class="barra escura"></div>
+  </div>`;
+document.getElementById('grade').innerHTML = ESCOLHIDAS.map(cartao).join('');
+document.getElementById('gradeNovas').innerHTML = NOVAS.map(cartao).join('');
+document.getElementById('gradeG').innerHTML = VARIACOES_G.map(cartao).join('');
+const lateral = (tema) => `<div class="lateral ${tema}"><svg width="38" height="38" viewBox="0 0 64 64" style="overflow:visible">${mascote('L' + (n++), 'var(--contorno)')}</svg>
+  <div><b>Jarvis <span class="versao">3.0</span></b><span>Copiloto de Dados</span></div></div>`;
+document.getElementById('laterais').innerHTML = lateral('clara') + lateral('escura');
+</script>
+</body>
+</html>
