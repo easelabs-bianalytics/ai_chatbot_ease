@@ -233,7 +233,8 @@ na `main` do `sales_force_crm`
 
 **Pré-requisitos dos próximos deploys** (entram aqui assim que surgem):
 
-- [ ] **Reiniciar o limite de perguntas pelo Admin (2026-10-06):** snapshot e
+- [x] **Reiniciar o limite de perguntas pelo Admin — no ar em 2026-10-06** (imagem `ee00818`, revisão 49, snapshot `cockpit-prod-db-antes-jarvis-limite-20261006`):
+  snapshot e
   `migrate` da `ai_orchestrator.0008` (tabela `ReinicioDeLimite`) antes de o
   service apontar para a imagem — com a imagem antes da tabela, contar a
   cota quebra para todo mundo. Depois: Usuários → marcar a pessoa →
