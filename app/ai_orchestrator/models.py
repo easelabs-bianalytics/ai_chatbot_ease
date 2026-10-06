@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 from messaging.models import Message
@@ -125,3 +126,29 @@ class CatalogGap(models.Model):
 
     def __str__(self):
         return f"Lacuna #{self.pk}: {self.question[:60]}"
+
+
+class ReinicioDeLimite(models.Model):
+    """Um administrador zerou a cota de perguntas de alguém (2026-10-06).
+
+    A cota é contada das respostas dadas (`limites.py`); zerar apagando as
+    respostas destruiria a auditoria. Em vez disso, o reinício é um marco:
+    daqui em diante só contam as respostas depois dele, no dia e na semana.
+    A linha é a trilha: quem reiniciou, de quem e quando. Não se edita.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="reinicios_de_limite"
+    )
+    feito_em = models.DateTimeField(auto_now_add=True)
+    feito_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+
+    class Meta:
+        ordering = ["-feito_em"]
+        verbose_name = "reinício de limite"
+        verbose_name_plural = "reinícios de limite"
+
+    def __str__(self):
+        return f"{self.user} · {self.feito_em:%d/%m/%Y %H:%M}"

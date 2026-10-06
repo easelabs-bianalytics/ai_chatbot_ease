@@ -233,6 +233,12 @@ na `main` do `sales_force_crm`
 
 **Pré-requisitos dos próximos deploys** (entram aqui assim que surgem):
 
+- [ ] **Reiniciar o limite de perguntas pelo Admin (2026-10-06):** snapshot e
+  `migrate` da `ai_orchestrator.0008` (tabela `ReinicioDeLimite`) antes de o
+  service apontar para a imagem — com a imagem antes da tabela, contar a
+  cota quebra para todo mundo. Depois: Usuários → marcar a pessoa →
+  "Reiniciar o limite de perguntas" (só superusuário). A lista mostra o uso
+  do dia e da semana de cada um.
 - [x] **Arquivos da conversa no S3 (ADR-0034) — no ar em 2026-10-06:**
   imagem `6bda88f`, `.tf` em `3ed9ce6` (merge `dc9aea2` na `main`), bucket
   e revisão `cockpit-prod-jarvis:47` criados, snapshot

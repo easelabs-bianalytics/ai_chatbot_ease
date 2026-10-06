@@ -251,3 +251,88 @@ def test_mensagem_de_cota_diz_quando_volta_e_nao_diz_quantas():
     # O único número é o 100%, que é a fração — não a contagem.
     for texto in (canned.LIMITE_DIARIO, canned.LIMITE_SEMANAL):
         assert [p for p in texto.split() if any(c.isdigit() for c in p)] == ["100%"]
+
+
+# ------------------------------------------------------- reiniciar pelo Admin
+
+
+def test_reinicio_libera_a_cota_e_nao_apaga_a_auditoria(django_user_model, catalogo):
+    """2026-10-06: a Larissa chegou no limite do dia e não havia como
+    liberar sem subir imagem. O reinício zera a contagem do dia e da semana;
+    as respostas continuam lá."""
+    from ai_orchestrator.models import ReinicioDeLimite
+
+    pessoa = _pessoa(django_user_model, "larissa.costa@easelabs.com.br")
+    _gastar_cota(pessoa, limites.LIMITE_PADRAO)
+    assert limites.excedeu(pessoa)
+
+    ReinicioDeLimite.objects.create(user=pessoa)
+
+    situacao = limites.situacao(pessoa)
+    assert (situacao["dia"]["usadas"], situacao["semana"]["usadas"]) == (0, 0)
+    reply, _ = _perguntar(_conversa(pessoa), catalogo)
+    assert reply.rule != "limite_diario_da_pessoa"
+    assert AIReply.objects.filter(message__conversation__user=pessoa).count() == limites.LIMITE_PADRAO + 1
+    assert limites.usadas_hoje(pessoa) == 1
+
+
+def test_reinicio_de_uma_pessoa_nao_libera_outra(django_user_model):
+    from ai_orchestrator.models import ReinicioDeLimite
+
+    larissa = _pessoa(django_user_model, "larissa.costa@easelabs.com.br")
+    outra = _pessoa(django_user_model, "outra@easelabs.com.br")
+    _gastar_cota(larissa, limites.LIMITE_PADRAO)
+    _gastar_cota(outra, limites.LIMITE_PADRAO)
+
+    ReinicioDeLimite.objects.create(user=larissa)
+
+    assert not limites.excedeu(larissa)
+    assert limites.excedeu(outra)
+
+
+def _admin(client, django_user_model, superusuario):
+    equipe = django_user_model.objects.create_user(
+        "admin@easelabs.com.br", email="admin@easelabs.com.br", password="x",
+        is_staff=True, is_superuser=superusuario,
+    )
+    if not superusuario:
+        from django.contrib.auth.models import Permission
+
+        equipe.user_permissions.add(*Permission.objects.filter(codename__in=["view_user", "change_user"]))
+    client.force_login(equipe)
+    return equipe
+
+
+def test_superusuario_reinicia_pelo_admin_e_fica_registrado(client, django_user_model):
+    from ai_orchestrator.models import ReinicioDeLimite
+
+    admin = _admin(client, django_user_model, superusuario=True)
+    larissa = _pessoa(django_user_model, "larissa.costa@easelabs.com.br")
+    _gastar_cota(larissa, limites.LIMITE_PADRAO)
+
+    lista = client.get("/admin/auth/user/")
+    assert "Reiniciar o limite de perguntas" in lista.content.decode()
+    assert "7/7 · 7/35 (no limite)" in lista.content.decode()
+
+    resposta = client.post("/admin/auth/user/", {
+        "action": "reiniciar_limite", "_selected_action": [larissa.pk],
+    }, follow=True)
+
+    assert "Limite de perguntas reiniciado: larissa.costa@easelabs.com.br." in resposta.content.decode()
+    reinicio = ReinicioDeLimite.objects.get()
+    assert (reinicio.user, reinicio.feito_por) == (larissa, admin)
+    assert not limites.excedeu(larissa)
+
+
+def test_equipe_sem_superusuario_nao_ve_nem_executa_o_reinicio(client, django_user_model):
+    from ai_orchestrator.models import ReinicioDeLimite
+
+    _admin(client, django_user_model, superusuario=False)
+    larissa = _pessoa(django_user_model, "larissa.costa@easelabs.com.br")
+    _gastar_cota(larissa, limites.LIMITE_PADRAO)
+
+    assert "Reiniciar o limite de perguntas" not in client.get("/admin/auth/user/").content.decode()
+    client.post("/admin/auth/user/", {"action": "reiniciar_limite", "_selected_action": [larissa.pk]})
+
+    assert not ReinicioDeLimite.objects.exists()
+    assert limites.excedeu(larissa)

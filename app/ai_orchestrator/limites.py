@@ -27,13 +27,18 @@ segunda: "renova na segunda" é uma frase que a pessoa consegue prever.
 Trocar alguém de perfil é mexer nestas listas e subir a imagem. É de
 propósito: a lista fica no código, versionada e visível em revisão, em vez
 de numa tabela que alguém edita sem deixar rastro.
+
+**Reiniciar** (2026-10-06): um superusuário zera a cota de alguém pelo Admin
+(Usuários → "Reiniciar o limite de perguntas"). O perfil não muda; a
+contagem do dia e da semana passa a começar no reinício, que fica registrado
+em `ReinicioDeLimite` com quem fez.
 """
 
 import datetime
 
 from django.utils import timezone
 
-from ai_orchestrator.models import AIReply
+from ai_orchestrator.models import AIReply, ReinicioDeLimite
 
 # Time do produto: sem limite. O teto mensal continua valendo para todos.
 SEM_LIMITE = frozenset({
@@ -126,23 +131,38 @@ def inicio_da_semana(hoje=None):
     return hoje - datetime.timedelta(days=hoje.weekday())
 
 
-def _contar(user, desde) -> int:
+_SEM_REINICIO = object()
+
+
+def ultimo_reinicio(user):
+    """Quando um administrador zerou a cota desta pessoa pela última vez, ou
+    None. Só contam as respostas depois disso (`ReinicioDeLimite`)."""
     return (
-        AIReply.objects.filter(
-            message__conversation__user=user,
-            created_at__date__gte=desde,
-        )
-        .exclude(decision__in=NAO_CONTAM)
-        .count()
+        ReinicioDeLimite.objects.filter(user=user)
+        .order_by("-feito_em")
+        .values_list("feito_em", flat=True)
+        .first()
     )
 
 
-def usadas_hoje(user) -> int:
-    return _contar(user, timezone.localdate())
+def _contar(user, desde, reinicio=_SEM_REINICIO) -> int:
+    if reinicio is _SEM_REINICIO:
+        reinicio = ultimo_reinicio(user)
+    respostas = AIReply.objects.filter(
+        message__conversation__user=user,
+        created_at__date__gte=desde,
+    ).exclude(decision__in=NAO_CONTAM)
+    if reinicio is not None:
+        respostas = respostas.filter(created_at__gt=reinicio)
+    return respostas.count()
 
 
-def usadas_na_semana(user) -> int:
-    return _contar(user, inicio_da_semana())
+def usadas_hoje(user, reinicio=_SEM_REINICIO) -> int:
+    return _contar(user, timezone.localdate(), reinicio)
+
+
+def usadas_na_semana(user, reinicio=_SEM_REINICIO) -> int:
+    return _contar(user, inicio_da_semana(), reinicio)
 
 
 def _janela(usadas: int, limite: int) -> dict:
@@ -161,8 +181,9 @@ def situacao(user) -> dict:
         return {"dia": None, "semana": None, "excedeu": False, "motivo": ""}
 
     por_dia, por_semana = limites_da_pessoa
-    dia = _janela(usadas_hoje(user), por_dia)
-    semana = _janela(usadas_na_semana(user), por_semana)
+    reinicio = ultimo_reinicio(user)
+    dia = _janela(usadas_hoje(user, reinicio), por_dia)
+    semana = _janela(usadas_na_semana(user, reinicio), por_semana)
     # O dia vem primeiro no motivo porque é o que volta mais cedo: dizer
     # "volta amanhã" quando na verdade só volta na segunda seria mentir.
     motivo = "dia" if dia["excedeu"] else ("semana" if semana["excedeu"] else "")
