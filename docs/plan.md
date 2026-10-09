@@ -2393,6 +2393,9 @@ pré-requisito para a Fase 9.
 
 ### Sell In Realizado e Categoria de Troca no documento de referência (2026-10-09)
 
+**No ar em 2026-10-09:** imagem `7d5a00b`, task `cockpit-prod-jarvis:51` (e o sync do Marketing na
+mesma imagem), bump `8eafc03` mesclado na `main` do `sales_force_crm` (`4d4c50b`).
+
 Dois temas novos, vindos de `chatbot_sellin_categoria_troca.md`, viraram seções próprias do
 `chatbot_bi_referencia_querys.md` — e não subseções do Estoque ou do Sell Out, para não encarecer
 as perguntas desses temas (o limite do teste de contexto pede seção própria):
