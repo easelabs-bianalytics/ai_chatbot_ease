@@ -172,6 +172,17 @@ def de_simples(grafico: dict, dados: dict) -> dict | None:
             encoding["xOffset" if tipo != "barras_horizontais" else "yOffset"] = {"field": cor}
 
     spec = {"data": {"values": linhas}, "transform": transformacoes, "mark": marca, "encoding": encoding}
+    if not cor and not grupo and tipo != "pizza" and (grafico.get("cor") or grafico.get("cores_por_sinal")
+                                                      or grafico.get("rotulos")):
+        # Cor e rótulo pedidos na conversa (ajuste_grafico): o mesmo da tela.
+        from ai_orchestrator.ajuste_grafico import aplicar_no_vega
+
+        ajuste = {k: grafico[k] for k in ("cor", "cores_por_sinal", "rotulos") if grafico.get(k)}
+        if grafico.get("cores_por_sinal") == "rotulo":
+            ajuste["rotulos"] = True
+        pintado = aplicar_no_vega({k: spec[k] for k in ("mark", "encoding")}, ajuste)
+        if pintado is not None:
+            spec = {"data": spec["data"], "transform": transformacoes, **pintado}
     if grafico.get("separar") and cor:
         # Pequenos múltiplos: um gráfico por categoria, mesma escala.
         interno = {k: spec[k] for k in ("mark", "encoding")}

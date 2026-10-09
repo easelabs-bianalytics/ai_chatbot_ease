@@ -112,6 +112,8 @@ def test_login_certo_abre_a_sessao(ana, senha_ligada):
         "passeio_pendente": True,
         # e, depois dela, o vídeo das novidades da versão
         "novidades_pendentes": True,
+        # O saldo da OpenAI só aparece para a equipe (saldo.py).
+        "aviso_saldo": "",
     }
     assert cliente.get("/api/auth/sessao/").json()["autenticado"] is True
 

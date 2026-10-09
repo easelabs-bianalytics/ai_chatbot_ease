@@ -257,6 +257,11 @@ na `main` do `sales_force_crm`
   - snapshot, `migrate` da `messaging.0008` e bump da imagem, no mesmo
     deploy ou depois do bucket — nunca a imagem antes do bucket com a
     variável (sem bucket o armazém fica desligado: funciona, mas não guarda).
+- [ ] **Aviso de saldo da OpenAI (revisão das conversas 67–86, 2026-10-08):**
+  pôr na task `OPENAI_CREDITO_USD` (saldo da conta no dia) e
+  `OPENAI_CREDITO_EM` (o dia, AAAA-MM-DD); `OPENAI_AVISO_SALDO_USD` é
+  opcional (padrão 20). Sem elas o aviso fica desligado e nada quebra. A
+  cada recarga, atualizar as duas. Não há migration.
 - [ ] **WhatsApp (Fase 13, ADR-0028):**
   - [x] snapshot, depois a role e o schema `evolution` (script 04, D-07) — 2026-09-24;
   - [x] três secrets novos — 2026-09-24;
@@ -2317,3 +2322,41 @@ anexos no app com motion graphics (o fluxo do PDF
 - [x] Tela inicial: o anexo preso ao campo (planilha ou print) e o aviso de
       cota sobravam 20px de cada lado (coluna de 860px, campo de 820px);
       agora acompanham a largura do campo, como na conversa (2026-10-06).
+
+### Revisão das conversas 67, 81, 82 e 86 (2026-10-08)
+
+Dez pontos, cada um com teste do caso real em
+`tests/unit/test_revisao_conversas_67_a_86.py` (31 testes; suíte: 1.278).
+
+1. **O Jarvis explica o método.** Os números das regras documentadas
+   ("equipes 1, 2 e 4", "setor 3000", "Base 660", "2º trimestre", "20 mg/mL")
+   são rótulos, não dados: `grounding.sem_rotulos` os tira antes da ancoragem.
+   A explicação da régua de canais (67 #67/#68) não vira mais o texto de reserva.
+2. **Ancoragem sem falso positivo:** a redação é conferida contra todas as
+   consultas da resposta (a data de carga da consulta de reconhecimento, 67 #35);
+   ordinal não é número (67 #49); a tabela crua mantém o gráfico pedido, na tela
+   e no WhatsApp.
+3. **Uma definição de Força de Vendas** (painel atual das equipes 1, 2 e 4) e
+   de **share do canal** (participação no PX Ease, M08), com a escolha mantida
+   na conversa (seções 5 e 7.1 das referências).
+4. **Pergunta sobre um período, resposta sobre o período:** total ou média e
+   primeiro → último mês primeiro; o último mês vem como destaque (`answerer_v2`).
+5. **Crescimento médio mensal = taxa composta** (A23), com a média aritmética
+   de apoio e a variação total.
+6. **SKU pelo código** (Isolado 100 = DEDD/011, Isolado 20 = DEDD/067, Extrato
+   = DNSA, A24), não por `ILIKE '%100%'`.
+7. **Planilha:** o rodapé diz quantas linhas têm o dado do banco e quantas só
+   um aviso ("Não cadastrado na Área Médica"), cita a data da base do Marketing
+   quando a consulta a traz, e a redação não repete as contagens do rodapé (81).
+8. **Custo:** "a base será enviada a seguir" sem anexo responde "pode enviar"
+   sem modelo (82 #1, US$ 0,14); cor por sinal, cor fixa e rótulos do gráfico
+   são ajuste sem consulta, também em gráfico Vega-Lite (86 #12, US$ 0,03).
+9. **Saldo da OpenAI:** estimado a partir do saldo informado menos o gasto
+   registrado; avisa a equipe na tela e no log (uma vez por dia) abaixo de
+   US$ 20 ou quando, no ritmo da semana, acaba em até 5 dias (`saldo.py`). A
+   OpenAI não expõe o saldo pré-pago por API; por isso o saldo é informado.
+10. **Arquivo do próprio Jarvis** (aba "Notas do Jarvis") chegando sem pedido:
+    pergunta o que fazer, sem modelo (82 #3, US$ 0,11). **Print do gráfico do
+    Jarvis com pedido de mudança** ("Retire o Isolado 20 deste gráfico", 67 #61):
+    vai direto para a consulta, sem leitura de imagem; sem gráfico do Jarvis na
+    conversa, o print continua sendo lido.

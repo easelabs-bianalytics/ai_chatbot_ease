@@ -29,6 +29,32 @@ _MILHAR = re.compile(r"^\d{1,3}(?:\.\d{3})+(?:,\d+)?$")
 _MAT = re.compile(r"\bMAT\b", re.I)
 _DOSE_NO_NOME = re.compile(r"(\d+)\s*(?:ml|mg)\b", re.I)
 
+# Número que é RÓTULO, não dado: só vale colado à palavra que o define.
+# "equipes 1, 2 e 4", "setor 3000", "Base 660", "Isolado 100 mg/mL",
+# "Categoria 2", "2º trimestre" nomeiam coisas documentadas nas referências;
+# não são quantidades que a resposta precisasse tirar do banco. Em 2026-10-08
+# (conversa 67) duas explicações corretas de como o Jarvis separa FV e Digital
+# viraram o texto de reserva só por citarem "equipes 1, 2 e 4", e um gráfico
+# trimestral perdeu a narrativa por dizer "2º trimestre". Um "2" solto
+# continua precisando de fonte.
+_ROTULOS = (
+    re.compile(r"\bequipes?\s+\d{1,2}(?:\s*(?:,|e|ou)\s*\d{1,2})*", re.I),
+    re.compile(r"\bsetor(?:es)?\s+\d{3,4}(?:\s*(?:,|e|ou)\s*\d{3,4})*", re.I),
+    re.compile(r"\bBase\s+660\b", re.I),
+    re.compile(r"\b\d+(?:[.,]\d+)?\s*mg\s*/\s*ml\b", re.I),
+    re.compile(r"\b\d+\s*ml\b", re.I),
+    re.compile(r"\bcategorias?\s+[1-5](?:\s*(?:,|e|a|ou)\s*[1-5])*\b", re.I),
+    re.compile(r"\b\d{1,2}\s*[ºª°]"),
+    re.compile(r"\b\d{1,2}\s*(?:º|ª|°)?\s*(?:tri|trimestre|semestre|quadrimestre)\b", re.I),
+)
+
+
+def sem_rotulos(texto: str) -> str:
+    """O texto sem os números que são rótulo (ver `_ROTULOS`)."""
+    for padrao in _ROTULOS:
+        texto = padrao.sub(" ", texto or "")
+    return texto
+
 
 @dataclass(frozen=True)
 class GroundingResult:
@@ -218,6 +244,7 @@ def _tem_suporte(token: str, candidatos: set, suportados: set, percentual: bool 
 
 
 def _sem_suporte(reply: str, suportados: set) -> tuple:
+    reply = sem_rotulos(reply)
     percentuais = _percentuais(reply)
     escalas = _escalas(reply)
     return tuple(

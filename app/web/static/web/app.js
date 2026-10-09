@@ -434,6 +434,8 @@
       setTimeout(() => abrirNovidades(), 600);
     }
     avisarDaCota();
+    // Só para a equipe: o saldo da OpenAI está no fim (saldo.py).
+    if (usuario.aviso_saldo) toast(usuario.aviso_saldo, true, 12000);
   };
 
   // ---------------------------------------------------------- rotas
@@ -1804,10 +1806,15 @@
 
     // Com uma série só, o número vai na ponta da barra e o eixo de valores
     // some: dois jeitos de ler o mesmo número é um a mais do que o preciso.
+    // Pedido na conversa ("tira os rótulos", "verde quando sobe"), vale o
+    // pedido — também na linha (conversa 86, 2026-10-08).
+    const comNumero = grafico.rotulos === false ? false
+      : umaSerie && !pizza && !empilhado && (!linha || grafico.rotulos === true || grafico.cores_por_sinal === 'rotulo');
+    const corDoSinal = (v) => (Number(v) < 0 ? (token('--error') || '#E5484D') : (token('--success') || '#3FB868'));
     const numeroNaBarra = {
       id: 'numeroNaBarra',
       afterDatasetsDraw(c) {
-        if (linha || !umaSerie || pizza || empilhado) return;
+        if (!comNumero) return;
         const ctx = c.ctx;
         ctx.save();
         ctx.font = '600 11px Inter, sans-serif';
@@ -1815,6 +1822,7 @@
         c.getDatasetMeta(0).data.forEach((barra, i) => {
           const v = c.data.datasets[0].data[i];
           if (v === null || v === undefined) return;
+          if (grafico.cores_por_sinal === 'rotulo') ctx.fillStyle = corDoSinal(v);
           if (horizontal) {
             ctx.textAlign = 'left';
             ctx.textBaseline = 'middle';
@@ -1863,7 +1871,7 @@
     // Escondido quando o número já está na barra; na linha ele é necessário.
     const eixoDeValor = {
       stacked: empilhado,
-      display: linha || !umaSerie,
+      display: linha || !comNumero || !umaSerie,
       beginAtZero: true,
       grace: '8%',
       // Nos gráficos separados, a mesma escala em todos: senão 300 e 600
@@ -1897,7 +1905,8 @@
             data: c.dados,
             borderColor: corDe(c, n),
             // área: preenchida, e empilhada cada uma sobre a de baixo
-            backgroundColor: emArea ? `${corDe(c, n)}55` : linha ? 'transparent' : corDe(c, n),
+            backgroundColor: emArea ? `${corDe(c, n)}55` : linha ? 'transparent'
+              : grafico.cores_por_sinal === 'barra' && conjuntos.length === 1 ? c.dados.map(corDoSinal) : corDe(c, n),
             fill: emArea ? (empilhado && n > 0 ? '-1' : 'origin') : false,
             borderWidth: linha ? 2.5 : 0,
             borderRadius: linha || empilhado ? 0 : 5,

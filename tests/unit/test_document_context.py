@@ -190,7 +190,11 @@ def test_do_terceiro_tema_em_diante_vai_o_resumo(catalogo):
     # 31 mil com a regra do CRM LINK no preâmbulo (2026-10-01, ADR-0032),
     # que vai em toda pergunta. A estimativa conta caracteres: no checkout com
     # CRLF (o worktree do build, no Windows) ela sobe ~400 sem mudar nada.
-    assert contexto.tokens_estimados < 31000
+    # 32,5 mil com a A23 e a A24 (crescimento composto e PX por SKU pelo
+    # código, revisão das conversas 67–86, 2026-10-08): ~1.000 tokens,
+    # ~US$ 0,002 por pergunta de prescrição. Sem elas o Jarvis dava a média
+    # aritmética como crescimento e achava o Isolado 100 por ILIKE '%100%'.
+    assert contexto.tokens_estimados < 32500
 
 
 def test_schema_vai_filtrado_pelas_tabelas_do_tema(catalogo):

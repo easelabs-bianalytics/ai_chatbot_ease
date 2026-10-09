@@ -315,10 +315,14 @@ def _planilha_devolvida(request) -> str:
         "\n\n# Planilha devolvida à pessoa\n\n"
         + request.planilha_devolvida
         + "\n\nA planilha acima JÁ foi alterada, conferida e está no botão \"Baixar planilha "
-        "preenchida\". Fale dela com estes números: o que entrou, em quantas linhas, o valor que "
-        "domina uma coluna quando houver, e o que ficou em branco e por quê. Não diga que não é "
+        "preenchida\". O sistema já escreve no fim, com os números: quantas linhas cada aba "
+        "ganhou, quantas trazem o dado do banco e quantas só um aviso (\"Não cadastrado…\"), o "
+        "valor que domina, a data da base, o que ficou em branco e o botão de baixar. NÃO repita "
+        "nada disso (conversa 81: o mesmo \"57 de 57\" saía duas vezes). Escreva no máximo duas "
+        "frases sobre o que a coluna nova diz e o que merece atenção, sem contar linhas. Nunca "
+        "diga que nenhuma linha ficou em branco quando houver ATENÇÃO acima. Não diga que não é "
         "seguro preencher, não peça para refazer e não fale em \"Baixar Excel\". Se houver alerta "
-        "acima, diga-o. O sistema acrescenta no fim a lista do que ficou em branco: não a repita."
+        "acima, diga-o."
     )
 
 

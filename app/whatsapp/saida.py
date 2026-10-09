@@ -69,6 +69,8 @@ def montar(resposta, executor=None) -> list:
         # A tabela crua (ADR-0010), que a tela desenha como tabela: aqui ela
         # vira a tabela do celular, nunca colunas soltas separadas por "|".
         textos.append(formato.tabela_crua(resposta.content))
+        # O gráfico pedido continua, desenhado com o resultado do banco.
+        _grafico(fonte.get("grafico"), fonte.get("dados") or {}, imagens)
     else:
         textos.append(formato.de_markdown(resposta.content))
         _grafico(fonte.get("grafico"), fonte.get("dados") or {}, imagens)

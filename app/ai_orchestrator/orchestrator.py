@@ -40,8 +40,8 @@ from ai_orchestrator.providers.base import (
 )
 from ai_orchestrator.providers.fake import FakeAIProvider
 from ai_orchestrator.prompts import PROMPT_VERSION
-from ai_orchestrator import vega
-from ai_orchestrator.rules import apply_rules
+from ai_orchestrator import saldo, vega
+from ai_orchestrator.rules import apply_rules, arquivo_a_seguir
 from attachments import anexo_sql, deposito, planilha as planilha_anexada, qa as conferencia_da_planilha
 from attachments.limites import SEGUNDOS_DA_PLANILHA_NA_CONVERSA, SEGUNDOS_DA_SAIDA, AnexoRecusado
 from attachments.planilha import COLUNA_DA_LINHA
@@ -339,6 +339,7 @@ def _preparar_planilha(message, executor, auditoria):
         logger.info("A planilha da conversa não pôde ser perfilada: %s", exc)
         return executor
     message.anexo_resumo = estrutura.resumo
+    message.abas_do_anexo = tuple(estrutura.abas)
     tabelas = anexo_sql.tabelas(estrutura)
     message.tabelas_do_anexo = tabelas
     # O token fica no registro para o "Baixar Excel" desta resposta refazer
@@ -820,10 +821,23 @@ def _redigir(plano, resultado, message, provider, catalog, auditoria, historico,
 
     extras = montar(resposta)
 
-    conferencia = check_grounding(
-        resposta.reply, resultado.columns, resultado.rows, fonte_da_pergunta, plano.sql,
-        row_count=resultado.row_count,
-    )
+    # Todas as consultas DESTA resposta sustentam o texto, não só a principal.
+    # Conversa 67 (2026-10-08): "dado até ago/2026, carregado em 11/09/2026"
+    # vinha da consulta de reconhecimento da mesma resposta, e a checagem só
+    # olhava a principal — a resposta certa virou tabela crua sem o gráfico.
+    outras = [
+        ((c.get("result_sample") or {}).get("columns") or (), (c.get("result_sample") or {}).get("rows") or (),
+         c.get("sql") or "", c.get("row_count"))
+        for c in auditoria.consultas
+        if c.get("status") == QueryRun.Status.SUCCESS and c.get("sql") != plano.sql
+    ]
+
+    def conferir(texto):
+        return check_grounding_varias(
+            texto, [(resultado.columns, resultado.rows, plano.sql, resultado.row_count), *outras], fonte_da_pergunta
+        )
+
+    conferencia = conferir(resposta.reply)
     if conferencia.ok:
         return resposta.reply, {"caveats": list(resposta.caveats), **extras}
 
@@ -839,46 +853,70 @@ def _redigir(plano, resultado, message, provider, catalog, auditoria, historico,
         return _tabela(resultado), {"rule": "resposta_sem_narrativa", "excel": plano.excel, "saida_cortada": True}
     auditoria.chamada(AICall.Stage.REWRITE, reescrita.usage)
 
-    segunda = check_grounding(
-        reescrita.reply, resultado.columns, resultado.rows, fonte_da_pergunta, plano.sql,
-        row_count=resultado.row_count,
-    )
+    segunda = conferir(reescrita.reply)
+    extras_reescrita = montar(reescrita)
     if segunda.ok:
         return reescrita.reply, {
             "caveats": list(reescrita.caveats),
             "rascunho_reprovado": rascunhos,
             "motivos_ancoragem": motivos,
-            **montar(reescrita),
+            **extras_reescrita,
         }
 
     rascunhos.append(reescrita.reply)
     motivos.append(segunda.reason)
     logger.warning("Resposta reprovada duas vezes na ancoragem; enviando a tabela crua")
-    # Sem os blocos e as sugestões de nenhum dos rascunhos: os dois foram
+    # Sem os blocos de texto e as sugestões dos rascunhos: os dois foram
     # reprovados, e a tela mostraria o texto deles no lugar da tabela crua.
-    return _tabela(resultado), {
+    saida = {
         "rule": "resposta_sem_narrativa",
         "rascunho_reprovado": rascunhos,
         "motivos_ancoragem": motivos,
         **base,
     }
+    # O gráfico, porém, fica: ele é desenhado com o resultado do banco, não
+    # com o texto reprovado. Conversa 67 (#35 e #49): sem isto o gráfico
+    # pedido sumia junto com a narrativa, e o Paulo teve de pedir de novo.
+    grafico = _grafico_dos_extras(extras_reescrita) or _grafico_dos_extras(extras)
+    if grafico:
+        saida["grafico"] = grafico
+        _guardar_dados_do_grafico(auditoria, resultado)
+    return _tabela(resultado), saida
+
+
+def _grafico_dos_extras(extras: dict):
+    """O gráfico de uma versão da redação, no formato simples ou de dentro
+    dos blocos (de uma consulta só, a principal)."""
+    if extras.get("grafico"):
+        return extras["grafico"]
+    for bloco in extras.get("blocos") or ():
+        if bloco.get("tipo") == "grafico" and str(bloco.get("consulta", 0)) == "0":
+            return bloco.get("grafico")
+    return None
 
 
 
 
 def _ler_imagem(message, provider, auditoria, historico, critica: bool = False) -> _Decisao | None:
-    """Caminho da imagem anexada (ADR-0024).
+    """Caminho do print — o motor 3.0 dos prints (ADR-0024, ADR-0035).
 
-    Dois desfechos:
+    O leitor (modelo barato) transcreve todo bloco de dado do print, em
+    pedaços quando ele é longo; a transcrição é conferida sem modelo e vira a
+    planilha da conversa (`anexo.<aba>`), como no ADR-0031. Daí:
 
-    - **A resposta está na imagem** (resumir, achar a maior queda, conferir
-      uma conta): uma chamada ao modelo barato e fim. Sem planejador, sem
-      banco, sem ancoragem — o que substitui a ancoragem é o rótulo, que diz
-      na primeira linha que aquilo veio da imagem.
-    - **A resposta está no banco** (preencher a tabela do print, conferir
-      com o sell-out da empresa): a leitura vira pedido e o caminho normal
-      segue. Devolve None nesse caso; a mensagem foi ajustada em memória por
-      `_imagem_vira_pedido`.
+    - **ilegível**: a resposta diz o que não deu para ler e pede o print de
+      outro jeito, sem inventar pergunta ao banco (conversa 75);
+    - **transformar**: devolve o xlsx da transcrição, com as notas;
+    - **completar, cruzar, conferir, analisar**: o planejador segue com o
+      print como tabela — conta e cruzamento são do SQL (devolve None);
+    - **descrever**: a resposta do leitor, se todo número dela estiver na
+      transcrição; com conta no texto, vai ao planejador também;
+    - **sem bloco** (tela, texto, gráfico sem rótulo): como antes — a
+      resposta da imagem, ou a pergunta autossuficiente ao banco.
+
+    A mensagem é ajustada só em memória: no banco, a pergunta continua sendo
+    o que a pessoa escreveu, com a imagem (o único `save` depois daqui é o
+    do status, e o arquivo devolvido é gravado com `update`).
     """
     dados = deposito.buscar(message.anexo_token)
     if dados is None:
@@ -1364,9 +1402,10 @@ def _alterar_planilha(message, itens, executor, catalog, auditoria, ja_executada
     Message.objects.filter(pk=message.pk).update(anexo_resposta_token=token, anexo_resposta_nome=nome)
     message.anexo_resposta_token = token
     message.anexo_resposta_nome = nome
+    atualizacao = _data_da_base(itens, resultados)
     return _Alteracao(
-        texto=_nota_da_planilha(feitas, abas, conferencia, nome, cortadas, recusas),
-        relatorio=_relatorio_da_planilha(feitas, abas, conferencia, nome, cortadas, recusas),
+        texto=_nota_da_planilha(feitas, abas, conferencia, nome, cortadas, recusas, atualizacao),
+        relatorio=_relatorio_da_planilha(feitas, abas, conferencia, nome, cortadas, recusas, atualizacao),
         registro=registro,
         resultados=resultados,
     )
@@ -1449,14 +1488,68 @@ def _tabelas_com_a_planilha_entregue(raw, message, preenchimentos) -> None:
     raw["dados_blocos"] = dados
 
 
+_COLUNA_DE_ATUALIZACAO = re.compile(r"^(?:atualizad[oa]_em|carregad[oa]_em|terminada_em|data_da_base|ultima_carga)$", re.I)
+
+
+def _data_da_base(itens, resultados) -> str:
+    """"Base do Marketing atualizada em 06/10/2026", quando a consulta trouxe
+    a data da carga. A consulta da conversa 81 buscou `atualizado_em` e a
+    resposta não o citou: quem recebeu a planilha não sabia de quando era o
+    cadastro (2026-10-06)."""
+    datas, do_marketing = [], False
+    for item in itens:
+        resultado = resultados.get(item.get("sql"))
+        if resultado is None:
+            continue
+        for i, coluna in enumerate(resultado.columns):
+            if not _COLUNA_DE_ATUALIZACAO.match(str(coluna)):
+                continue
+            for linha in resultado.rows:
+                data = _como_data(linha[i] if i < len(linha) else None)
+                if data:
+                    datas.append(data)
+                    do_marketing = do_marketing or "marketing." in (item.get("sql") or "").lower()
+    if not datas:
+        return ""
+    base = "Base do Marketing" if do_marketing else "Base consultada"
+    return f"{base} atualizada em {max(datas):%d/%m/%Y}"
+
+
+def _como_data(valor):
+    if isinstance(valor, datetime.datetime):
+        return valor.date()
+    if isinstance(valor, datetime.date):
+        return valor
+    try:
+        return datetime.date.fromisoformat(str(valor or "")[:10])
+    except ValueError:
+        return None
+
+
 def _dominantes(conferencia) -> list:
+    # Um aviso dominante ("Não cadastrado…") já sai na linha dos casamentos.
     return [
         f"**{c.dominante}** aparece em {c.vezes_do_dominante} das {c.com_valor} linhas preenchidas de `{c.coluna}`"
-        for c in conferencia.cobertura if c.dominante
+        for c in conferencia.cobertura if c.dominante and not conferencia_da_planilha.eh_marcador(c.dominante)
     ]
 
 
-def _nota_da_planilha(feitas, abas, conferencia, nome, cortadas, recusas) -> str:
+def _casamentos(conferencia) -> list:
+    """Quantas linhas trazem o dado de verdade, e quantas só um aviso no
+    lugar dele ("Não cadastrado na Área Médica"). Conversa 81: "57 de 57,
+    nenhuma linha ficou em branco", com parte dos médicos fora da base."""
+    varias_abas = len({c.aba for c in conferencia.cobertura}) > 1
+    frases = []
+    for c in conferencia.cobertura:
+        if not c.marcadores:
+            continue
+        avisos = _lista_curta([f"{vezes} como “{valor}”" for valor, vezes in c.marcadores])
+        onde = f" da aba `{c.aba}`" if varias_abas else ""
+        frases.append(f"`{c.coluna}`{onde}: **{c.com_dado} de {c.total} linhas com o dado do banco**; {avisos}.")
+    return frases
+
+
+def _nota_da_planilha(feitas, abas, conferencia, nome, cortadas, recusas, atualizacao="") -> str:
     if len(feitas) == 1:
         texto = _nota_do_preenchimento(feitas[0], nome)
     elif feitas:
@@ -1473,9 +1566,14 @@ def _nota_da_planilha(feitas, abas, conferencia, nome, cortadas, recusas) -> str
         texto += "\n\nPor coluna: " + " · ".join(
             f"`{c.coluna}` {c.com_valor} de {c.total}" for c in conferencia.cobertura
         ) + "."
+    casamentos = _casamentos(conferencia)
+    if casamentos:
+        texto += "\n\n" + "\n\n".join(casamentos)
     dominantes = _dominantes(conferencia)
     if dominantes:
         texto += "\n\n" + "; ".join(dominantes) + "."
+    if atualizacao:
+        texto += f"\n\n{atualizacao}."
     if cortadas:
         texto += "\n\n" + canned.PLANILHA_CORTADA
     if recusas:
@@ -1484,7 +1582,7 @@ def _nota_da_planilha(feitas, abas, conferencia, nome, cortadas, recusas) -> str
     return texto
 
 
-def _relatorio_da_planilha(feitas, abas, conferencia, nome, cortadas, recusas) -> str:
+def _relatorio_da_planilha(feitas, abas, conferencia, nome, cortadas, recusas, atualizacao="") -> str:
     """O mesmo que a nota, em texto corrido, para a redação."""
     linhas = [f"Arquivo devolvido: {nome}. A conferência comparou com o original: nenhuma célula original mudou."]
     for f in feitas:
@@ -1497,7 +1595,13 @@ def _relatorio_da_planilha(feitas, abas, conferencia, nome, cortadas, recusas) -
         )
     for c in conferencia.cobertura:
         extra = f"; valor mais comum {c.dominante!r} em {c.vezes_do_dominante}" if c.dominante else ""
+        if c.marcadores:
+            avisos = ", ".join(f"{valor!r} em {vezes}" for valor, vezes in c.marcadores)
+            extra += (f"; ATENÇÃO: só {c.com_dado} trazem o dado do banco — nas outras a consulta escreveu um "
+                      f"aviso ({avisos}). Não diga que nenhuma linha ficou em branco sem dizer isto")
         linhas.append(f"Coluna {c.coluna}: com valor em {c.com_valor} de {c.total} linhas{extra}.")
+    if atualizacao:
+        linhas.append(f"{atualizacao}.")
     for titulo, total, grafico in abas:
         linhas.append(f"Aba nova {titulo}: {total} linhas" + (", com gráfico." if grafico else "."))
     if cortadas:
@@ -2299,6 +2403,9 @@ def _conversa(plano, message, historico) -> _Decisao:
     # O resumo da planilha também é fonte: "4 linhas", "AGO/26", as redes e os
     # representantes que ela traz. Sem isto, em 2026-09-24 a descrição certa
     # de "O que existe nessa planilha?" virou o texto de reserva.
+    # A explicação do método cita as regras documentadas ("equipes 1, 2 e 4",
+    # "Base 660"): são rótulos, não dados, e a ancoragem já os ignora
+    # (`grounding.sem_rotulos`). Conversa 67 (#67 e #68, 2026-10-08).
     contexto = "\n".join([message.content, _planilha(message), *(m.text for m in historico)])
     # Os números das consultas anteriores desta conversa também valem: "qual
     # MAT você considerou?" se responde com o período que estava no SQL e no
@@ -2452,6 +2559,81 @@ def _grafico_da_resposta(resposta, profundidade: int = 0):
     return (resposta, grafico, dados, None) if dados.get("rows") else None
 
 
+# "Segue o arquivo", "aqui está", só o nome do arquivo: a mensagem traz o
+# anexo e nenhum pedido.
+_SO_O_ANEXO = re.compile(
+    r"^(?:(?:oi|ola|jarvis|bom dia|boa tarde|boa noite)[\s,!.]*)*"
+    r"(?:segue|seguem|aqui|ai|eis|olha|anexo|anexado|anexei|enviando|mandando|mandei|enviei|pronto|ok|ta|esta)?"
+    r"(?:\s+(?:o|a|os|as|esta|essa|este|esse|ai|aqui|em anexo|anexo|anexado|anexada|segue))*"
+    r"(?:\s*(?:arquivo|planilha|base|excel|xlsx|tabela)s?)?(?:\s+(?:ai|aqui|em anexo|anexo|anexado|anexada|segue))*[\s.!]*$"
+)
+
+
+def _sem_pedido(message) -> bool:
+    texto = (message.content or "").strip()
+    if not texto or texto == (message.anexo_nome or "").strip():
+        return True
+    normalizado = planilha_anexada.normalizar(texto).replace("_", " ")
+    return len(normalizado) <= 40 and bool(_SO_O_ANEXO.match(normalizado))
+
+
+def _arquivo_do_jarvis(message) -> _Decisao | None:
+    """O arquivo que o próprio Jarvis devolveu, de volta sem pedido.
+
+    Ele tem a aba "Notas do Jarvis". Na conversa 82 (2026-10-07) chegou com
+    "Segue o arquivo", e o planejador gastou US$ 0,11 para descrever as abas
+    e perguntar o que fazer. A pergunta é a mesma sempre — e de graça aqui."""
+    abas = getattr(message, "abas_do_anexo", ()) or ()
+    if (message.anexo_tipo != Message.Anexo.PLANILHA or getattr(message, "planilha_da_conversa", False)
+            or not _sem_pedido(message)):
+        return None
+    notas = planilha_anexada.normalizar(planilha_anexada.NOME_DAS_NOTAS)
+    if not any(planilha_anexada.normalizar(aba) == notas for aba in abas):
+        return None
+    outras = [f"`{aba}`" for aba in abas if planilha_anexada.normalizar(aba) != notas]
+    return _Decisao(
+        decision=AIReply.Decision.CLARIFY,
+        reply=canned.ARQUIVO_DO_JARVIS.format(abas=_lista_curta(outras) or "nenhuma além das notas"),
+        rule="arquivo_do_jarvis",
+        raw={"anexo": message.anexo_nome, "abas": list(abas)},
+    )
+
+
+# "Retire o Isolado 20 deste gráfico", com o print do gráfico que o Jarvis
+# acabou de mandar (conversa 67, 2026-10-07): a leitura da imagem respondeu
+# "removeria a série vermelha" e a pessoa teve de dizer "Isso. Faça isso".
+# O gráfico, a consulta e os dados estão no histórico: a imagem não acrescenta
+# nada, e o pedido vai direto para quem refaz.
+_MUDA = re.compile(
+    r"\b(?:retir\w*|remov\w*|tir[ae]|tirar|exclu\w*|adicion\w*|inclu\w*|acrescent\w*|mud\w*|troc\w*|coloc\w*"
+    r"|separ\w*|junt\w*|deix\w*|refa\w*|refaz\w*|ajust\w*|pint\w*|transform\w*|empilh\w*|corrij\w*|corrig\w*)\b"
+)
+_ESTE_GRAFICO = re.compile(r"\b(?:dest[ea]|dess[ea]|nest[ea]|ness[ea]|do|no|o)\s+grafico\b")
+
+
+def _print_do_grafico(message, auditoria) -> bool:
+    if message.anexo_tipo != Message.Anexo.IMAGEM:
+        return False
+    texto = planilha_anexada.normalizar(message.content or "")
+    if not (_MUDA.search(texto) and _ESTE_GRAFICO.search(texto)):
+        return False
+    origem, _grafico, _dados, _indice = _grafico_a_ajustar(message)
+    if origem is None:
+        # Sem gráfico do Jarvis na conversa, o print é de outro lugar: quem
+        # lê é o leitor de imagem.
+        return False
+    deposito.descartar(message.anexo_token)
+    auditoria.extras["imagem"] = {"anexo": message.anexo_nome, "virou": "print_do_grafico"}
+    # Em memória, como em `_imagem_vira_pedido`: no banco fica o que a
+    # pessoa escreveu, com a imagem.
+    message.content = (
+        f"{message.content}\n\n(O print anexado é o gráfico da sua resposta anterior nesta conversa: "
+        "refaça esse gráfico com a mudança pedida.)"
+    )
+    message.anexo_tipo = ""
+    return True
+
+
 def _ajustar_grafico(message) -> _Decisao | None:
     """Troca o desenho sem consultar o banco nem chamar o modelo.
 
@@ -2462,10 +2644,27 @@ def _ajustar_grafico(message) -> _Decisao | None:
     if not ajuste:
         return None
     origem, grafico, dados, indice = _grafico_a_ajustar(message)
-    if origem is None or grafico.get("tipo") == "vega":
-        # Trocar o desenho de uma especificação Vega-Lite é reescrevê-la:
-        # isso é com a IA, que conhece os campos.
+    if origem is None:
         return None
+    if grafico.get("tipo") == "vega":
+        # Trocar o desenho de uma especificação Vega-Lite é reescrevê-la:
+        # isso é com a IA, que conhece os campos. Cor e rótulo, não: só
+        # pintam o que já está lá (conversa 86, 2026-10-08).
+        if not ajuste.keys() <= ajuste_grafico.SO_COR_E_ROTULO:
+            return None
+        spec = ajuste_grafico.aplicar_no_vega(grafico.get("vega") or {}, ajuste)
+        vocabulario = ajuste_grafico.vocabulario_do_grafico(list(dados.get("columns") or ()), (), ())
+        if spec is None or not ajuste_grafico.fala_so_do_desenho(message.content, vocabulario):
+            return None
+        raw = {"grafico": {**grafico, "vega": spec}, "grafico_de": origem.pk}
+        if indice is not None:
+            raw["grafico_de_consulta"] = indice
+        return _Decisao(
+            decision=AIReply.Decision.CONVERSATION,
+            reply=ajuste_grafico.descrever(ajuste),
+            rule="ajuste_de_grafico",
+            raw=raw,
+        )
     colunas_do_grafico = list(dados.get("columns") or ())
     vocabulario = ajuste_grafico.vocabulario_do_grafico(
         colunas_do_grafico, dados.get("rows") or (),
@@ -2548,11 +2747,16 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
         # Jarvis prometeu um gráfico, não fez, e ao "?" respondeu com o texto
         # de "não entendi a pergunta". Com conversa antes, quem lê é a IA.
         regra = None
+    if regra is None and not message.anexo_tipo and not message.anexo_nome:
+        regra = arquivo_a_seguir(message.content)
     if regra is not None:
         return _Decisao(
             decision=regra.decision, reply=regra.reply, rule=regra.rule
         )
 
+    # O print do gráfico que o Jarvis acabou de mandar segue como texto, e o
+    # ajuste sem consulta ainda vale para ele.
+    _print_do_grafico(message, auditoria)
     ajustado = _ajustar_grafico(message)
     if ajustado is not None:
         return ajustado
@@ -2609,6 +2813,10 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
     # A planilha da conversa (enviada agora, herdada ou vinda de um print)
     # vira `anexo.<aba>` para as consultas desta resposta (ADR-0031).
     executor = _preparar_planilha(message, executor, auditoria)
+
+    devolvida = _arquivo_do_jarvis(message)
+    if devolvida is not None:
+        return devolvida
 
     plano = provider.plan(
         PlanRequest(
@@ -2954,4 +3162,7 @@ def handle_message(message, channel=None, provider=None, executor=None, catalog=
     if reply.reply_text:
         deliver_reply(channel, message.conversation, reply.reply_text, in_reply_to=message)
 
+    if reply.cost_estimate:
+        # O saldo no fim aparece no log antes da falha (revisão de 2026-10-08).
+        saldo.registrar_se_preciso()
     return reply

@@ -355,6 +355,28 @@ casos:
       médico pelo CRM dele, não ligue pelo painel". O responsável pelo médico é o do território
       da UTC do endereço; painel só quando pedirem painel (decisão do Rubens, 2026-09-30).
 
+  - id: A23-crescimento-medio-composto
+    grupo: referencia
+    pergunta: Qual a média mensal de crescimento da prescrição do mercado e da Ease de dezembro de 2025 a agosto de 2026?
+    esperado: answer_with_data
+    referencia: A23
+    parametros: {data_ini: "2025-12-01", data_fim: "2026-08-01"}
+    sql_deve_conter: ["POWER", "px1"]
+    nota: >-
+      Conversa 86 (2026-10-08): "média mensal de crescimento" saiu como média aritmética das
+      variações. O número principal é a taxa composta; a aritmética vai como apoio.
+
+  - id: A24-px-por-sku-pelo-codigo
+    grupo: referencia
+    pergunta: Como está a prescrição de cada SKU da Ease mês a mês em 2026?
+    esperado: answer_with_data
+    referencia: A24
+    parametros: {data_ini: "2026-01-01", data_fim: "2026-12-01"}
+    sql_deve_conter: ["cdgconcentracao", "DNSA"]
+    nota: >-
+      Revisão de 2026-10-08: o Isolado 100 era achado por ILIKE '%100%' no nome. O SKU é pelo
+      código: DEDD/011 (Isolado 100), DEDD/067 (Isolado 20), DNSA (Extrato).
+
   - id: M00-frescor-do-marketing
     grupo: referencia
     pergunta: De quando são os dados da Área Médica e do Email Marketing que você tem?

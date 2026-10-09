@@ -25,7 +25,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ai_orchestrator import limites
+from ai_orchestrator import limites, saldo
 from web.acesso import INTERVALO_REENVIO, normalizar_email, solicitar_codigo, verificar_codigo
 from web.models import PrimeiroAcesso
 
@@ -60,6 +60,8 @@ def usuario_json(user) -> dict:
         # Quem administra vê custo e tokens na fonte da resposta; o restante
         # vê a consulta, a referência e o momento, que é o que dá confiança.
         "equipe": bool(user.is_staff),
+        # Saldo da OpenAI no fim: a equipe vê antes de a IA parar (saldo.py).
+        "aviso_saldo": saldo.aviso() if user.is_staff else "",
         # Primeiro login desta pessoa: a tela abre a apresentação antes de
         # qualquer outra coisa. A marca é do usuário, não do navegador.
         "passeio_pendente": not PrimeiroAcesso.objects.filter(user=user).exists(),

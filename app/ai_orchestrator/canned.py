@@ -37,6 +37,18 @@ MENSAGEM_SEM_PERGUNTA = (
     "saber, com o período e o recorte (SKU, PDV, médico, território)?"
 )
 
+ARQUIVO_A_SEGUIR = (
+    "Pode enviar o arquivo. Quando ele chegar, leio as colunas e faço o que "
+    "você pediu nesta mensagem."
+)
+
+ARQUIVO_DO_JARVIS = (
+    "Este arquivo saiu do Jarvis: tem a aba **Notas do Jarvis**, com o que foi "
+    "preenchido e de onde veio cada dado. Abas: {abas}. O que você quer fazer "
+    "com ele? Por exemplo: atualizar os dados com o cadastro de hoje, montar "
+    "outro resumo ou cruzar com outra informação."
+)
+
 FALHA_DA_IA = (
     "Tive um problema técnico para montar a resposta agora. Pode tentar de "
     "novo em alguns instantes?"

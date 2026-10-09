@@ -11,12 +11,39 @@ gráfico à vista e a mensagem é curta e inequívoca: pergunta de dado nunca
 pode ser confundida com ajuste de desenho.
 """
 
+import copy
+import json
 import re
 import unicodedata
 
 # Mensagem de ajuste é curta. "Quantas unidades por linha de produto em
 # agosto de 2026?" tem 'linha' no meio e não pode virar troca de gráfico.
 MAX_LETRAS = 70
+# Cor e rótulo pedem frase mais longa ("Mude a cor do rótulo de dados p/
+# verde quando sobe e vermelho quando desce" tem 72): o limite é outro, e
+# quem barra assunto novo é `fala_so_do_desenho`.
+MAX_LETRAS_DE_COR = 120
+
+# As cores da tela (styles.css): --success, --error e a paleta do gráfico.
+VERDE, VERMELHO = "#3FB868", "#E5484D"
+_CORES_POR_NOME = {
+    "verde": VERDE, "vermelho": VERMELHO, "vermelha": VERMELHO, "azul": "#5558D4",
+    "laranja": "#F5A623", "roxo": "#A855F7", "roxa": "#A855F7", "cinza": "#9CA1B8",
+    "amarelo": "#F5C518", "amarela": "#F5C518", "preto": "#2B2F45", "preta": "#2B2F45",
+}
+# "verde quando sobe e vermelho quando desce" (conversa 86, 2026-10-08): a
+# cor segue o sinal do número. Antes isso refazia a consulta (US$ 0,03).
+_COR_DO_SINAL = re.compile(r"\b(?:verdes?|vermelh[oa]s?)\b")
+_SINAL = re.compile(
+    r"\b(?:sob\w*|sub\w*|desc\w*|cai\w*|positiv\w*|negativ\w*|cresc\w*|queda|alta|baixa|aument\w*|diminu\w*)\b"
+)
+_ROTULO = re.compile(r"\b(?:rotulos?|labels?|valores|numeros)\b")
+_TIRA_ROTULO = re.compile(r"\b(?:tir\w*|remov\w*|sem|escond\w*|ocult\w*)\b(?:\s+\S+){0,3}?\s+(?:rotulos?|labels?|valores|numeros)\b")
+_POE_ROTULO = re.compile(
+    r"\b(?:mostr\w*|coloc\w*|adicion\w*|inclu\w*|bot\w*|com|exib\w*|poe|ponha)\b(?:\s+\S+){0,3}?\s+"
+    r"(?:rotulos?|labels?|valores|numeros)\b"
+)
+_COR_FIXA = re.compile(r"\b(?:em|de|para|pra|cor)\s+(" + "|".join(_CORES_POR_NOME) + r")\b")
 
 _VERBOS = r"(?:mud[ae]|muda|troc[ae]|troque|coloc[ae]|pass[ae]|deix[ae]|transform[ae]|pod[ei]|quero|prefiro|faz|faca)"
 _GRAFICO = r"(?:grafico|visual|desenho)"
@@ -91,11 +118,14 @@ def ler_ajuste(mensagem: str) -> dict | None:
     Devolve `{"tipo": ..., "limite": ...}` com as chaves que o usuário pediu:
     quem só trocou o tipo mantém o corte que estava valendo, e vice-versa."""
     texto = _normalizar(mensagem)
-    if not texto or len(texto) > MAX_LETRAS:
+    if not texto or len(texto) > MAX_LETRAS_DE_COR:
         return None
+    de_cor = _ler_cor_e_rotulo(texto)
+    if len(texto) > MAX_LETRAS:
+        return de_cor or None
 
     if _POR_CATEGORIA.search(texto):
-        return None
+        return de_cor or None
 
     tem_comando = re.search(_VERBOS, texto) or re.search(_GRAFICO, texto)
     ajuste = {}
@@ -121,7 +151,27 @@ def ler_ajuste(mensagem: str) -> dict | None:
         # "junta tudo no mesmo gráfico" fala das séries, não do corte.
         ajuste["limite"] = 0          # 0 = sem corte
 
+    ajuste.update(de_cor)
     return ajuste or None
+
+
+def _ler_cor_e_rotulo(texto: str) -> dict:
+    ajuste = {}
+    if _COR_DO_SINAL.search(texto) and _SINAL.search(texto):
+        ajuste["cores_por_sinal"] = "rotulo" if _ROTULO.search(texto) else "barra"
+    else:
+        cor = _COR_FIXA.search(texto)
+        if cor and re.search(r"\b(?:cor|cores|pint\w*|barras?|linhas?|grafico)\b", texto):
+            ajuste["cor"] = _CORES_POR_NOME[cor.group(1)]
+    if _TIRA_ROTULO.search(texto):
+        ajuste["rotulos"] = False
+    elif _POE_ROTULO.search(texto) or ajuste.get("cores_por_sinal") == "rotulo":
+        ajuste["rotulos"] = True
+    return ajuste
+
+
+# Ajustes que só pintam ou rotulam: valem também na especificação Vega.
+SO_COR_E_ROTULO = frozenset({"cores_por_sinal", "cor", "rotulos"})
 
 
 def aplicar(grafico: dict, ajuste: dict) -> dict:
@@ -145,7 +195,81 @@ def aplicar(grafico: dict, ajuste: dict) -> dict:
             novo["limite"] = ajuste["limite"]
         else:
             novo.pop("limite", None)
+    if ajuste.get("cores_por_sinal"):
+        novo["cores_por_sinal"] = ajuste["cores_por_sinal"]
+        novo.pop("cor", None)
+    if ajuste.get("cor"):
+        novo["cor"] = ajuste["cor"]
+        novo.pop("cores_por_sinal", None)
+    if "rotulos" in ajuste:
+        novo["rotulos"] = ajuste["rotulos"]
     return novo
+
+
+def aplicar_no_vega(spec: dict, ajuste: dict) -> dict | None:
+    """Cor e rótulo numa especificação Vega-Lite, sem o modelo.
+
+    Só a forma simples — uma marca, ou camadas — com uma medida
+    quantitativa que se encontre sem dúvida. O resto (facetas, concat) volta
+    None e vai para a IA, que conhece os campos."""
+    novo = copy.deepcopy(spec or {})
+    compostos = {"facet", "concat", "hconcat", "vconcat", "repeat", "spec"}
+    if not novo or not ({"mark", "layer"} & novo.keys()) or compostos & novo.keys():
+        return None
+    if "layer" not in novo:
+        novo["layer"] = [{"mark": novo.pop("mark"), "encoding": novo.pop("encoding", {})}]
+    comum = novo.get("encoding") or {}
+    desenhos = [c for c in novo["layer"] if _marca(c) in ("bar", "line", "area", "point")]
+    textos = [c for c in novo["layer"] if _marca(c) == "text"]
+    if not desenhos:
+        return None
+    canais = {**comum, **(desenhos[0].get("encoding") or {})}
+    medida, eixo = _medida(canais)
+    if not medida:
+        return None
+
+    if ajuste.get("rotulos") is False:
+        novo["layer"] = [c for c in novo["layer"] if _marca(c) != "text"]
+        textos = []
+    elif ajuste.get("rotulos") and not textos:
+        marca = {"type": "text", "fontWeight": 600, "fontSize": 11}
+        marca.update({"align": "left", "dx": 5} if eixo == "x" else {"baseline": "bottom", "dy": -5})
+        encoding = {k: v for k, v in canais.items() if k in ("x", "y", "xOffset", "yOffset")}
+        encoding["text"] = {"field": medida, "type": "quantitative", "format": ",.2~f"}
+        textos = [{"mark": marca, "encoding": encoding}]
+        novo["layer"].append(textos[0])
+
+    if ajuste.get("cores_por_sinal"):
+        alvos = textos if ajuste["cores_por_sinal"] == "rotulo" else desenhos
+        if not alvos:
+            return None
+        for camada in alvos:
+            camada.setdefault("encoding", {})["color"] = {
+                "condition": {"test": f"datum[{json.dumps(medida)}] < 0", "value": VERMELHO}, "value": VERDE,
+            }
+    if ajuste.get("cor"):
+        if "field" in (canais.get("color") or {}):
+            # Uma cor por série: pintar tudo de uma cor apagaria a legenda.
+            return None
+        for camada in desenhos:
+            marca = camada["mark"] if isinstance(camada["mark"], dict) else {"type": camada["mark"]}
+            camada["mark"] = {**marca, "color": ajuste["cor"]}
+            (camada.get("encoding") or {}).pop("color", None)
+        comum.pop("color", None)
+    return novo
+
+
+def _marca(camada) -> str:
+    marca = camada.get("mark")
+    return (marca.get("type") if isinstance(marca, dict) else marca) or ""
+
+
+def _medida(canais: dict) -> tuple:
+    for eixo in ("y", "x"):
+        canal = canais.get(eixo) or {}
+        if canal.get("type") == "quantitative" and canal.get("field"):
+            return canal["field"], eixo
+    return "", ""
 
 
 NOMES = {
@@ -175,6 +299,16 @@ def descrever(ajuste: dict, total: int | None = None, grupo: str = "") -> str:
         partes.append(f"deixei os {n} primeiros no desenho")
     elif "limite" in ajuste:
         partes.append("voltei a mostrar todos no desenho")
+    if ajuste.get("cores_por_sinal"):
+        o_que = "os valores" if ajuste["cores_por_sinal"] == "rotulo" else "as barras"
+        partes.append(f"deixei {o_que} em verde quando sobe e em vermelho quando desce")
+    elif ajuste.get("rotulos"):
+        partes.append("coloquei os valores no gráfico")
+    if ajuste.get("rotulos") is False:
+        partes.append("tirei os valores do gráfico")
+    if ajuste.get("cor"):
+        nome = next((n for n, c in _CORES_POR_NOME.items() if c == ajuste["cor"]), "a cor pedida")
+        partes.append(f"pintei o gráfico de {nome}")
 
     texto = "Pronto: " + " e ".join(partes) + "."
     if ajuste.get("limite") and total and total > ajuste["limite"]:
@@ -204,6 +338,11 @@ _PALAVRAS_DO_DESENHO = frozenset("""
     isso esse essa este esta nisso nesse nessa ele ela eles elas me mim eu voce vc agora entao tambem
     mesmo mesma lado cada outro outra outros outras forma jeito modo assim aqui ai bom boa ruim nao sim
     ok obrigado obrigada valeu novo novamente favor que mais menos
+    rotulo rotulos label labels dado dados valor valores numero numeros p quando sobe subir subiu desce descer
+    desceu cai cair caiu positivo positivos negativo negativos positiva negativa crescimento cresce queda alta
+    baixa aumenta aumentou diminui diminuiu tira tire tirar remove remova remover esconde esconda adiciona
+    adicione inclui inclua bota bote poe ponha pinta pinte pintar ver
+    verde verdes vermelho vermelha vermelhos vermelhas azul laranja roxo roxa cinza amarelo amarela preto preta
 """.split())
 _TOKEN = re.compile(r"[a-z0-9]+")
 _CORTE_INTEIRO = re.compile(r"\b(?:top\s*\d{1,3}|\d{1,3}\s*(?:primeir|maior|menor|melhor|pior)\w*)")

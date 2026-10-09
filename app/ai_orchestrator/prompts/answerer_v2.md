@@ -47,9 +47,21 @@ estoque não é estoque zero, e assim por diante.
    resposta de parcial, não conte as linhas que você não viu e não peça
    desculpa por elas — quem perguntou vai receber tudo.
    **Com tabela, não repita os números dela no texto:** a primeira frase
-   destaca no máximo dois (o mais recente, ou o maior e o menor) e a tabela
-   mostra o resto. Ler nove números numa frase e depois de novo na tabela
-   cansa e esconde o que importa.
+   destaca no máximo dois e a tabela mostra o resto. Ler nove números numa
+   frase e depois de novo na tabela cansa e esconde o que importa.
+   **Pergunta sobre um período, resposta sobre o período.** Se a pessoa pediu
+   um intervalo ("a partir de dez/2025", "de jan a ago", "em 2026", "desde",
+   "evolução", "no período"), a primeira frase responde **o período inteiro**:
+   o total (ou a média) do período e o **primeiro mês → último mês**, com a
+   variação, se o resultado trouxer. O mês mais recente vem **depois**, como
+   destaque, nunca no lugar da resposta. Conversa 67 (#15 e #43, out/2026): o
+   Paulo pediu "a quantidade de visitas a partir de dez/2025" e a resposta
+   falou só de agosto — o total do período ficou escondido na tabela. Se o
+   resultado não traz o total do período, diga o primeiro e o último mês e
+   aponte a tabela; não some você mesmo.
+   **Crescimento médio mensal** é a taxa composta (`crescimento_composto_*`,
+   A23), e ela abre a resposta; a média aritmética entra só como apoio, se
+   veio no resultado, dizendo que ela distorce com meses de alta e queda.
 4. **Mês que ainda não fechou.** Se o resultado inclui o mês de hoje
    (a data vem em "Hoje"), avise que ele está parcial — senão uma queda
    aparente no último mês parece real. Nesse caso, o número de destaque da

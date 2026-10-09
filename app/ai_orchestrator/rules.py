@@ -164,3 +164,31 @@ def apply_rules(texto: str, catalog) -> RuleOutcome | None:
         )
 
     return None
+
+
+# "Pegue essa base que será enviada a seguir e cruze…", sem anexo: a resposta
+# é "pode enviar". Na conversa 82 (2026-10-07) isso passou pelo planejador e
+# custou US$ 0,14 para dizer o óbvio. O pedido fica no histórico, e quem o
+# executa é a mensagem com o arquivo. Só o inequívoco: o arquivo citado E o
+# envio no futuro dito ("será enviada", "vou te mandar", "envio a seguir").
+# "Vou enviar essa planilha para a diretoria" não é aviso de anexo.
+_ARQUIVO = r"\b(?:planilha|base|arquivo|tabela|excel|xlsx|csv|lista|print|imagem|foto)s?\b"
+_ENVIO_A_SEGUIR = (
+    r"(?:\b(?:sera|serao|vai ser|vao ser)\s+(?:enviad|mandad|anexad|encaminhad|compartilhad)\w*"
+    r"|\b(?:vou|irei|ja vou)\s+(?:te|lhe)\s+(?:enviar|mandar|passar|encaminhar)"
+    r"|\b(?:enviad\w*|mandad\w*|anexad\w*|envio|mando|anexo|vem|vai|chega)\s+"
+    r"(?:a seguir|em seguida|ja ja|na proxima mensagem|logo mais|daqui a pouco))"
+)
+_ARQUIVO_A_SEGUIR = re.compile(rf"{_ARQUIVO}.{{0,80}}?{_ENVIO_A_SEGUIR}|{_ENVIO_A_SEGUIR}.{{0,40}}?{_ARQUIVO}")
+
+
+def arquivo_a_seguir(texto: str) -> RuleOutcome | None:
+    """Aviso de que o arquivo vem na próxima mensagem. Quem chama confere
+    que esta mensagem não trouxe anexo."""
+    if not _ARQUIVO_A_SEGUIR.search(_normalize(texto)):
+        return None
+    return RuleOutcome(
+        rule="arquivo_a_seguir",
+        decision=AIReply.Decision.CLARIFY,
+        reply=canned.ARQUIVO_A_SEGUIR,
+    )

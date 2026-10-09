@@ -151,6 +151,17 @@ intervalo). Só siga sem perguntar se o usuário já tiver dito o período.
   composta**: `cdgmarca` + `cdgconcentracao` + `cdgapresentacao` + `cdgforma` (+ `cdglaboratorio`).
   `cdgforma` é bigint na prescrição e texto nas outras duas: use `p.cdgforma::text`.
 - UF do médico = `left(crm, 2)`. `cdgregiao` não é UF.
+- **SKUs da Ease na prescrição — filtre pelo código, nunca pelo nome** (`pr.nome ILIKE '%100%'`
+  pega o que não devia e quebra quando o nome muda):
+
+  | SKU | Filtro em `audit.prescricao` (com `cdglaboratorio = 'EAS'`) |
+  |---|---|
+  | **Isolado 100 mg/mL** | `cdgmarca = 'DEDD' AND cdgconcentracao = '011'` |
+  | **Isolado 20 mg/mL** (na auditoria desde jan/26) | `cdgmarca = 'DEDD' AND cdgconcentracao = '067'` |
+  | **Extrato 36,76 mg/mL** | `cdgmarca = 'DNSA'` |
+
+  A auditoria não separa frasco: o Isolado 100 mg/mL de 10 e de 30 mL é a mesma linha. PX por SKU
+  mês a mês: A24.
 
 ### Prescrição — volume
 
@@ -272,6 +283,69 @@ FROM audit.prescricao p
 WHERE p.cdglaboratorio = 'EAS' AND p.px1 > 0
 GROUP BY 1
 ORDER BY 1 DESC;
+```
+
+### Crescimento médio mensal e PX por SKU
+
+**Crescimento médio mensal = taxa composta** (CMGR): `(PX do último mês ÷ PX do primeiro)^(1 ÷ meses) − 1`.
+É o número principal da resposta. A média aritmética das variações mês a mês vai **só como apoio**,
+dizendo que ela distorce quando há meses de alta e de queda (−12% e +12% dão média 0%, mas o volume
+caiu). Diga também a variação total do período (primeiro mês → último). A23 calcula tudo de uma vez;
+para um SKU, um canal ou um grupo de médicos, troque o filtro dentro de `mensal`.
+
+*"Qual a média mensal de crescimento da prescrição do mercado e da Ease?"*
+
+```sql
+-- A23 · Crescimento médio mensal: taxa composta (padrão) e média aritmética (apoio), mercado e Ease
+WITH mensal AS (
+  SELECT p.data AS competencia,
+         SUM(p.px1) AS px_mercado,
+         SUM(p.px1) FILTER (WHERE p.cdglaboratorio = 'EAS') AS px_ease
+  FROM audit.prescricao p
+  WHERE p.data BETWEEN :data_ini AND :data_fim
+  GROUP BY 1
+),
+variacoes AS (
+  SELECT px_mercado / NULLIF(LAG(px_mercado) OVER (ORDER BY competencia), 0) - 1 AS var_mercado,
+         px_ease / NULLIF(LAG(px_ease) OVER (ORDER BY competencia), 0) - 1 AS var_ease
+  FROM mensal
+),
+pontas AS (
+  SELECT MIN(competencia) AS inicio, MAX(competencia) AS fim, COUNT(*) - 1 AS meses
+  FROM mensal
+)
+SELECT pt.inicio, pt.fim, pt.meses,
+       ini.px_mercado AS px_mercado_inicio, f.px_mercado AS px_mercado_fim,
+       ini.px_ease AS px_ease_inicio, f.px_ease AS px_ease_fim,
+       ROUND((100.0 * (POWER(f.px_mercado / NULLIF(ini.px_mercado, 0), 1.0 / NULLIF(pt.meses, 0)) - 1))::numeric, 2)
+         AS crescimento_composto_mercado_pct,
+       ROUND((100.0 * (POWER(f.px_ease / NULLIF(ini.px_ease, 0), 1.0 / NULLIF(pt.meses, 0)) - 1))::numeric, 2)
+         AS crescimento_composto_ease_pct,
+       ROUND((100.0 * (f.px_mercado / NULLIF(ini.px_mercado, 0) - 1))::numeric, 2) AS variacao_total_mercado_pct,
+       ROUND((100.0 * (f.px_ease / NULLIF(ini.px_ease, 0) - 1))::numeric, 2) AS variacao_total_ease_pct,
+       ROUND((100.0 * (SELECT AVG(var_mercado) FROM variacoes))::numeric, 2) AS media_aritmetica_mercado_pct,
+       ROUND((100.0 * (SELECT AVG(var_ease) FROM variacoes))::numeric, 2) AS media_aritmetica_ease_pct
+FROM pontas pt
+JOIN mensal ini ON ini.competencia = pt.inicio
+JOIN mensal f   ON f.competencia = pt.fim;
+-- Dez/25 a ago/26: mercado 2,00% ao mês composto (2,20% na média aritmética; +17,13% no período);
+-- Ease 1,28% ao mês composto (1,52% aritmético; +10,74% no período).
+```
+
+*"Como está a prescrição de cada SKU da Ease mês a mês?"*
+
+```sql
+-- A24 · PX Ease por SKU, mês a mês (Isolado 100 mg/mL, Isolado 20 mg/mL e Extrato)
+SELECT p.data AS competencia,
+       SUM(p.px1) FILTER (WHERE p.cdgmarca = 'DEDD' AND p.cdgconcentracao = '011') AS px_isolado_100,
+       SUM(p.px1) FILTER (WHERE p.cdgmarca = 'DEDD' AND p.cdgconcentracao = '067') AS px_isolado_20,
+       SUM(p.px1) FILTER (WHERE p.cdgmarca = 'DNSA') AS px_extrato,
+       SUM(p.px1) AS px_ease
+FROM audit.prescricao p
+WHERE p.cdglaboratorio = 'EAS'
+  AND p.data BETWEEN :data_ini AND :data_fim
+GROUP BY 1
+ORDER BY 1;
 ```
 
 ### Categoria do médico
@@ -2929,6 +3003,15 @@ ORDER BY 1 DESC, 3 DESC;
 | `audit.rx_visitas` | **Histórico de visitas a MÉDICOS** | `crm_norm`, `nome`, `setor`, `setor_cliente`, `setor_ims` (nome curto do representante), `data_da_visita`, `visita_efetiva`, `tipo_visita`, `lista_de_motivo_de_nao_visita`, `comentarios` |
 | `audit.trade_visita` | **Histórico de visitas a PDVs** (farmácias), desde mai/2023 | `cnpj` (14 dígitos, texto), `data_da_visita` (date), `visita_efetiva` (**boolean**), `lista_de_motivo_de_nao_visita`, `setor`, `setor_cliente` (território, liga à `cddd.forca_vendas`), `setor_ims` (nome curto do representante), `nome_do_setor` (praça), `bandeira` |
 
+- **"Força de Vendas" tem UMA definição padrão: o painel atual das equipes 1, 2 e 4**
+  (`audit.rx_cadastro_mais_recente WHERE equipe IN (1, 2, 4)`), o mesmo canal "Médicos Visitados pela
+  FV" da seção 7.1. Vale para "médicos da FV", "PX da Força de Vendas", "visitados pela FV" e para
+  comparar FV com Digital + Orgânico. As alternativas só entram quando a pessoa pedir com essas
+  palavras: **médicos com visita efetiva no período** (`audit.rx_visitas`, `visita_efetiva = 'S'`,
+  `setor <> 3000`) ou **o painel de todas as equipes**. Na dúvida, use o padrão e diga qual foi.
+  **Na conversa, mantenha a definição escolhida**: se a pessoa já respondeu qual quer, não pergunte de
+  novo e não troque nas perguntas seguintes — números de FV com definições diferentes não se comparam
+  (conversas 67 e 86, out/2026: três definições numa conversa só).
 - **Visitado = `visita_efetiva = 'S'`.** `'N'` é tentativa sem contato: não conta como visita
   (o motivo está em `lista_de_motivo_de_nao_visita`).
 - **Visita a PDV ≠ visita a médico.** "PDVs visitados", "farmácias visitadas", "visitas a lojas"
@@ -3939,8 +4022,12 @@ aparece várias vezes nas inativas e no painel, e o `JOIN` duplicaria o PX.
   as regras delas.
 - **PX Ease é o padrão.** "PX por canal", "quanto vem do Digital", sem dizer de quem: PX Ease
   (`p.cdglaboratorio = 'EAS'`). Só quando pedirem **mercado** ("mercado", "cannabis total", "todos
-  os laboratórios", "share") o filtro sai — e aí traga Ease e mercado lado a lado, com o share
-  (M09).
+  os laboratórios") o filtro sai — e aí traga Ease e mercado lado a lado, com o share (M09).
+- **"Share do canal" / "% do canal" / "peso do canal" = participação no PX EASE**: o `pct_do_mes` da
+  M08 (o PX Ease do canal ÷ o PX Ease de todos os canais). **Não** é o PX do canal sobre o PX de todos
+  os laboratórios. Só é "share da Ease no canal" (Ease ÷ mercado dentro do canal, M09) quando a pessoa
+  falar em share **da Ease**, em mercado ou em concorrência. Conversa 67 (#3, out/2026): o share por
+  canal saiu sobre o PX de todos os laboratórios e o Paulo estranhou o número.
 - **O canal é o de hoje**, aplicado a todos os meses, como na coluna do Power BI: um médico que
   entrou no painel em agosto conta como "Visitados pela FV" também em março. Numa evolução, diga
   isso em uma frase ("canal pela base de hoje").

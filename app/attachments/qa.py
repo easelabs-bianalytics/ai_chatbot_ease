@@ -17,6 +17,7 @@ qual valor domina, quando um domina ("SEM REP" em 146 das 230, conversa 44).
 
 import io
 import math
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -33,6 +34,20 @@ from attachments.planilha import (
 PARTE_DOMINANTE = 0.5
 MAX_EXEMPLOS_DE_PROBLEMA = 5
 
+# "Não cadastrado na Área Médica", "Não informado no cadastro": a consulta
+# escreve um aviso onde não achou o médico ou o dado. A célula tem valor, mas
+# não é um casamento — "57 de 57, nenhuma em branco" escondia os médicos fora
+# da base (conversa 81, 2026-10-06). "Não" sozinho é resposta, não aviso.
+_MARCADOR = re.compile(
+    r"^\s*(?:n[ãa]o\s+(?:cadastrad|encontrad|localizad|identificad|consta|informad|preenchid|h[áa]\s+dado)"
+    r"|sem\s+(?:cadastro|correspond|dado|informa))",
+    re.I,
+)
+
+
+def eh_marcador(valor) -> bool:
+    return bool(_MARCADOR.match(str(valor or "")))
+
 
 @dataclass(frozen=True)
 class Cobertura:
@@ -42,6 +57,12 @@ class Cobertura:
     total: int
     dominante: str = ""
     vezes_do_dominante: int = 0
+    # Avisos no lugar do dado: (("Não cadastrado na Área Médica", 20), ...).
+    marcadores: tuple = ()
+
+    @property
+    def com_dado(self) -> int:
+        return self.com_valor - sum(vezes for _, vezes in self.marcadores)
 
 
 @dataclass
@@ -175,5 +196,6 @@ def _conferir_aba(conferencia, titulo, antes, depois, escrever, sobrescrever) ->
         conferencia.cobertura.append(Cobertura(
             aba=titulo, coluna=str(coluna), com_valor=len(valores), total=len(corpo),
             dominante=dominante, vezes_do_dominante=vezes,
+            marcadores=tuple((v, n) for v, n in contagem.most_common() if eh_marcador(v)),
         ))
 
