@@ -2391,3 +2391,27 @@ do ADR-0031:
 Deploy: sem migration e sem variável nova — só a imagem. Não há
 pré-requisito para a Fase 9.
 
+### Sell In Realizado e Categoria de Troca no documento de referência (2026-10-09)
+
+Dois temas novos, vindos de `chatbot_sellin_categoria_troca.md`, viraram seções próprias do
+`chatbot_bi_referencia_querys.md` — e não subseções do Estoque ou do Sell Out, para não encarecer
+as perguntas desses temas (o limite do teste de contexto pede seção própria):
+
+- **8. Sell In Realizado** (`sell_in`, SI1–SI6): `estoque_redes.fato_sell_in`, só `"Utilização" =
+  'Venda'`, faturamento por `"$T"` (o `"$T NFe"` repete o total da nota e dá 2,1×), sem projeção nem
+  meta, UF do cliente que comprou.
+- **9. Categoria de Troca / Situação do PDV** (`categoria_troca`, CT1–CT6): `audit.rx_cadastro_pdv`,
+  `número - rótulo` (1 a 4; EXCELÊNCIA, ATENÇÃO, DISTRIBUIÇÃO), categoria vazia é texto em branco.
+  "Categoria do PDV" leva as seções 3 e 9 e o Jarvis pergunta Mercado ou Troca, junto das perguntas
+  da 3.4; "situação do PDV" vai direto para a Troca.
+- Roteamento por palavra-chave em `context.py`; pergunta só de Sell In leva ~5,9 mil tokens.
+- 12 consultas aprovadas pelo validador e rodadas no banco real; 13 casos de validação (12 de
+  referência e 1 de "previsão de Sell In", que não existe); `--so-gabarito`: todos devolvem linhas.
+- `run_synthetic_cases` com o modelo real (~US$ 1,01 em três rodadas): 14 de 14 aprovados no fim.
+  O que a primeira rodada mostrou e foi corrigido:
+  - "quanto vendemos de cada produto **para as redes**" ia para a dispensação: venda PARA o cliente
+    é Sell In (regra na seção 8 e palavras-chave "para as redes", "para o distribuidor");
+  - o CT6 do arquivo original contava toda visita: visita a PDV é a efetiva (seção 5.4), e a
+    referência passou a filtrar `visita_efetiva`, como o Jarvis já fazia;
+  - o SI5 conta os dias sem comprar a partir da última nota da base, não de hoje (a carga não é diária);
+  - três casos com a pergunta mal formulada ou comparação rígida demais (SI1, SI6, CT6).

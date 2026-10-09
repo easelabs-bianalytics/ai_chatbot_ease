@@ -2270,6 +2270,11 @@ ORDER BY 1, 2;
 Existe categoria de **PDV** (esta seção) e categoria de **médico** (seção 1). Se não estiver claro
 qual das duas o usuário quer, pergunte.
 
+E a categoria de PDV tem duas: a de **Mercado** (esta seção, 1 a 8, pelo volume no mercado) e a de
+**Troca** (seção 9, a situação no painel da força de vendas: "1 - ATENÇÃO", "2 - EXCELÊNCIA"). Se o
+pedido não disser qual, pergunte também isso, na mesma mensagem das duas perguntas abaixo. "Situação
+do PDV" e "categoria de troca" vão direto para a seção 9.
+
 **Sempre que perguntarem a categoria de um PDV, pergunte antes:**
 1. **A categoria é Mercado ou Ease Labs?** (`tdd.dim_mercado."DESC_GRUPO"`)
 2. **A categoria é em unidades ou em faturamento?**
@@ -4476,4 +4481,327 @@ GROUP BY 1
 ORDER BY 1;
 -- "Por médico" conta todos os membros que estão na auditoria (quem não prescreveu entra com 0);
 -- "por prescritor", só quem prescreveu Ease no período.
+```
+
+## 8. Sell In Realizado
+
+**Sell In é o que a Ease vendeu para o cliente** — rede, distribuidor ou farmácia —, nota fiscal a
+nota fiscal. É o começo da cadeia: o Sell In abastece o PDV, e o sell out (seção 2) é o que sai
+dele para o paciente.
+
+**Venda PARA o cliente é Sell In.** "Quanto vendemos para as redes", "quanto a Raia comprou da
+Ease", "faturamos para o distribuidor" são desta seção. "Quanto vendemos" sem dizer para quem, ou
+"quanto a rede vendeu/dispensou", é sell out (seção 2). Na dúvida entre os dois, pergunte.
+
+Três limites que a resposta deixa claros:
+
+- **Só existe Sell In realizado.** Não há projeção nem meta nesta base. Se perguntarem previsão ou
+  meta de Sell In, diga que não está disponível aqui.
+- **Só existe Sell In da Ease.** Não há Sell In de concorrente — o painel de mercado (TD) é sell out.
+- **A fonte é uma só:** `estoque_redes.fato_sell_in`. Nenhuma outra tabela é necessária.
+
+Os números mudam a cada carga: cite na resposta o período do dado (a última `"DT EMISSÃO"`).
+
+### 8.1 A tabela
+
+`estoque_redes.fato_sell_in` — 1 linha por **produto dentro de uma nota fiscal**. Dado desde
+jan/2023 (conferido em 2026-10-09).
+
+| Coluna | O que é |
+|---|---|
+| `"DT EMISSÃO"` | Data de emissão da nota — **é a data do Sell In**. Há também `"Dt Registro"` e `"Dt Process."` |
+| `"Utilização"` | Natureza da operação: `Venda` e `Venda - PBM` (ver as regras) |
+| `"Entidade"` · `"CpfCnpj"` | Cliente que comprou (razão social e CNPJ) |
+| `"Cidade"` · `"Estado"` | Onde está o cliente |
+| `"NFe"` · `"#NFe"` | Número da nota |
+| `"Nome"` · `"PRODUTO"` | Produto vendido (descrição comercial, com LISTA A3 / B1) |
+| `"Quant"` · `"UN"` | Quantidade e unidade |
+| `"Preço"` · `"$ Prod."` · `"$T"` | Preço unitário, valor do produto e **total da linha** |
+| `"$T NFe"` | Total da **nota inteira**, repetido em todas as linhas dela |
+| `"Status"` · `"Operação"` | Hoje só `Fechado` / `ON` |
+
+**Todos os nomes de coluna exigem aspas duplas** — têm espaço, acento, cifrão ou são palavra
+reservada (`"$T"`, `"DT EMISSÃO"`, `"Utilização"`, `"Quant"`).
+
+Período coberto, antes de responder:
+`SELECT min("DT EMISSÃO")::date, max("DT EMISSÃO")::date, count(*) FROM estoque_redes.fato_sell_in;`
+
+### 8.2 Regras
+
+- **Sell In Realizado = `"Utilização" = 'Venda'`.** As demais naturezas não entram: `Venda - PBM`
+  (reembolso do programa, desde abr/2026) e qualquer outra que aparecer (bonificação, operação
+  governamental) — ela continua fora até alguém definir o contrário. Se o usuário quiser as duas,
+  mostre em colunas separadas e diga qual é qual.
+- **Fature por `"$T"`, nunca por `"$T NFe"`.** O total da nota se repete em todas as linhas dela:
+  somado, dá 2,1 vezes o faturamento real (conferido em 2026-10-09).
+- **Unidades: `"Quant"`.** Sem divisão por 1000 — esta base não é o painel de mercado.
+- **O mês é o da emissão** (`"DT EMISSÃO"`). O mês corrente fica parcial até o fechamento: diga isso.
+- Sell In é **irregular por natureza**: a rede compra em lote. Mês fraco não significa queda de
+  demanda — compare com o sell out (SI6) antes de concluir.
+- **SKU:** o mesmo produto aparece com descrições diferentes (LISTA A3, LISTA B1, "EMBALAGEM
+  SECUNDARIA"). Para falar de SKU, agrupe pelo produto equivalente (concentração e frasco) e avise
+  que agrupou.
+- **UF é a do cliente que comprou**, não a da loja que vai vender: centro de distribuição em SP
+  abastece o país inteiro. Não leia a UF do Sell In como demanda regional.
+
+*"Qual o Sell In dos últimos meses?"*
+
+```sql
+-- SI1 · Sell In Realizado mês a mês: faturamento, unidades e notas
+SELECT TO_CHAR(DATE_TRUNC('month', "DT EMISSÃO"::date), 'YYYY-MM') AS mes,
+       ROUND(SUM("$T")::numeric, 2)     AS faturamento,
+       ROUND(SUM("Quant")::numeric)     AS unidades,
+       COUNT(DISTINCT "NFe")            AS notas
+FROM estoque_redes.fato_sell_in
+WHERE "Utilização" = 'Venda'            -- Sell In Realizado
+GROUP BY 1
+ORDER BY 1 DESC;
+```
+
+*"Quanto vendemos de cada produto para as redes neste ano?"*
+
+```sql
+-- SI2 · Sell In por produto no período
+SELECT "Nome" AS produto,
+       ROUND(SUM("Quant")::numeric)                          AS unidades,
+       ROUND(SUM("$T")::numeric, 2)                          AS faturamento,
+       ROUND((SUM("$T")/NULLIF(SUM("Quant"), 0))::numeric, 2) AS preco_medio
+FROM estoque_redes.fato_sell_in
+WHERE "Utilização" = 'Venda'
+  AND "DT EMISSÃO" >= :data_ini
+GROUP BY 1
+ORDER BY faturamento DESC;
+```
+
+*"Quais clientes mais compraram?"* · *"Quanto a Raia comprou?"*
+
+```sql
+-- SI3 · Sell In por cliente no período
+SELECT "Entidade" AS cliente,
+       COUNT(DISTINCT "NFe")        AS notas,
+       ROUND(SUM("Quant")::numeric) AS unidades,
+       ROUND(SUM("$T")::numeric, 2) AS faturamento
+FROM estoque_redes.fato_sell_in
+WHERE "Utilização" = 'Venda'
+  AND "DT EMISSÃO" >= :data_ini
+  -- AND "Entidade" ILIKE '%RAIA%'        -- um cliente específico
+GROUP BY 1
+ORDER BY faturamento DESC;
+```
+
+*"Como o Sell In se divide por estado?"*
+
+```sql
+-- SI4 · Sell In por UF do cliente, com o share de cada uma
+SELECT "Estado" AS uf,
+       ROUND(SUM("$T")::numeric, 2) AS faturamento,
+       ROUND(100*SUM("$T")/SUM(SUM("$T")) OVER ()::numeric, 1) AS share_pct
+FROM estoque_redes.fato_sell_in
+WHERE "Utilização" = 'Venda' AND "DT EMISSÃO" >= :data_ini
+GROUP BY 1
+ORDER BY faturamento DESC;
+```
+
+*"Quem parou de comprar?"*
+
+Os dias contam da **última nota da base**, não de hoje: a carga não é diária, e contar de hoje
+somaria o atraso da carga a todos os clientes. Diga a data de corte na resposta.
+
+```sql
+-- SI5 · Clientes sem compra recente: última compra e dias sem comprar até o corte da base
+WITH corte AS (
+  SELECT MAX("DT EMISSÃO")::date AS data_corte
+  FROM estoque_redes.fato_sell_in
+  WHERE "Utilização" = 'Venda'
+)
+SELECT f."Entidade" AS cliente,
+       MAX(f."DT EMISSÃO")::date                      AS ultima_compra,
+       (c.data_corte - MAX(f."DT EMISSÃO")::date)     AS dias_sem_comprar,
+       ROUND(SUM(f."$T")::numeric, 2)                 AS faturamento_12m,
+       c.data_corte
+FROM estoque_redes.fato_sell_in f
+CROSS JOIN corte c
+WHERE f."Utilização" = 'Venda'
+  AND f."DT EMISSÃO"::date >= c.data_corte - INTERVAL '12 months'
+GROUP BY f."Entidade", c.data_corte
+ORDER BY dias_sem_comprar DESC;
+```
+
+*"Estamos vendendo para a rede mais do que ela vende para o paciente?"*
+
+```sql
+-- SI6 · Sell In contra Sell Out, em unidades, mês a mês
+WITH si AS (
+  SELECT to_char(date_trunc('month', "DT EMISSÃO"), 'YYYY-MM') AS mes, SUM("Quant") AS un_sell_in
+  FROM estoque_redes.fato_sell_in WHERE "Utilização" = 'Venda' GROUP BY 1
+),
+so AS (
+  SELECT to_char(date_trunc('month', date), 'YYYY-MM') AS mes,
+         SUM(cdd + extras + mp + ss - pbm) AS un_sell_out
+  FROM cddd.vw_sell_out GROUP BY 1
+)
+SELECT si.mes,
+       ROUND(si.un_sell_in)                                         AS sell_in,
+       ROUND(so.un_sell_out::numeric)                               AS sell_out,
+       ROUND((si.un_sell_in/NULLIF(so.un_sell_out, 0))::numeric, 2) AS razao
+FROM si JOIN so USING (mes)
+ORDER BY 1 DESC;
+```
+
+**Como ler a razão:** abaixo de 1 a cadeia está consumindo estoque; acima de 1 está estocando. É um
+indicador de ritmo, não de rastreabilidade: as unidades não são as mesmas peças.
+
+## 9. Categoria de Troca (Situação do PDV)
+
+### 9.1 O conceito e a pergunta obrigatória
+
+**"Categoria do PDV" é ambíguo na Ease: existem duas.**
+
+| | Categoria de **Mercado** | Categoria de **Troca** |
+|---|---|---|
+| O que mede | Volume do PDV no mercado de cannabis | Classificação de trade do PDV no painel da força de vendas |
+| Valores | 1 a 8 (1 = maior volume) | `1 - ATENÇÃO`, `2 - EXCELÊNCIA`, `3 - DISTRIBUIÇÃO`… |
+| Fonte | `tdd.fato_tdd` (seção 3.4) | `audit.rx_cadastro_pdv.categoria` |
+
+**Sempre que perguntarem "a categoria do PDV", pergunte de qual das duas se trata**, dando o
+exemplo: *"Categoria de Mercado (1 a 8, pelo volume no mercado de cannabis) ou Categoria de Troca
+(ex.: '1 - ATENÇÃO', '2 - EXCELÊNCIA')?"* — na mesma mensagem das perguntas da seção 3.4, se for a
+de Mercado.
+
+**"Situação do PDV" e "categoria de troca" são sempre Categoria de Troca** — aí não precisa
+perguntar.
+
+### 9.2 Como ler a Categoria de Troca
+
+O valor tem duas partes: **`número - rótulo`**.
+
+- **O número (1 a 4)** acompanha o porte do PDV: número baixo = PDV grande. A CT4 mostra essa
+  relação com a categoria de mercado.
+- **O rótulo** é a situação comercial: `EXCELÊNCIA`, `ATENÇÃO` e `DISTRIBUIÇÃO`.
+
+Nem toda combinação existe (não há `4 - DISTRIBUIÇÃO`, em 2026-10-09). Antes de afirmar que uma
+categoria não tem PDV, confira na CT3.
+
+### 9.3 A base
+
+`audit.rx_cadastro_pdv` — o painel de PDVs da força de vendas, **um PDV por CNPJ**. Colunas úteis:
+`cnpj`, `razaosocial`, `nomefantasia`, `categoria`, `setor`, `nome_setor`, `setor_cliente`
+(território), `utc_brick`, `cidade`, `uf`, `bandeira`, `frequencia`, `dias_sem_visita`,
+`dt_ativacao`, `potencial_cliente`.
+
+- **Representante:** `setor_cliente` → `cddd.forca_vendas.cod_territorio` → `desc_territorio`.
+- **`nome_setor` não é o nome do representante:** é o nome da região (ex.: "VAGO SANTOS").
+- **Estar no painel é pré-requisito:** PDV fora da `audit.rx_cadastro_pdv` não tem categoria de
+  troca — e isso não é erro: o painel de trade é uma fração do cadastro geral (`cddd.pdvs`). A maior
+  parte deles também aparece na `cddd.pdvs` e no cadastro de visitação
+  (`audit.trade_cadastro_estabelecimento`), mas nenhuma das três bases contém as outras.
+- **Categoria vazia é string em branco, não `NULL`:** `COALESCE` sozinho não resolve — use
+  `COALESCE(NULLIF(categoria, ''), 'SEM CATEGORIA')` e nunca descarte esses PDVs da contagem.
+- **O acento importa no filtro:** `ATENÇÃO`, `EXCELÊNCIA` e `DISTRIBUIÇÃO` estão gravados com acento.
+
+*"O PDV de CNPJ X está no painel? Qual a situação dele?"*
+
+```sql
+-- CT1 · Categoria de troca e situação de um CNPJ no painel de PDVs
+SELECT r.cnpj,
+       r.razaosocial,
+       r.nomefantasia,
+       COALESCE(NULLIF(r.categoria, ''), 'SEM CATEGORIA') AS categoria_troca,
+       left(r.categoria, 1)                               AS numero,
+       split_part(r.categoria, ' - ', 2)                  AS situacao,
+       r.setor,
+       r.nome_setor,
+       btrim(fv.desc_territorio)                          AS representante,
+       r.cidade, r.uf, r.frequencia, r.dias_sem_visita
+FROM audit.rx_cadastro_pdv r
+LEFT JOIN (SELECT DISTINCT cod_territorio, desc_territorio FROM cddd.forca_vendas) fv
+       ON fv.cod_territorio = r.setor_cliente
+WHERE lpad(regexp_replace(r.cnpj, '\D', '', 'g'), 14, '0') = :cnpj;
+-- Sem linha = o PDV não está no painel da força de vendas e, portanto, não tem categoria de troca.
+```
+
+*"Como está a situação dos PDVs de cada representante?"*
+
+```sql
+-- CT2 · Categoria de troca por representante: PDVs em excelência, atenção e distribuição
+SELECT COALESCE(btrim(fv.desc_territorio), r.nome_setor) AS representante,
+       COUNT(*)                                                      AS pdvs,
+       COUNT(*) FILTER (WHERE r.categoria LIKE '%EXCELÊNCIA%')       AS excelencia,
+       COUNT(*) FILTER (WHERE r.categoria LIKE '%ATENÇÃO%')          AS atencao,
+       COUNT(*) FILTER (WHERE r.categoria LIKE '%DISTRIBUIÇÃO%')     AS distribuicao,
+       COUNT(*) FILTER (WHERE COALESCE(r.categoria, '') = '')        AS sem_categoria
+FROM audit.rx_cadastro_pdv r
+LEFT JOIN (SELECT DISTINCT cod_territorio, desc_territorio FROM cddd.forca_vendas) fv
+       ON fv.cod_territorio = r.setor_cliente
+GROUP BY 1
+ORDER BY pdvs DESC;
+```
+
+Vale olhar a proporção entre excelência e atenção dentro de cada carteira, e não só o total de
+PDVs: é ela que mostra onde a situação está pior.
+
+*"Quantos PDVs há em cada categoria de troca?"*
+
+```sql
+-- CT3 · Distribuição dos PDVs do painel por categoria de troca
+SELECT COALESCE(NULLIF(categoria, ''), 'SEM CATEGORIA') AS categoria_troca,
+       COUNT(*) AS pdvs,
+       ROUND(100.0*COUNT(*)/SUM(COUNT(*)) OVER (), 1) AS pct
+FROM audit.rx_cadastro_pdv
+GROUP BY 1
+ORDER BY pdvs DESC;
+```
+
+*"O PDV é grande no mercado e está em atenção?"* — é o cruzamento que prioriza visita.
+
+```sql
+-- CT4 · Categoria de troca × categoria de mercado (unidades, grupo Mercado)
+WITH per AS (
+  SELECT MIN("COD_PERIODO") AS p FROM tdd.fato_tdd WHERE "COD_GRUPO" = 3 AND "CAT_UN_MERCADO" > 0
+)
+SELECT COALESCE(NULLIF(r.categoria, ''), 'SEM CATEGORIA')   AS categoria_troca,
+       COALESCE(f."CAT_UN_MERCADO"::text, 'SEM CAT')        AS categoria_mercado,
+       COUNT(*) AS pdvs
+FROM audit.rx_cadastro_pdv r
+CROSS JOIN per
+LEFT JOIN tdd.dim_pdv d
+       ON d."CNPJ_PDV" = lpad(regexp_replace(r.cnpj, '\D', '', 'g'), 14, '0')::bigint
+LEFT JOIN tdd.fato_tdd f
+       ON f."COD_PDV" = d."COD_PDV" AND f."COD_GRUPO" = 3 AND f."COD_PERIODO" = per.p
+GROUP BY 1, 2
+ORDER BY 1, 2;
+```
+
+O cruzamento que interessa é **número baixo de troca com categoria de mercado baixa e rótulo
+ATENÇÃO**: loja grande no mercado e com problema comercial. É a prioridade da operação.
+
+*"Quais PDVs em atenção o Hermes tem?"*
+
+```sql
+-- CT5 · PDVs de uma categoria de troca na carteira de um representante
+SELECT r.cnpj, r.razaosocial, r.cidade, r.uf,
+       r.categoria AS categoria_troca, r.frequencia, r.dias_sem_visita
+FROM audit.rx_cadastro_pdv r
+LEFT JOIN (SELECT DISTINCT cod_territorio, desc_territorio FROM cddd.forca_vendas) fv
+       ON fv.cod_territorio = r.setor_cliente
+WHERE fv.desc_territorio ILIKE '%' || :rep || '%'
+  AND r.categoria LIKE '1 -%'          -- ou '%ATENÇÃO%' para o rótulo
+ORDER BY r.categoria, r.cidade;
+```
+
+*"Estamos visitando os PDVs em atenção?"* — visita é a **efetiva** (seção 5.4: na `trade_visita`,
+`WHERE visita_efetiva`, que é boolean). Tentativa sem contato não conta.
+
+```sql
+-- CT6 · Visitas efetivas a PDV por categoria de troca no período
+SELECT COALESCE(NULLIF(r.categoria, ''), 'SEM CATEGORIA') AS categoria_troca,
+       COUNT(DISTINCT v.cnpj) AS pdvs_visitados,
+       COUNT(*)               AS visitas_efetivas
+FROM audit.trade_visita v
+JOIN audit.rx_cadastro_pdv r
+     ON lpad(regexp_replace(r.cnpj, '\D', '', 'g'), 14, '0') = lpad(v.cnpj, 14, '0')
+WHERE v.visita_efetiva
+  AND v.data_da_visita >= :data_ini
+GROUP BY 1
+ORDER BY visitas_efetivas DESC;
 ```

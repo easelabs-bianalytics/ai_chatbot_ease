@@ -1212,7 +1212,7 @@ casos:
     pergunta: Qual a categoria do PDV de CNPJ 61585865172106?
     esperado: clarify
     referencia: C30
-    nota: Precisa perguntar Mercado ou Ease Labs, e unidades ou faturamento.
+    nota: Precisa perguntar Mercado ou Troca (seção 9) e, se Mercado, Mercado ou Ease Labs e unidades ou faturamento — tudo numa mensagem.
 
   - id: C31-ease-faturamento
     grupo: referencia
@@ -1916,3 +1916,108 @@ casos:
       Pergunta difícil de propósito: prescrição é por médico e dispensação é por PDV, então
       o cruzamento só existe pelo brick. A IA pode responder com a ressalva ou explicar o
       limite — o que não pode é somar as duas como se fossem a mesma unidade.
+
+  # ------------------------------------------------------------------
+  # Sell In Realizado (seção 8) e Categoria de Troca (seção 9), 2026-10-09.
+  # Consultas conferidas no banco real nesse dia.
+  # ------------------------------------------------------------------
+  - id: SI1-sell-in-mes-a-mes
+    grupo: referencia
+    pergunta: Como evoluiu o Sell In realizado mês a mês, desde o começo da base?
+    esperado: answer_with_data
+    referencia: SI1
+    sql_deve_conter: ["fato_sell_in", "Utilização", "Venda", "$T"]
+    nota: Sell In Realizado é só a natureza Venda, faturado por "$T" (nunca "$T NFe", que dá 2,1×).
+
+  - id: SI2-sell-in-por-produto
+    grupo: referencia
+    pergunta: Quanto vendemos de cada produto para as redes em 2026?
+    esperado: answer_with_data
+    referencia: SI2
+    parametros: {data_ini: "2026-01-01"}
+    sql_deve_conter: ["fato_sell_in", "Venda", "Nome"]
+
+  - id: SI3-sell-in-por-cliente
+    grupo: referencia
+    pergunta: Quais clientes mais compraram da Ease em 2026, pelo Sell In?
+    esperado: answer_with_data
+    referencia: SI3
+    parametros: {data_ini: "2026-01-01"}
+    sql_deve_conter: ["fato_sell_in", "Entidade", "Venda"]
+
+  - id: SI4-sell-in-por-uf
+    grupo: referencia
+    pergunta: Como o Sell In de 2026 se divide por estado?
+    esperado: answer_with_data
+    referencia: SI4
+    parametros: {data_ini: "2026-01-01"}
+    sql_deve_conter: ["fato_sell_in", "Estado"]
+    nota: A UF é a do cliente que comprou (CD em SP abastece o país), não demanda regional.
+
+  - id: SI5-sell-in-quem-parou
+    grupo: referencia
+    pergunta: Quais clientes pararam de comprar no Sell In?
+    esperado: answer_with_data
+    referencia: SI5
+    sql_deve_conter: ["fato_sell_in", "Venda"]
+
+  - id: SI6-sell-in-contra-sell-out
+    grupo: referencia
+    pergunta: Estamos vendendo Sell In para as redes mais do que elas vendem de sell out?
+    esperado: answer_with_data
+    referencia: SI6
+    sql_deve_conter: ["fato_sell_in", "vw_sell_out"]
+    comparar_resultado: false
+    nota: O mês pode vir como data ou como texto 'YYYY-MM'; os números são os mesmos.
+
+  - id: X-sell-in-sem-projecao
+    grupo: esclarecimento
+    pergunta: Qual a previsão de Sell In para dezembro?
+    esperado: [unknown, clarify]
+    nota: Seção 8 — só existe Sell In realizado; não há projeção nem meta nesta base.
+
+  - id: CT1-situacao-de-um-cnpj
+    grupo: referencia
+    pergunta: Qual a situação do PDV de CNPJ 61585865189173?
+    esperado: answer_with_data
+    referencia: CT1
+    parametros: {cnpj: "61585865189173"}
+    sql_deve_conter: ["rx_cadastro_pdv", "categoria"]
+    nota: Situação do PDV é sempre Categoria de Troca — sem perguntar qual categoria.
+
+  - id: CT2-troca-por-representante
+    grupo: referencia
+    pergunta: Como está a categoria de troca dos PDVs de cada representante?
+    esperado: answer_with_data
+    referencia: CT2
+    sql_deve_conter: ["rx_cadastro_pdv", "forca_vendas", "ATENÇÃO", "EXCELÊNCIA"]
+
+  - id: CT3-distribuicao-da-troca
+    grupo: referencia
+    pergunta: Como os PDVs do painel se distribuem entre as categorias de troca?
+    esperado: answer_with_data
+    referencia: CT3
+    sql_deve_conter: ["rx_cadastro_pdv", "SEM CATEGORIA"]
+
+  - id: CT4-troca-x-mercado
+    grupo: referencia
+    pergunta: Cruze a categoria de troca dos PDVs com a categoria de mercado em unidades
+    esperado: answer_with_data
+    referencia: CT4
+    sql_deve_conter: ["rx_cadastro_pdv", "fato_tdd", "CAT_UN_MERCADO"]
+
+  - id: CT5-pdvs-em-atencao-do-rep
+    grupo: referencia
+    pergunta: Quais PDVs com categoria de troca 1 o Hermes tem?
+    esperado: answer_with_data
+    referencia: CT5
+    parametros: {rep: "HERMES"}
+    sql_deve_conter: ["rx_cadastro_pdv", "forca_vendas"]
+
+  - id: CT6-visita-por-troca
+    grupo: referencia
+    pergunta: Quantas visitas cada categoria de troca recebeu desde julho de 2026?
+    esperado: answer_with_data
+    referencia: CT6
+    parametros: {data_ini: "2026-07-01"}
+    sql_deve_conter: ["trade_visita", "rx_cadastro_pdv"]

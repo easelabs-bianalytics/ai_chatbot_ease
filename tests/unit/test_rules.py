@@ -62,7 +62,8 @@ def test_pedido_de_ajuda_lista_o_que_o_catalogo_cobre(catalogo, pergunta):
     assert resultado.rule == "pedido_de_ajuda"
     assert resultado.decision == AIReply.Decision.CONVERSATION
     assert "Sell Out e Dispensação de Unidades" in resultado.reply
-    assert len(resultado.reply.splitlines()) < 12
+    # Um tema por linha: 9 temas desde 2026-10-09 (Sell In e Categoria de Troca).
+    assert len(resultado.reply.splitlines()) < 14
 
 
 @pytest.mark.parametrize(

@@ -194,7 +194,10 @@ def test_do_terceiro_tema_em_diante_vai_o_resumo(catalogo):
     # código, revisão das conversas 67–86, 2026-10-08): ~1.000 tokens,
     # ~US$ 0,002 por pergunta de prescrição. Sem elas o Jarvis dava a média
     # aritmética como crescimento e achava o Isolado 100 por ILIKE '%100%'.
-    assert contexto.tokens_estimados < 32500
+    # 32,7 mil com as seções 8 e 9 (Sell In e Categoria de Troca, 2026-10-09):
+    # só o índice do documento cresce para esta pergunta (~80 tokens); as
+    # seções novas vão apenas quando o tema é delas.
+    assert contexto.tokens_estimados < 32700
 
 
 def test_schema_vai_filtrado_pelas_tabelas_do_tema(catalogo):
@@ -240,8 +243,9 @@ def test_contexto_da_resposta_nao_leva_o_documento(catalogo):
 
     assert "```sql" not in contexto.texto
     # Era 1,5 mil; subiu com o preâmbulo (ver o teste do núcleo acima).
-    # 2,3 mil com a regra do CRM LINK (2026-10-01).
-    assert contexto.tokens_estimados < 2300
+    # 2,3 mil com a regra do CRM LINK (2026-10-01); 2,35 mil com os títulos
+    # das seções 8 e 9 no índice (2026-10-09).
+    assert contexto.tokens_estimados < 2350
     assert "ainda não está disponível" in contexto.texto
 
 

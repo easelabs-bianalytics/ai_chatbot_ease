@@ -92,6 +92,28 @@ _TERMOS = {
             "medicos inativos"),
         1: ("marketing", "cadastrad", "cadastro", "login", "acessos", "abertura", "clique", "lista", "tag "),
     },
+    # Sell In Realizado (seção 8, 2026-10-09): o que a Ease vendeu para o
+    # cliente. Peso 3 porque "faturamento do Sell In" também pontua 2 no Sell
+    # Out, e o tema é este.
+    "sell_in": {
+        # Venda PARA o cliente é Sell In (caso SI2, 2026-10-09: "quanto
+        # vendemos de cada produto para as redes" foi para a dispensação).
+        3: ("sell in", "sell-in", "sellin", "fato_sell_in", "vendemos para", "vendeu para", "venda para a",
+            "vendas para a", "vendas para o", "faturamos para", "comprou da ease", "compraram da ease",
+            # "vendemos de cada produto PARA AS REDES": o "para" vem longe do verbo.
+            "para as redes", "para a rede", "para o distribuidor", "para os distribuidores"),
+        2: ("nota fiscal", "notas fiscais", "parou de comprar", "pararam de comprar", "sem comprar"),
+        1: ("cliente", "clientes", "distribuidor", "comprou", "compraram"),
+    },
+    # Categoria de Troca / Situação do PDV (seção 9). "Categoria do PDV"
+    # pontua aqui e no Estoque (3.4): as duas vão, e o planejador pergunta
+    # qual das duas é.
+    "categoria_troca": {
+        3: ("categoria de troca", "categorias de troca", "situacao do pdv", "situacao dos pdv"),
+        2: ("categoria do pdv", "categoria de pdv", "categoria dos pdv", "categorias de pdv",
+            "em atencao", "em excelencia", "excelencia"),
+        1: ("atencao", "painel de pdv", "trade"),
+    },
 }
 
 
