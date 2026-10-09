@@ -2363,7 +2363,12 @@ Dez pontos, cada um com teste do caso real em
 
 ## Fase 18 — Jarvis 3.0: motor dos prints (ADR-0035)
 
-**Status: ✅ local, testado com o modelo e o RDS reais (2026-10-09); sem deploy.**
+**Status: ✅ no ar em 2026-10-09** — imagem `14cc969` (commits `b3b0fcb`, revisão
+das conversas 67–86, e `14cc969`, motor dos prints), task `cockpit-prod-jarvis:50`,
+bump `7e6c4a7` mesclado na `main` do `sales_force_crm` (`5ee53a3`). O mesmo
+bump levou a task do sync do Marketing da `6617a2d` (que tinha ficado para
+trás nos dois deploys anteriores) para a `14cc969`; o código da carga não
+mudou entre as duas.
 
 O print deixa de ser "lido e descartado" e passa a ser dado, como a planilha
 do ADR-0031:
