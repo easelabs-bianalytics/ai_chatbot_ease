@@ -14,7 +14,7 @@ from PIL import Image
 from rest_framework.test import APIClient
 
 from attachments import deposito
-from attachments.limites import MAX_BYTES
+from attachments.limites import MAX_BYTES, MAX_PIXELS_POR_LEITURA
 from conversations.models import Conversation
 from messaging.models import Message
 
@@ -84,9 +84,11 @@ def test_imagem_e_guardada_ja_reduzida(cliente, conversa):
 
     corpo = r.json()
     assert corpo["tipo"] == "imagem"
-    assert max(corpo["detalhe"]["largura"], corpo["detalhe"]["altura"]) == 1280
+    # Pela área (ADR-0035): cabe numa leitura do modelo, sem passar do teto.
+    assert corpo["detalhe"]["largura"] * corpo["detalhe"]["altura"] <= MAX_PIXELS_POR_LEITURA
     guardada = Image.open(io.BytesIO(deposito.buscar(corpo["token"])))
-    assert max(guardada.size) == 1280
+    assert guardada.size == (corpo["detalhe"]["largura"], corpo["detalhe"]["altura"])
+    assert corpo["detalhe"]["pedacos"] == 1
 
 
 def test_arquivo_acima_de_5_mb_e_recusado_antes_de_ler(cliente, conversa):

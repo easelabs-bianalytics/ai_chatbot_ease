@@ -40,6 +40,7 @@ def preparar_anexo(nome: str, dados: bytes) -> dict:
         resumo = (
             f"Imagem {preparada.formato_original} de {preparada.largura}×{preparada.altura}"
             + (" (reduzida)" if preparada.reduzida else "")
+            + (f", lida em {preparada.pedacos} pedaços" if preparada.pedacos > 1 else "")
         )
         tipo = "imagem"
         prazo = SEGUNDOS_DA_ENTRADA
@@ -47,5 +48,6 @@ def preparar_anexo(nome: str, dados: bytes) -> dict:
             "largura": preparada.largura,
             "altura": preparada.altura,
             "tokens_estimados": preparada.tokens_estimados,
+            "pedacos": preparada.pedacos,
         }
     return {"token": deposito.guardar(dados, segundos=prazo), "tipo": tipo, "nome": nome, "resumo": resumo, "detalhe": detalhe}

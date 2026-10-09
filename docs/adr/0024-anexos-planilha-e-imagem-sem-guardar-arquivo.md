@@ -6,6 +6,9 @@ planilha: as linhas agora vão ao banco como a tabela `anexo.<aba>` (nunca ao
 modelo), o casamento é pela linha, a base é preservada e conferida, e a
 planilha acompanha a conversa por duas horas em vez de ser descartada no
 primeiro preenchimento. A regra "só a forma sobe ao modelo" continua valendo.
+**Revisado pelo ADR-0035 (2026-10-09)** na parte da imagem: o print longo é
+lido em pedaços em vez de reduzido a 1.280 px, todo bloco de dado é
+transcrito e conferido, e o print vira `anexo.<aba>`.
 
 ## Contexto
 Dois pedidos do time, os dois com o mesmo medo por trás — o custo:

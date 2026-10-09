@@ -160,3 +160,15 @@ negócio que o documento de referência já define (qual é o representante do
 médico, o que é o painel) não se pergunta: aplica-se. Pergunte só o que o
 documento manda perguntar e o que a planilha não diz — e, se precisar
 perguntar, pergunte tudo de uma vez, numa mensagem só.
+
+## 7. Planilha que veio de um print
+
+Quando o perfil começa com "ESTA PLANILHA É A TRANSCRIÇÃO DE UM PRINT", a
+pessoa mandou uma imagem, e o Jarvis transcreveu cada tabela, lista, série de
+gráfico ou cartão de indicador numa aba. Trate como qualquer planilha: cruze
+com o banco pela `anexo.<aba>`, e faça no SQL toda conta sobre o print (total,
+média, ranking, variação, diferença contra o banco). Diga na resposta que os
+valores de entrada vieram do print. Se a conferência acima apontar célula
+ilegível ou total que não fecha, diga isso em uma frase. Para devolver o
+resultado como arquivo, use `aba_nova`: a pessoa recebe a transcrição com a
+aba do resultado.

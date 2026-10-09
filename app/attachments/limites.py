@@ -39,11 +39,27 @@ MAX_CARACTERES_DO_RESUMO = 4_000
 CARACTERES_POR_ABA_A_MAIS = 4_000
 MAX_CARACTERES_DO_RESUMO_TOTAL = 32_000
 
-# Maior lado da imagem depois de reduzida. Medido em 2026-09-21 contra a API:
-# um print de 1920×1080 custa 2.461 tokens de entrada; reduzido para 1024 de
-# largura, 704. Em 1280 o texto de um print continua legível e o custo fica
-# em torno de 1.100 tokens — no modelo de redação, ~US$ 0,0002.
-MAX_LADO_DA_IMAGEM = 1280
+# Imagem: medido em 2026-09-21 contra a API, um print de 1920×1080 custa
+# 2.461 tokens de entrada; reduzido para 1024 de largura, 704. Até o ADR-0035
+# todo print era reduzido a 1.280 px no lado maior.
+# Motor dos prints (ADR-0035). Reduzir TODO print para 1.280 px no lado maior
+# apagava o texto do print alto ou largo: a lista de 230 CRMs da conversa 44
+# virou uma tira ilegível, e a faixa de planilha da conversa 75 também. O que
+# manda no custo é a área; o que manda na leitura é o tamanho da letra.
+#
+# - Área por leitura: o modelo reduz por conta própria o que passa de ~1,5
+#   milhão de pixels (o teto de "patches" de 32 px), então cada pedaço fica
+#   abaixo disso — ~1.700 tokens, ~US$ 0,0005 no modelo de redação.
+# - Lado de cada pedaço: até 2.048 px, o maior que o modelo lê sem reduzir.
+# - Print com um lado mais de 2,2 vezes o outro (lista, faixa) não é
+#   reduzido para caber: é lido em pedaços, com sobreposição para nenhuma
+#   linha cair entre dois, até seis pedaços (~US$ 0,003 no pior caso). O
+#   print comum (tela, painel) continua numa leitura só, reduzido pela área.
+MAX_PIXELS_POR_LEITURA = 1_450_000
+MAX_LADO_POR_LEITURA = 2048
+RAZAO_DE_PRINT_LONGO = 2.2
+MAX_PEDACOS_DO_PRINT = 6
+SOBREPOSICAO_DOS_PEDACOS = 48
 
 FORMATOS_DE_IMAGEM = {"PNG", "JPEG", "WEBP"}
 EXTENSOES_DE_PLANILHA = {".xlsx", ".xlsm", ".csv"}

@@ -14,7 +14,9 @@ ANSWER_PROMPT_VERSION = "answerer_v2"
 # Leitura de imagem (ADR-0024). É um prompt curto de propósito: não leva
 # catálogo, schema nem consultas de referência, porque esse caminho não toca
 # o banco. São ~350 tokens contra os ~15 mil do planejamento.
-IMAGE_PROMPT_VERSION = "leitor_de_imagem_v1"
+# v2 (ADR-0035): transcreve todo bloco de dado do print, diz o que a pessoa
+# quer com ele e se deu para ler. A v1 fica: é a gravada nas respostas antigas.
+IMAGE_PROMPT_VERSION = "leitor_de_imagem_v2"
 # Regras da planilha anexada (ADR-0031): entram no plano só quando há
 # planilha na conversa, depois do perfil dela.
 PLANILHA_PROMPT_VERSION = "planilha_v1"

@@ -49,6 +49,20 @@ ARQUIVO_DO_JARVIS = (
     "outro resumo ou cruzar com outra informação."
 )
 
+# Motor dos prints (ADR-0035). Print que não dá para ler não vira chute nem
+# pergunta inventada (conversa 75): a pessoa sabe o que fazer.
+PRINT_ILEGIVEL = (
+    "Não consegui ler o print com segurança: {motivo} Para eu não chutar nenhum "
+    "número, mande de outro jeito: o arquivo original (Excel ou CSV), o texto "
+    "colado na mensagem, ou o print em partes menores."
+)
+
+PRINT_EM_PLANILHA = (
+    "Passei o print para a planilha `{nome}`. {resumo} Os valores foram lidos "
+    "da imagem: confira os que importam antes de usar. Baixe pelo botão "
+    "**Baixar planilha preenchida**."
+)
+
 FALHA_DA_IA = (
     "Tive um problema técnico para montar a resposta agora. Pode tentar de "
     "novo em alguns instantes?"

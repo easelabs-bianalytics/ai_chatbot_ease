@@ -2360,3 +2360,29 @@ Dez pontos, cada um com teste do caso real em
     Jarvis com pedido de mudança** ("Retire o Isolado 20 deste gráfico", 67 #61):
     vai direto para a consulta, sem leitura de imagem; sem gráfico do Jarvis na
     conversa, o print continua sendo lido.
+
+## Fase 18 — Jarvis 3.0: motor dos prints (ADR-0035)
+
+**Status: ✅ local, testado com o modelo e o RDS reais (2026-10-09); sem deploy.**
+
+O print deixa de ser "lido e descartado" e passa a ser dado, como a planilha
+do ADR-0031:
+
+- [x] Leitura sem apagar o texto: print comum reduzido pela área (1,45 Mpx);
+      print longo lido em até 6 pedaços com sobreposição (`attachments/imagem.py`).
+- [x] Leitor v2: transcreve todo bloco de dado (tabela, lista, gráfico com
+      valores, indicadores), diz a operação e se deu para ler (`leitor_de_imagem_v2.md`).
+- [x] Junção dos pedaços e conferência sem modelo: número em pt-BR, total que
+      fecha ou não, célula ilegível, código repetido (`attachments/transcricao.py`).
+- [x] O print vira `anexo.<aba>`: cruzar, conferir, completar e analisar vão ao
+      planejador; conta só sobre o print com contexto enxuto (`so_a_planilha`).
+- [x] Descrever fica no leitor barato só com número ancorado na transcrição.
+- [x] "Passa para Excel" devolve a transcrição com "Notas do Jarvis".
+- [x] Print ilegível não inventa pergunta (conversa 75).
+- [x] O print acompanha a conversa por 2 h, como a planilha.
+- [x] Testes: `tests/unit/test_motor_dos_prints.py` (31); suíte 1.309.
+- [x] Rodada real (~US$ 0,44): resultados e custos no ADR-0035.
+
+Deploy: sem migration e sem variável nova — só a imagem. Não há
+pré-requisito para a Fase 9.
+

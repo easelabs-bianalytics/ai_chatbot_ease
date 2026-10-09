@@ -17,7 +17,7 @@ from attachments.imagem import preparar
 from attachments.limites import (
     LINHAS_DE_AMOSTRA,
     MAX_CARACTERES_DO_RESUMO,
-    MAX_LADO_DA_IMAGEM,
+    MAX_PIXELS_POR_LEITURA,
     MAX_LINHAS,
     AnexoRecusado,
 )
@@ -196,14 +196,14 @@ def test_csv_sai_preenchido_em_csv():
 
 
 def test_print_grande_e_reduzido_mantendo_a_proporcao():
-    """O custo da imagem é a área. 1920×1080 mediu 2.461 tokens; reduzido,
-    cabe em ~1.100."""
+    """O custo da imagem é a área. 1920×1080 mediu 2.461 tokens; reduzido
+    pela área que o modelo lê sem reduzir de novo (ADR-0035), ~1.700."""
     preparada = preparar(_png(1920, 1080))
 
-    assert max(preparada.largura, preparada.altura) == MAX_LADO_DA_IMAGEM
+    assert preparada.largura * preparada.altura <= MAX_PIXELS_POR_LEITURA
     assert preparada.largura / preparada.altura == pytest.approx(1920 / 1080, rel=0.01)
-    assert preparada.reduzida
-    assert preparada.tokens_estimados < 1300
+    assert preparada.reduzida and preparada.pedacos == 1
+    assert preparada.tokens_estimados < 1800
 
 
 def test_imagem_pequena_nao_e_ampliada():

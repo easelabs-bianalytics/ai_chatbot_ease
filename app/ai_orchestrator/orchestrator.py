@@ -33,6 +33,7 @@ from ai_orchestrator.providers.base import (
     AIProviderError,
     AIQuotaExceeded,
     AnswerRequest,
+    BlocoLido,
     HistoryMessage,
     ImageRequest,
     Plan,
@@ -43,6 +44,7 @@ from ai_orchestrator.prompts import PROMPT_VERSION
 from ai_orchestrator import saldo, vega
 from ai_orchestrator.rules import apply_rules, arquivo_a_seguir
 from attachments import anexo_sql, deposito, planilha as planilha_anexada, qa as conferencia_da_planilha
+from attachments import imagem as imagem_anexada, transcricao as transcricao_do_print
 from attachments.limites import SEGUNDOS_DA_PLANILHA_NA_CONVERSA, SEGUNDOS_DA_SAIDA, AnexoRecusado
 from attachments.planilha import COLUNA_DA_LINHA
 from catalog.loader import get_catalog
@@ -338,7 +340,8 @@ def _preparar_planilha(message, executor, auditoria):
     except AnexoRecusado as exc:
         logger.info("A planilha da conversa não pôde ser perfilada: %s", exc)
         return executor
-    message.anexo_resumo = estrutura.resumo
+    # A planilha que veio de um print diz isso ao planejador antes do perfil.
+    message.anexo_resumo = getattr(message, "origem_do_anexo", "") + estrutura.resumo
     message.abas_do_anexo = tuple(estrutura.abas)
     tabelas = anexo_sql.tabelas(estrutura)
     message.tabelas_do_anexo = tabelas
@@ -431,6 +434,7 @@ def _executar_com_correcao(plano, message, provider, executor, catalog, auditori
                 # inteiro e recusado pelo validador era "corrigido" sem as
                 # regras que o produziram, e o modelo desistia (2026-09-21).
                 full_context=_veio_do_documento_inteiro(plano), secoes_pedidas=_secoes_pedidas(plano),
+                so_a_planilha=getattr(message, "so_o_print", False),
             )
         )
         auditoria.chamada(AICall.Stage.FIX, plano.usage)
@@ -928,38 +932,26 @@ def _ler_imagem(message, provider, auditoria, historico, critica: bool = False) 
         )
 
     try:
-        leitura = provider.read_image(
-            ImageRequest(question=message.content, imagem_png=dados, history=historico)
-        )
+        leitura, transcricao = _transcrever_o_print(dados, message, provider, auditoria, historico)
     finally:
         # Os bytes saem do depósito mesmo se a leitura falhar: nada de imagem
-        # sobrando por quinze minutos porque o modelo caiu.
+        # sobrando porque o modelo caiu. O que acompanha a conversa é a
+        # transcrição, nunca a imagem.
         deposito.descartar(message.anexo_token)
-
-    auditoria.chamada(AICall.Stage.IMAGE, leitura.usage)
 
     if leitura.instrucoes_ignoradas:
         # Texto dentro da imagem tentando dar ordens (ADR-0021). O prompt do
-        # leitor manda não obedecer; aqui fica o registro, que é o que
-        # permite alguém olhar isso depois.
+        # leitor manda não obedecer; aqui fica o registro.
         logger.warning(
             "A imagem anexada continha instruções, ignoradas: %r",
             leitura.instrucoes_ignoradas[:200],
         )
 
-    if leitura.precisa_do_banco and _imagem_vira_pedido(message, leitura, auditoria):
-        return None
-
+    registro = {"leitura": leitura.leitura, "tipo": leitura.tipo_do_print, "operacao": leitura.operacao}
+    if transcricao.blocos:
+        registro["transcricao"] = transcricao.resumo()
     texto = (leitura.resposta or "").strip()
-    if critica and texto and not _vazou_instrucoes(texto):
-        # Print da resposta anterior com uma crítica: a leitura diz o que
-        # está errado, e o caminho normal refaz (conversa 22). Em memória,
-        # como em `_imagem_vira_pedido`: no banco fica o que a pessoa
-        # escreveu, com a imagem.
-        message.content = f"{message.content}\n\nO que o print da sua resposta anterior mostra: {texto}"
-        message.anexo_tipo = ""
-        auditoria.extras["imagem"] = {"leitura": leitura.leitura, "virou": "correcao"}
-        return None
+
     if _vazou_instrucoes(texto):
         logger.warning("A leitura da imagem repetiu o prompt; usando o texto de recusa")
         return _Decisao(
@@ -969,11 +961,64 @@ def _ler_imagem(message, provider, auditoria, historico, critica: bool = False) 
             raw={"rascunho": texto, "leitura": leitura.leitura},
         )
 
+    if critica and texto:
+        # Print da resposta anterior com uma crítica: a leitura diz o que
+        # está errado, e o caminho normal refaz (conversa 22). Os números do
+        # print são da resposta anterior, não um dado novo: não viram tabela.
+        message.content = f"{message.content}\n\nO que o print da sua resposta anterior mostra: {texto}"
+        message.anexo_tipo = ""
+        auditoria.extras["imagem"] = {**registro, "virou": "correcao"}
+        return None
+
+    if not leitura.legivel and not transcricao.blocos:
+        # Conversa 75 (2026-10-06): "ilegível", e mesmo assim o leitor
+        # escreveu uma pergunta sobre "a planilha enviada", e o planejador
+        # pediu os nomes das colunas de uma planilha que não existia.
+        auditoria.extras["imagem"] = {**registro, "virou": "ilegivel"}
+        motivo = (leitura.motivo_ilegivel or "a resolução não deixa ler o texto.").strip()
+        motivo = motivo[:1].lower() + motivo[1:]
+        return _Decisao(
+            decision=AIReply.Decision.CLARIFY,
+            reply=canned.PRINT_ILEGIVEL.format(motivo=motivo if motivo.endswith(".") else motivo + "."),
+            rule="print_ilegivel",
+            raw={"leitura": leitura.leitura, "anexo": message.anexo_nome},
+        )
+
+    if transcricao.blocos:
+        nome_do_print = message.anexo_nome
+        if not _print_vira_planilha(message, transcricao, auditoria, registro):
+            transcricao = transcricao_do_print.Transcricao()
+        elif leitura.operacao == "transformar":
+            return _excel_do_print(message, transcricao, nome_do_print, registro)
+        elif (leitura.precisa_do_banco or leitura.operacao in _OPERACOES_DO_BANCO
+              or not _ancorada_no_print(texto, transcricao, message.content)):
+            # Conta sobre o próprio print não precisa do documento de negócio.
+            message.so_o_print = not leitura.precisa_do_banco and leitura.operacao in ("analisar", "descrever", "")
+            if leitura.pergunta_ao_banco and len(leitura.pergunta_ao_banco) <= MAX_LETRAS_DO_PEDIDO_DO_PRINT:
+                # Curta, ela traz o período e o indicador lidos no print. Longa,
+                # é a tabela colada em texto: no teste real de 2026-10-09 o
+                # planejador copiou 96 CRMs dela num VALUES em vez de usar os
+                # 227 de `anexo.<aba>`.
+                message.content = f"{message.content}\n\n(O que o print pede: {leitura.pergunta_ao_banco})"
+            return None
+        else:
+            avisos = " ".join(transcricao.avisos)
+            return _Decisao(
+                # O rótulo "Leitura da imagem" que a tela põe em toda resposta
+                # com esta decisão diz que isto saiu da imagem, não do banco.
+                decision=AIReply.Decision.IMAGE_READING,
+                reply=texto + (f"\n\n_{avisos}_" if avisos else ""),
+                raw={"leitura": leitura.leitura, "instrucoes_na_imagem": leitura.instrucoes_ignoradas,
+                     "anexo": nome_do_print},
+            )
+
+    if leitura.precisa_do_banco and leitura.pergunta_ao_banco and leitura.legivel:
+        message.content = leitura.pergunta_ao_banco
+        message.anexo_tipo = ""
+        auditoria.extras["imagem"] = {**registro, "virou": "pergunta", "pergunta": leitura.pergunta_ao_banco}
+        return None
+
     return _Decisao(
-        # Quem avisa que isto saiu da imagem, e não do banco, é o rótulo
-        # "Leitura da imagem" que a tela põe em toda resposta com esta
-        # decisão. O parágrafo que repetia isso em palavras saía em todas as
-        # leituras e empurrava a resposta para baixo.
         decision=AIReply.Decision.IMAGE_READING,
         reply=texto,
         raw={
@@ -981,6 +1026,124 @@ def _ler_imagem(message, provider, auditoria, historico, critica: bool = False) 
             "instrucoes_na_imagem": leitura.instrucoes_ignoradas,
             "anexo": message.anexo_nome,
         },
+    )
+
+
+# O que só o banco resolve, ou que é conta sobre o print: vai ao planejador,
+# com o print como `anexo.<aba>`. Conta feita pelo leitor não tem conferência.
+_OPERACOES_DO_BANCO = ("completar", "cruzar", "conferir", "analisar")
+MAX_LETRAS_DO_PEDIDO_DO_PRINT = 300
+
+
+def _transcrever_o_print(dados, message, provider, auditoria, historico):
+    """`(leitura do primeiro pedaço, transcrição conferida)`.
+
+    Print longo é lido em pedaços (`attachments/imagem.pedacos`), um depois
+    do outro: o segundo recebe os cabeçalhos que o primeiro leu. A ordem
+    importa para a junção, e são no máximo seis leituras baratas."""
+    partes, direcao = imagem_anexada.pedacos(dados)
+    leituras, colunas, primeira = [], (), None
+    for i, parte in enumerate(partes, 1):
+        if len(partes) > 1:
+            progresso.definir(message.pk, f"Lendo o print (parte {i} de {len(partes)})", etapa="lendo")
+        leitura = provider.read_image(ImageRequest(
+            question=message.content, imagem_png=parte, history=historico if i == 1 else (),
+            pedaco=i, pedacos=len(partes), direcao=direcao, colunas_lidas=colunas,
+        ))
+        auditoria.chamada(AICall.Stage.IMAGE, leitura.usage)
+        blocos = _blocos_da_leitura(leitura)
+        if primeira is None:
+            primeira = leitura
+            colunas = tuple(blocos[0].colunas) if blocos else ()
+        elif leitura.instrucoes_ignoradas:
+            primeira = replace(primeira, instrucoes_ignoradas=(
+                f"{primeira.instrucoes_ignoradas} {leitura.instrucoes_ignoradas}".strip()))
+        leituras.append(blocos)
+    blocos, avisos = transcricao_do_print.juntar(leituras, direcao)
+    transcricao = transcricao_do_print.conferir(blocos, pedacos=len(partes), avisos=avisos)
+    if transcricao.blocos and not primeira.legivel:
+        transcricao.avisos.append(f"Parte do print não deu para ler: {primeira.motivo_ilegivel or 'resolução baixa'}.")
+    return primeira, transcricao
+
+
+def _blocos_da_leitura(leitura) -> tuple:
+    if leitura.blocos:
+        return tuple(leitura.blocos)
+    if leitura.tabela_colunas:
+        # A tabela a completar, do jeito do ADR-0024: é um bloco como outro.
+        return (BlocoLido(tipo="tabela", colunas=tuple(leitura.tabela_colunas),
+                          linhas=tuple(tuple(l) for l in leitura.tabela_linhas)),)
+    return ()
+
+
+_ORIGEM_DO_PRINT = (
+    "ESTA PLANILHA É A TRANSCRIÇÃO DE UM PRINT que a pessoa enviou — lida pelo Jarvis na imagem, "
+    "não um arquivo dela. {resumo} Os valores vieram da imagem: ao citá-los, diga que vieram do "
+    "print. Conta, total, ranking e cruzamento são da consulta sobre `anexo.<aba>`, nunca do texto.\n\n"
+)
+
+
+def _print_vira_planilha(message, transcricao, auditoria, registro) -> bool:
+    """A transcrição vira a planilha da conversa: `anexo.<aba>` nesta
+    resposta e nas seguintes, por duas horas (ADR-0031, 7). False se não
+    deu para montar."""
+    try:
+        dados = transcricao_do_print.montar_planilha(transcricao)
+        estrutura = planilha_anexada.ler_estrutura(NOME_DA_TABELA_DO_PRINT, dados)
+    except AnexoRecusado as exc:
+        logger.info("A transcrição do print não virou planilha: %s", exc)
+        return False
+    token = deposito.guardar(dados, segundos=SEGUNDOS_DA_PLANILHA_NA_CONVERSA)
+    deposito.fixar(token, conversa=message.conversation, mensagem=message,
+                   papel=ArquivoDaConversa.Papel.ENTRADA, nome=NOME_DA_TABELA_DO_PRINT)
+    origem = _ORIGEM_DO_PRINT.format(resumo=transcricao.resumo())
+    message.anexo_tipo = Message.Anexo.PLANILHA
+    message.anexo_nome = NOME_DA_TABELA_DO_PRINT
+    message.anexo_resumo = origem + estrutura.resumo
+    message.anexo_token = token
+    message.origem_do_anexo = origem
+    auditoria.extras["imagem"] = {**registro, "virou": "planilha"}
+    # É por aqui que a mensagem seguinte herda o print (`_herdar_planilha_da_conversa`).
+    auditoria.extras["print_transcrito"] = {"token": token, "nome": NOME_DA_TABELA_DO_PRINT,
+                                            "resumo": message.anexo_resumo, "origem": origem}
+    return True
+
+
+def _ancorada_no_print(texto: str, transcricao, pergunta: str) -> bool:
+    """Todo número da resposta do leitor está na transcrição (ou na
+    pergunta). Uma soma, uma média ou uma diferença não estão: a resposta
+    vai ao planejador, que faz a conta no SQL (ADR-0010 vale para o print)."""
+    consultas = [(b.colunas, b.linhas, "", len(b.linhas)) for b in transcricao.blocos]
+    return bool(texto) and check_grounding_varias(texto, consultas, pergunta).ok
+
+
+def _excel_do_print(message, transcricao, nome_do_print: str, registro) -> _Decisao:
+    """"Passa esse print para Excel": a transcrição, conferida, com a aba
+    "Notas do Jarvis" dizendo que o dado veio de uma imagem. Sem planejador."""
+    dados = transcricao_do_print.montar_planilha(transcricao)
+    nome = f"{Path(nome_do_print or 'print').stem or 'print'}.xlsx"
+    notas = [{
+        "onde": f"Aba {b.titulo}",
+        "o_que": f"{len(b.linhas)} linhas transcritas do print",
+        "por_que": f"pedido: {message.content[:300]}",
+        "origem": f"print {nome_do_print}, lido pelo Jarvis na imagem — confira com o print",
+        "resultado": "números como número; texto e códigos como estão no print",
+    } for b in transcricao.blocos]
+    if transcricao.avisos:
+        notas.append({"onde": "Conferência da transcrição", "o_que": " ".join(transcricao.avisos),
+                      "por_que": "conferência automática", "origem": "Jarvis", "resultado": "confira"})
+    dados, nome = planilha_anexada.anotar(nome, dados, notas)
+    token = deposito.guardar(dados, segundos=SEGUNDOS_DA_SAIDA)
+    deposito.fixar(token, conversa=message.conversation, mensagem=message,
+                   papel=ArquivoDaConversa.Papel.SAIDA, nome=nome)
+    Message.objects.filter(pk=message.pk).update(anexo_resposta_token=token, anexo_resposta_nome=nome)
+    message.anexo_resposta_token = token
+    message.anexo_resposta_nome = nome
+    return _Decisao(
+        decision=AIReply.Decision.IMAGE_READING,
+        reply=canned.PRINT_EM_PLANILHA.format(nome=nome, resumo=transcricao.resumo()),
+        rule="print_em_planilha",
+        raw={"leitura": registro.get("leitura", ""), "anexo": nome_do_print, "transcricao": transcricao.resumo()},
     )
 
 
@@ -1064,25 +1227,35 @@ def _herdar_planilha_da_conversa(message, auditoria) -> None:
     anterior = (
         Message.objects.filter(
             conversation=message.conversation, id__lt=message.id,
-            direction=Message.Direction.INBOUND, anexo_tipo=Message.Anexo.PLANILHA,
+            direction=Message.Direction.INBOUND,
+            anexo_tipo__in=(Message.Anexo.PLANILHA, Message.Anexo.IMAGEM),
         )
         .order_by("-id")
         .first()
     )
     if anterior is None:
         return
+    etiqueta = {"nome": anterior.anexo_nome, "resumo": anterior.anexo_resumo, "token": anterior.anexo_token}
+    if anterior.anexo_tipo == Message.Anexo.IMAGEM:
+        # O print que virou tabela (ADR-0035) acompanha a conversa como a
+        # planilha: o que segue é a transcrição, guardada no registro dele.
+        raw = AIReply.objects.filter(message=anterior).values_list("raw_response", flat=True).first() or {}
+        etiqueta = raw.get("print_transcrito")
+        if not etiqueta:
+            return
     respostas = AIReply.objects.filter(
         message__conversation=message.conversation,
         message__id__gt=anterior.id, message__id__lt=message.id,
         decision=AIReply.Decision.ANSWERED,
     ).values_list("raw_response", flat=True)
     mudou_de_assunto = any(not _usou_a_planilha(raw) for raw in respostas)
-    if mudou_de_assunto or not deposito.prolongar(anterior.anexo_token, segundos=SEGUNDOS_DA_PLANILHA_NA_CONVERSA):
+    if mudou_de_assunto or not deposito.prolongar(etiqueta["token"], segundos=SEGUNDOS_DA_PLANILHA_NA_CONVERSA):
         return
     message.anexo_tipo = Message.Anexo.PLANILHA
-    message.anexo_nome = anterior.anexo_nome
-    message.anexo_resumo = anterior.anexo_resumo
-    message.anexo_token = anterior.anexo_token
+    message.anexo_nome = etiqueta["nome"]
+    message.anexo_resumo = etiqueta["resumo"]
+    message.anexo_token = etiqueta["token"]
+    message.origem_do_anexo = etiqueta.get("origem", "")
     message.planilha_da_conversa = True
     auditoria.extras["planilha_da_conversa"] = anterior.pk
 
@@ -1109,47 +1282,6 @@ def _herdar_planilha_pendente(message, auditoria) -> None:
     message.anexo_resumo = pendente["resumo"]
     message.anexo_token = pendente["token"]
     auditoria.extras["planilha_herdada_de"] = anterior.message_id
-
-
-def _imagem_vira_pedido(message, leitura, auditoria) -> bool:
-    """Transforma a leitura em pedido ao banco. False se não houver o que pedir.
-
-    Com tabela a completar, ela vira uma planilha EM MEMÓRIA
-    (`montar_de_tabela`) e o resto é o caminho da planilha: casamento de
-    colunas pelo planejador, números do banco, arquivo para baixar. Sem
-    tabela, a pergunta reformulada pela leitura vai ao planejador.
-
-    A mensagem é ajustada só em memória, e isso é seguro por construção: o
-    único `save` depois daqui é `update_fields=["status"]` (em
-    `handle_message`), e o preenchimento grava seus campos com `update`. No
-    banco, a pergunta continua sendo o que a pessoa escreveu, com a imagem —
-    o teste `test_imagem_convertida_nao_altera_a_pergunta_gravada` garante.
-    """
-    registro = {"leitura": leitura.leitura}
-
-    if leitura.tabela_colunas and leitura.tabela_linhas:
-        try:
-            dados = planilha_anexada.montar_de_tabela(leitura.tabela_colunas, leitura.tabela_linhas)
-            estrutura = planilha_anexada.ler_estrutura(NOME_DA_TABELA_DO_PRINT, dados)
-        except AnexoRecusado as exc:
-            logger.info("A tabela do print não virou planilha: %s", exc)
-        else:
-            message.anexo_tipo = Message.Anexo.PLANILHA
-            message.anexo_nome = NOME_DA_TABELA_DO_PRINT
-            message.anexo_resumo = estrutura.resumo
-            message.anexo_token = deposito.guardar(dados)
-            deposito.fixar(message.anexo_token, conversa=message.conversation, mensagem=message,
-                           papel=ArquivoDaConversa.Papel.ENTRADA, nome=NOME_DA_TABELA_DO_PRINT)
-            auditoria.extras["imagem"] = {**registro, "virou": "planilha"}
-            return True
-
-    if leitura.pergunta_ao_banco:
-        message.content = leitura.pergunta_ao_banco
-        message.anexo_tipo = ""
-        auditoria.extras["imagem"] = {**registro, "virou": "pergunta", "pergunta": leitura.pergunta_ao_banco}
-        return True
-
-    return False
 
 
 def _nota_do_preenchimento(relatorio, nome: str) -> str:
@@ -2825,6 +2957,7 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
             # Só a FORMA da planilha sobe ao modelo; o conteúdo fica aqui.
             planilha=_planilha(message),
             autocritica_note=nota_da_critica,
+            so_a_planilha=getattr(message, "so_o_print", False),
         )
     )
     for tentativa in plano.tentativas:

@@ -49,6 +49,7 @@ from ai_orchestrator.providers.base import (
     AIUsage,
     Answer,
     AnswerRequest,
+    BlocoLido,
     ImageReading,
     ImageRequest,
     Plan,
@@ -126,9 +127,10 @@ MAX_TOKENS_ANALISE = 3500
 # As consultas da investigação são agregadas (o prompt pede ~30 linhas);
 # isto é o teto, para uma consulta mal escrita não virar volume de token.
 LINHAS_POR_ACHADO = 30
-# A leitura de imagem sai curta de propósito: é uma análise do que está no
-# print, não um relatório.
-MAX_TOKENS_IMAGEM = 1500
+# A leitura de imagem transcreve o print inteiro (ADR-0035): uma lista de
+# 230 CRMs em JSON são ~3 mil tokens de saída (~US$ 0,004 no modelo de
+# redação). Antes, 1.500 bastavam porque só a resposta saía.
+MAX_TOKENS_IMAGEM = 8000
 
 
 class ColunaPreenchida(BaseModel):
@@ -266,6 +268,15 @@ class TabelaDoPrint(BaseModel):
     )
 
 
+class BlocoDoPrint(BaseModel):
+    tipo: str = Field(description="tabela, lista, grafico ou indicadores")
+    titulo: str = Field(default="", description="título do bloco no print; vazio se não houver")
+    colunas: list[str] = Field(default_factory=list, description="cabeçalhos, na ordem do print")
+    linhas: list[list[str]] = Field(
+        default_factory=list, description="cada célula como está no print; vazia é \"\"; ilegível é \"?\""
+    )
+
+
 class LeituraEstruturada(BaseModel):
     leitura: str = Field(description="o que está na imagem, objetivamente")
     resposta: str = Field(description="a resposta ao usuário, em Markdown curto")
@@ -281,6 +292,37 @@ class LeituraEstruturada(BaseModel):
     pergunta_ao_banco: str = Field(
         default="", description="pergunta autossuficiente ao banco, quando não houver tabela"
     )
+    tipo_do_print: str = Field(
+        default="", description="tabela, lista, grafico, indicadores, tela, texto ou outro"
+    )
+    operacao: str = Field(
+        default="", description="descrever, completar, cruzar, conferir, analisar, transformar ou outro"
+    )
+    legivel: bool = Field(default=True, description="false se o texto do print não dá para ler com segurança")
+    motivo_ilegivel: str = Field(default="", description="por que não deu para ler; vazio se deu")
+    blocos: list[BlocoDoPrint] = Field(
+        default_factory=list, description="todo bloco de dado do print, transcrito; vazio se não houver"
+    )
+
+
+def _pedaco_do_print(request) -> str:
+    """O aviso de que esta imagem é um pedaço de um print longo (ADR-0035)."""
+    if (request.pedacos or 1) <= 1:
+        return ""
+    if request.direcao == "horizontal":
+        como = ("Os pedaços vão da esquerda para a direita: este traz as colunas seguintes, das MESMAS "
+                "linhas, na mesma ordem de cima para baixo.")
+    else:
+        como = ("Os pedaços vão de cima para baixo, com uma pequena sobreposição: este continua as linhas "
+                "da mesma tabela. Transcreva todas as linhas visíveis, inclusive a que aparecer cortada "
+                "na borda de cima, se der para ler.")
+    texto = f"\n\n# Pedaço {request.pedaco} de {request.pedacos} do mesmo print\n\n{como}"
+    if request.pedaco > 1 and request.colunas_lidas:
+        texto += (" O primeiro pedaço leu estas colunas: " + " | ".join(request.colunas_lidas)
+                  + ". Use os mesmos cabeçalhos se a tabela continuar sem cabeçalho visível.")
+    if request.pedaco > 1:
+        texto += " A `resposta` deste pedaço não é mostrada: escreva só \"continuação\"."
+    return texto
 
 
 class BlocoEstruturado(BaseModel):
@@ -723,8 +765,9 @@ class OpenAIProvider(AIProvider):
             # "SELL OUT" dizem. Sem isto, a primeira chamada ia sem as seções
             # certas e a segunda levava o documento inteiro (US$ 0,097,
             # medido em 2026-09-21).
-            request.question + ("\n" + request.planilha if request.planilha else ""),
-            request.history,
+            "" if request.so_a_planilha and not request.secoes_pedidas
+            else request.question + ("\n" + request.planilha if request.planilha else ""),
+            () if request.so_a_planilha else request.history,
             completo=request.full_context,
             temas_completos=MAX_SECOES if request.planilha else MAX_COMPLETAS,
             # Pergunta de porquê atravessa sell-out, força de vendas e
@@ -1071,6 +1114,7 @@ class OpenAIProvider(AIProvider):
             "# Pergunta do usuário\n\n"
             + (request.question or "Analise esta imagem.")
             + _historico(request.history)
+            + _pedaco_do_print(request)
         )
         blocos = [
             {"type": "input_text", "text": entrada_texto},
@@ -1096,6 +1140,13 @@ class OpenAIProvider(AIProvider):
             raise AIProviderError("o modelo não devolveu leitura da imagem")
 
         tabela = getattr(conteudo, "tabela", None)
+        blocos = tuple(
+            BlocoLido(
+                tipo=(b.tipo or "tabela").strip().lower(), titulo=(b.titulo or "").strip(),
+                colunas=tuple(b.colunas), linhas=tuple(tuple(l) for l in b.linhas),
+            )
+            for b in (getattr(conteudo, "blocos", None) or ()) if b.colunas or b.linhas
+        )
         return ImageReading(
             leitura=(conteudo.leitura or "").strip(),
             resposta=texto,
@@ -1104,5 +1155,10 @@ class OpenAIProvider(AIProvider):
             tabela_colunas=tuple(tabela.colunas) if tabela else (),
             tabela_linhas=tuple(tuple(l) for l in tabela.linhas) if tabela else (),
             pergunta_ao_banco=(getattr(conteudo, "pergunta_ao_banco", "") or "").strip(),
+            tipo_do_print=(getattr(conteudo, "tipo_do_print", "") or "").strip().lower(),
+            operacao=(getattr(conteudo, "operacao", "") or "").strip().lower(),
+            legivel=bool(getattr(conteudo, "legivel", True)),
+            motivo_ilegivel=(getattr(conteudo, "motivo_ilegivel", "") or "").strip(),
+            blocos=blocos,
             usage=usage,
         )

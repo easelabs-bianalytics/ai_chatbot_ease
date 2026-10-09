@@ -88,6 +88,11 @@ class PlanRequest:
     # Os temas que o planejador pediu ("PRECISO DA SEÇÃO: marketing"): vão
     # completos no lugar do documento inteiro (ver `context.secoes_do_pedido`).
     secoes_pedidas: tuple = ()
+    # Conta só sobre o print (ADR-0035): "qual a participação de cada rede?"
+    # não precisa do documento de negócio. Vai o preâmbulo e a planilha —
+    # ~US$ 0,09 viravam ~US$ 0,02 no teste real. Se faltar regra, o
+    # planejador pede a seção, como em qualquer pergunta.
+    so_a_planilha: bool = False
 
 
 @dataclass(frozen=True)
@@ -269,6 +274,25 @@ class ImageRequest:
     question: str
     imagem_png: bytes
     history: tuple = ()
+    # Print longo lido em pedaços (ADR-0035): qual é este, de quantos, em que
+    # direção eles se juntam e os cabeçalhos que o primeiro pedaço leu — para
+    # o seguinte continuar a mesma tabela em vez de inventar outra.
+    pedaco: int = 1
+    pedacos: int = 1
+    direcao: str = ""
+    colunas_lidas: tuple = ()
+
+
+@dataclass(frozen=True)
+class BlocoLido:
+    """Um bloco de dado transcrito do print (ADR-0035): tabela, lista, série
+    de gráfico ou cartões de indicador, com o texto de cada célula como está
+    na imagem."""
+
+    tipo: str
+    titulo: str = ""
+    colunas: tuple = ()
+    linhas: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -296,6 +320,14 @@ class ImageReading:
     # Pergunta autossuficiente para o banco, quando não há tabela a
     # preencher: o que a pessoa quer saber, com os nomes lidos na imagem.
     pergunta_ao_banco: str = ""
+    # Motor dos prints (ADR-0035): o que o print é, o que a pessoa quer com
+    # ele, se deu para ler, e todo bloco de dado transcrito — não só a tabela
+    # a completar. Os blocos viram `anexo.<aba>` e a conta passa a ser do SQL.
+    tipo_do_print: str = ""
+    operacao: str = ""
+    legivel: bool = True
+    motivo_ilegivel: str = ""
+    blocos: tuple = ()
     usage: AIUsage = field(default_factory=AIUsage)
 
 

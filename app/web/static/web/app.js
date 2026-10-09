@@ -2300,6 +2300,7 @@
     escrevendo: 'Escrevendo a resposta',
     investigando: 'Investigando',
     conferindo: 'Conferindo o resultado',
+    lendo: 'Lendo o print',
   };
   const mostrarEtapa = (pendente) => {
     const texto = $('#pensandoTexto');

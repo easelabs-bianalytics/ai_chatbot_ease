@@ -2,7 +2,8 @@
 
 ## Status
 Aceito — 2026-09-30. Revisa o ADR-0024 (anexos) nos pontos marcados abaixo.
-É o primeiro passo do Jarvis 3.0; prints ficam para o passo seguinte.
+É o primeiro passo do Jarvis 3.0; prints ficam para o passo seguinte — o
+ADR-0035 (2026-10-09).
 
 ## Contexto
 

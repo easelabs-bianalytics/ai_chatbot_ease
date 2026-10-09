@@ -25,7 +25,7 @@ definido = Signal()
 SEGUNDOS = 10 * 60
 MAX_CARACTERES = 160
 MAX_ENTENDIMENTO = 400
-ETAPAS = frozenset({"entendi", "consultando", "escrevendo", "investigando", "conferindo"})
+ETAPAS = frozenset({"entendi", "consultando", "escrevendo", "investigando", "conferindo", "lendo"})
 
 
 def _chave(message_id: int) -> str:
