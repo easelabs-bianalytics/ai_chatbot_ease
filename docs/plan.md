@@ -2421,6 +2421,9 @@ as perguntas desses temas (o limite do teste de contexto pede seção própria):
 
 ### Conversas 93 e 95: faturamento de Sell In e a Categoria de Troca no esclarecimento (2026-10-13)
 
+**No ar em 2026-10-13:** imagem `b9076c3`, task `cockpit-prod-jarvis:52`, bump `7fcf89f` mesclado na
+`main` do `sales_force_crm` (`949d4ed`).
+
 - **Conversa 93:** a curva de Sell In saiu menor porque a regra da seção 8 mandava filtrar
   `"Utilização" = 'Venda'` e deixava o `Venda - PBM` de fora. Regra nova: faturamento de Sell In é
   `SUM("$T")` de todas as linhas, sem filtro de natureza; separar só quando o usuário pedir. As seis
