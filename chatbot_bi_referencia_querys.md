@@ -2275,9 +2275,18 @@ E a categoria de PDV tem duas: a de **Mercado** (esta seção, 1 a 8, pelo volum
 pedido não disser qual, pergunte também isso, na mesma mensagem das duas perguntas abaixo. "Situação
 do PDV" e "categoria de troca" vão direto para a seção 9.
 
-**Sempre que perguntarem a categoria de um PDV, pergunte antes:**
-1. **A categoria é Mercado ou Ease Labs?** (`tdd.dim_mercado."DESC_GRUPO"`)
-2. **A categoria é em unidades ou em faturamento?**
+**Sempre que perguntarem a categoria de um PDV sem dizer qual, pergunte antes, numa mensagem só,
+e ofereça as TRÊS opções — a de Troca com exemplo:**
+1. **Categoria de Troca** (situação no painel da força de vendas, ex.: "1 - ATENÇÃO",
+   "2 - EXCELÊNCIA") **ou Categoria de Mercado** (1 a 8, pelo volume no mercado)?
+2. Se for de Mercado: **Mercado ou Ease Labs?** (`tdd.dim_mercado."DESC_GRUPO"`)
+3. Se for de Mercado: **em unidades ou em faturamento?**
+
+Modelo da pergunta: *"Qual categoria você quer: a **Categoria de Troca** (situação do PDV no painel
+da força de vendas, ex.: '1 - ATENÇÃO', '2 - EXCELÊNCIA') ou a **Categoria de Mercado** (1 a 8)? Se
+for a de Mercado, diga se é do Mercado ou da Ease Labs, e se em unidades ou em faturamento."*
+Nunca pergunte só "Mercado ou Ease Labs": a Categoria de Troca some da escolha (conversa 95,
+2026-10-13).
 
 Com as duas respostas, consulte `tdd.fato_tdd`:
 
@@ -4510,7 +4519,7 @@ jan/2023 (conferido em 2026-10-09).
 | Coluna | O que é |
 |---|---|
 | `"DT EMISSÃO"` | Data de emissão da nota — **é a data do Sell In**. Há também `"Dt Registro"` e `"Dt Process."` |
-| `"Utilização"` | Natureza da operação: `Venda` e `Venda - PBM` (ver as regras) |
+| `"Utilização"` | Natureza da operação: `Venda` e `Venda - PBM` — **as duas são Sell In** (ver as regras) |
 | `"Entidade"` · `"CpfCnpj"` | Cliente que comprou (razão social e CNPJ) |
 | `"Cidade"` · `"Estado"` | Onde está o cliente |
 | `"NFe"` · `"#NFe"` | Número da nota |
@@ -4528,10 +4537,14 @@ Período coberto, antes de responder:
 
 ### 8.2 Regras
 
-- **Sell In Realizado = `"Utilização" = 'Venda'`.** As demais naturezas não entram: `Venda - PBM`
-  (reembolso do programa, desde abr/2026) e qualquer outra que aparecer (bonificação, operação
-  governamental) — ela continua fora até alguém definir o contrário. Se o usuário quiser as duas,
-  mostre em colunas separadas e diga qual é qual.
+- **Faturamento de Sell In = `SUM("$T")` de TODAS as linhas da `fato_sell_in`, sem filtro de
+  natureza.** `Venda` e `Venda - PBM` (desde abr/2026) são, as duas, Sell In da Ease: **nunca filtre
+  `"Utilização"` por conta própria.** Separe por natureza só quando o usuário pedir ("só Venda",
+  "quanto foi PBM") — e aí mostre as duas em colunas, dizendo qual é qual. Decisão do Rubens em
+  2026-10-13 (conversa 93: o filtro `= 'Venda'` deixou o PBM de fora e o faturamento saiu menor).
+  A consulta de faturamento mês a mês é a SI1, e ela é o gabarito:
+  `SELECT TO_CHAR(DATE_TRUNC('month', "DT EMISSÃO"::date), 'YYYY-MM') AS mes, SUM("$T") AS faturamento
+  FROM estoque_redes.fato_sell_in GROUP BY 1 ORDER BY 1 DESC`.
 - **Fature por `"$T"`, nunca por `"$T NFe"`.** O total da nota se repete em todas as linhas dela:
   somado, dá 2,1 vezes o faturamento real (conferido em 2026-10-09).
 - **Unidades: `"Quant"`.** Sem divisão por 1000 — esta base não é o painel de mercado.
@@ -4553,7 +4566,6 @@ SELECT TO_CHAR(DATE_TRUNC('month', "DT EMISSÃO"::date), 'YYYY-MM') AS mes,
        ROUND(SUM("Quant")::numeric)     AS unidades,
        COUNT(DISTINCT "NFe")            AS notas
 FROM estoque_redes.fato_sell_in
-WHERE "Utilização" = 'Venda'            -- Sell In Realizado
 GROUP BY 1
 ORDER BY 1 DESC;
 ```
@@ -4567,8 +4579,7 @@ SELECT "Nome" AS produto,
        ROUND(SUM("$T")::numeric, 2)                          AS faturamento,
        ROUND((SUM("$T")/NULLIF(SUM("Quant"), 0))::numeric, 2) AS preco_medio
 FROM estoque_redes.fato_sell_in
-WHERE "Utilização" = 'Venda'
-  AND "DT EMISSÃO" >= :data_ini
+WHERE "DT EMISSÃO" >= :data_ini
 GROUP BY 1
 ORDER BY faturamento DESC;
 ```
@@ -4582,8 +4593,7 @@ SELECT "Entidade" AS cliente,
        ROUND(SUM("Quant")::numeric) AS unidades,
        ROUND(SUM("$T")::numeric, 2) AS faturamento
 FROM estoque_redes.fato_sell_in
-WHERE "Utilização" = 'Venda'
-  AND "DT EMISSÃO" >= :data_ini
+WHERE "DT EMISSÃO" >= :data_ini
   -- AND "Entidade" ILIKE '%RAIA%'        -- um cliente específico
 GROUP BY 1
 ORDER BY faturamento DESC;
@@ -4597,7 +4607,7 @@ SELECT "Estado" AS uf,
        ROUND(SUM("$T")::numeric, 2) AS faturamento,
        ROUND(100*SUM("$T")/SUM(SUM("$T")) OVER ()::numeric, 1) AS share_pct
 FROM estoque_redes.fato_sell_in
-WHERE "Utilização" = 'Venda' AND "DT EMISSÃO" >= :data_ini
+WHERE "DT EMISSÃO" >= :data_ini
 GROUP BY 1
 ORDER BY faturamento DESC;
 ```
@@ -4612,7 +4622,6 @@ somaria o atraso da carga a todos os clientes. Diga a data de corte na resposta.
 WITH corte AS (
   SELECT MAX("DT EMISSÃO")::date AS data_corte
   FROM estoque_redes.fato_sell_in
-  WHERE "Utilização" = 'Venda'
 )
 SELECT f."Entidade" AS cliente,
        MAX(f."DT EMISSÃO")::date                      AS ultima_compra,
@@ -4621,8 +4630,7 @@ SELECT f."Entidade" AS cliente,
        c.data_corte
 FROM estoque_redes.fato_sell_in f
 CROSS JOIN corte c
-WHERE f."Utilização" = 'Venda'
-  AND f."DT EMISSÃO"::date >= c.data_corte - INTERVAL '12 months'
+WHERE f."DT EMISSÃO"::date >= c.data_corte - INTERVAL '12 months'
 GROUP BY f."Entidade", c.data_corte
 ORDER BY dias_sem_comprar DESC;
 ```
@@ -4633,7 +4641,7 @@ ORDER BY dias_sem_comprar DESC;
 -- SI6 · Sell In contra Sell Out, em unidades, mês a mês
 WITH si AS (
   SELECT to_char(date_trunc('month', "DT EMISSÃO"), 'YYYY-MM') AS mes, SUM("Quant") AS un_sell_in
-  FROM estoque_redes.fato_sell_in WHERE "Utilização" = 'Venda' GROUP BY 1
+  FROM estoque_redes.fato_sell_in GROUP BY 1
 ),
 so AS (
   SELECT to_char(date_trunc('month', date), 'YYYY-MM') AS mes,

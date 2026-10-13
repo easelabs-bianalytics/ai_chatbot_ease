@@ -109,9 +109,13 @@ _TERMOS = {
     # pontua aqui e no Estoque (3.4): as duas vão, e o planejador pergunta
     # qual das duas é.
     "categoria_troca": {
-        3: ("categoria de troca", "categorias de troca", "situacao do pdv", "situacao dos pdv"),
-        2: ("categoria do pdv", "categoria de pdv", "categoria dos pdv", "categorias de pdv",
-            "em atencao", "em excelencia", "excelencia"),
+        # "Categoria do PDV" é ambígua (Mercado, na 3.4, ou Troca): pesa 3, como no
+        # Estoque, para as duas seções irem completas. Com 2, a pergunta da conversa
+        # 95 ("categoria do PDV e de qual setor") levou a Troca só em resumo, e o
+        # Jarvis perguntou "Mercado ou Ease Labs?" sem oferecer a de Troca.
+        3: ("categoria de troca", "categorias de troca", "situacao do pdv", "situacao dos pdv",
+            "categoria do pdv", "categoria de pdv", "categoria dos pdv", "categorias de pdv"),
+        2: ("em atencao", "em excelencia", "excelencia"),
         1: ("atencao", "painel de pdv", "trade"),
     },
 }

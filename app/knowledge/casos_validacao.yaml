@@ -1926,8 +1926,12 @@ casos:
     pergunta: Como evoluiu o Sell In realizado mês a mês, desde o começo da base?
     esperado: answer_with_data
     referencia: SI1
-    sql_deve_conter: ["fato_sell_in", "Utilização", "Venda", "$T"]
-    nota: Sell In Realizado é só a natureza Venda, faturado por "$T" (nunca "$T NFe", que dá 2,1×).
+    sql_deve_conter: ["fato_sell_in", "$T"]
+    sql_nao_deve_conter: ["Utilização", "$T NFe"]
+    comparar_resultado: false
+    nota: >-
+      Faturamento de Sell In soma todas as naturezas (Venda e Venda - PBM), por "$T" (nunca
+      "$T NFe", que dá 2,1×). Conversa 93 (2026-10-13): o filtro = 'Venda' deixou o PBM de fora.
 
   - id: SI2-sell-in-por-produto
     grupo: referencia
@@ -1935,7 +1939,8 @@ casos:
     esperado: answer_with_data
     referencia: SI2
     parametros: {data_ini: "2026-01-01"}
-    sql_deve_conter: ["fato_sell_in", "Venda", "Nome"]
+    sql_deve_conter: ["fato_sell_in", "Nome"]
+    sql_nao_deve_conter: ["Utilização"]
 
   - id: SI3-sell-in-por-cliente
     grupo: referencia
@@ -1943,7 +1948,8 @@ casos:
     esperado: answer_with_data
     referencia: SI3
     parametros: {data_ini: "2026-01-01"}
-    sql_deve_conter: ["fato_sell_in", "Entidade", "Venda"]
+    sql_deve_conter: ["fato_sell_in", "Entidade"]
+    sql_nao_deve_conter: ["Utilização"]
 
   - id: SI4-sell-in-por-uf
     grupo: referencia
@@ -1959,7 +1965,8 @@ casos:
     pergunta: Quais clientes pararam de comprar no Sell In?
     esperado: answer_with_data
     referencia: SI5
-    sql_deve_conter: ["fato_sell_in", "Venda"]
+    sql_deve_conter: ["fato_sell_in", "Entidade"]
+    sql_nao_deve_conter: ["Utilização"]
 
   - id: SI6-sell-in-contra-sell-out
     grupo: referencia
@@ -1975,6 +1982,23 @@ casos:
     pergunta: Qual a previsão de Sell In para dezembro?
     esperado: [unknown, clarify]
     nota: Seção 8 — só existe Sell In realizado; não há projeção nem meta nesta base.
+
+  - id: SI7-curva-sell-in-e-sell-out
+    grupo: referencia
+    pergunta: Quero ver a curva de faturamento sell in e faturamento sell out ease em 2026
+    esperado: answer_with_data
+    sql_deve_conter: ["fato_sell_in", "$T", "vw_sell_out"]
+    sql_nao_deve_conter: ["Utilização"]
+    comparar_resultado: false
+    nota: Conversa 93 (2026-10-13), a pergunta exata; o Sell In entra com todas as naturezas.
+
+  - id: X-categoria-do-pdv-oferece-troca
+    grupo: esclarecimento
+    pergunta: Qual a categoria do PDV? 61412110027860 e de qual setor ele é?
+    esperado: clarify
+    nota: >-
+      Conversa 95 (2026-10-13): a pergunta de esclarecimento tem de oferecer a Categoria de
+      Troca (com exemplo, "1 - ATENÇÃO") além da de Mercado.
 
   - id: CT1-situacao-de-um-cnpj
     grupo: referencia

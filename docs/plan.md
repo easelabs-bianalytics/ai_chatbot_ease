@@ -2400,8 +2400,8 @@ Dois temas novos, vindos de `chatbot_sellin_categoria_troca.md`, viraram seçõe
 `chatbot_bi_referencia_querys.md` — e não subseções do Estoque ou do Sell Out, para não encarecer
 as perguntas desses temas (o limite do teste de contexto pede seção própria):
 
-- **8. Sell In Realizado** (`sell_in`, SI1–SI6): `estoque_redes.fato_sell_in`, só `"Utilização" =
-  'Venda'`, faturamento por `"$T"` (o `"$T NFe"` repete o total da nota e dá 2,1×), sem projeção nem
+- **8. Sell In Realizado** (`sell_in`, SI1–SI6): `estoque_redes.fato_sell_in`, **todas as naturezas**
+  (`Venda` e `Venda - PBM`; o filtro `= 'Venda'` foi retirado em 2026-10-13, conversa 93), faturamento por `"$T"` (o `"$T NFe"` repete o total da nota e dá 2,1×), sem projeção nem
   meta, UF do cliente que comprou.
 - **9. Categoria de Troca / Situação do PDV** (`categoria_troca`, CT1–CT6): `audit.rx_cadastro_pdv`,
   `número - rótulo` (1 a 4; EXCELÊNCIA, ATENÇÃO, DISTRIBUIÇÃO), categoria vazia é texto em branco.
@@ -2418,3 +2418,17 @@ as perguntas desses temas (o limite do teste de contexto pede seção própria):
     referência passou a filtrar `visita_efetiva`, como o Jarvis já fazia;
   - o SI5 conta os dias sem comprar a partir da última nota da base, não de hoje (a carga não é diária);
   - três casos com a pergunta mal formulada ou comparação rígida demais (SI1, SI6, CT6).
+
+### Conversas 93 e 95: faturamento de Sell In e a Categoria de Troca no esclarecimento (2026-10-13)
+
+- **Conversa 93:** a curva de Sell In saiu menor porque a regra da seção 8 mandava filtrar
+  `"Utilização" = 'Venda'` e deixava o `Venda - PBM` de fora. Regra nova: faturamento de Sell In é
+  `SUM("$T")` de todas as linhas, sem filtro de natureza; separar só quando o usuário pedir. As seis
+  consultas SI1–SI6 perderam o filtro e os casos ganharam `sql_nao_deve_conter: ["Utilização"]`,
+  mais o SI7 com a pergunta exata da conversa.
+- **Conversa 95:** "categoria do PDV e de qual setor" levou estoque e força de vendas completos e a
+  Categoria de Troca só em resumo: o Jarvis perguntou "Mercado ou Ease Labs?" sem oferecer a de
+  Troca. "Categoria do PDV" passou a pesar 3 na seção 9 (as duas categorias vão completas) e a 3.4
+  traz o modelo da pergunta, com a de Troca primeiro e o exemplo "1 - ATENÇÃO".
+- Modelo real: SI7 e SI1 sem o filtro; o esclarecimento do caso 95 oferece a Categoria de Troca com
+  exemplo; C30 aprovado (~US$ 0,31). Suíte: 1.309.
