@@ -109,7 +109,9 @@ def de_simples(grafico: dict, dados: dict) -> dict | None:
             cor = grupo
     elif len(series) > 1:
         transformacoes.append({"fold": series[:3], "as": ["_serie", "_valor"]})
-        transformacoes.append({"calculate": "replace(datum._serie, /_+/g, ' ')", "as": "_serie"})
+        # Mesmo rótulo da tela: sem o sufixo técnico ("share_realizado_pct" → "share realizado").
+        transformacoes.append({"calculate": "replace(replace(datum._serie, /(^|_)(pct|perc|percent|percentual)(?=_|$)/gi, ''), /_+/g, ' ')",
+                               "as": "_serie"})
         medida, cor = "_valor", "_serie"
 
     if tipo == "pizza":
@@ -148,6 +150,10 @@ def de_simples(grafico: dict, dados: dict) -> dict | None:
               "axis": _numero(series[0])}
     if not grafico.get("empilhado"):
         eixo_y["stack"] = None
+    if tipo == "linha":
+        # Linha mostra variação: o zero achata 10% contra 12% (market share,
+        # conversa 98). Barra e área continuam no zero.
+        eixo_y["scale"] = {"zero": False}
 
     marca = {"linha": {"type": "line", "point": True, "strokeWidth": 2.5},
              "area": {"type": "area", "opacity": 0.75, "line": True},

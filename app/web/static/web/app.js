@@ -1872,7 +1872,9 @@
     const eixoDeValor = {
       stacked: empilhado,
       display: linha || !comNumero || !umaSerie,
-      beginAtZero: true,
+      // Linha mostra variação: começar em zero achata 10% contra 12% numa
+      // reta (market share da conversa 98). Barra continua no zero.
+      beginAtZero: !linha,
       grace: '8%',
       // Nos gráficos separados, a mesma escala em todos: senão 300 e 600
       // desenham barras da mesma altura.
