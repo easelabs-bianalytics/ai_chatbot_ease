@@ -2094,6 +2094,23 @@ casos:
     sql_deve_conter: ["fato_meta_sell_out", "fato_td", "valor_", "HOSPITALAR"]
     comparar_resultado: false
 
+  - id: MS6-painel-de-share-unidades
+    grupo: referencia
+    pergunta: Me mostra o market share da Ease em unidades no varejo, realizado contra a meta, com variação em p.p., YTD e MAT
+    esperado: answer_with_data
+    referencia: MS6
+    sql_deve_conter: ["fato_meta_sell_out", "fato_td", "und", "ROUND"]
+    sql_nao_deve_conter: ["valor_"]
+    comparar_resultado: false
+
+  - id: MS2-meta-em-unidades
+    grupo: referencia
+    pergunta: Qual o atingimento da meta de sell out em unidades por SKU em 2026?
+    esperado: answer_with_data
+    sql_deve_conter: ["fato_meta_sell_out", "ROUND", "799.30"]
+    comparar_resultado: false
+    nota: Meta em unidades = meta de faturamento ÷ ticket médio do SKU, arredondada (sem unidade decimal).
+
   - id: S-share-faturamento
     grupo: seguimento
     antes: ["Além do acompanhamento de sell-out (meta versus realizado), gostaria de receber uma análise mais detalhada da evolução do nosso market share, contemplando: - Market share: meta versus realizado; - Variação do market share em relação ao mês anterior, em pontos percentuais; - Market share acumulado no ano (YTD); - Market share dos 12 meses (MAT); Você consegue compartilhar essas informações conosco?"]
@@ -2110,10 +2127,12 @@ casos:
     antes: ["Além do acompanhamento de sell-out (meta versus realizado), gostaria de receber uma análise mais detalhada da evolução do nosso market share, contemplando: - Market share: meta versus realizado; - Variação do market share em relação ao mês anterior, em pontos percentuais; - Market share acumulado no ano (YTD); - Market share dos 12 meses (MAT); Você consegue compartilhar essas informações conosco?"]
     pergunta: Pode ser por quantidade de unidades, por favor
     esperado: answer_with_data
-    sql_deve_conter: ["fato_td", "und"]
+    sql_deve_conter: ["fato_meta_sell_out", "fato_td", "und"]
     sql_nao_deve_conter: ["valor_"]
     comparar_resultado: false
-    nota: Em unidades a meta de share não existe (só em faturamento); a resposta diz isso.
+    nota: >-
+      Em unidades a meta de share vem da meta de sell out convertida pelo ticket médio, com ROUND
+      (MS6; pedido do Rubens, 2026-10-14).
 
   - id: B24-share-outro-laboratorio
     grupo: referencia
