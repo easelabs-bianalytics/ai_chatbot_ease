@@ -2458,3 +2458,16 @@ as perguntas desses temas (o limite do teste de contexto pede seção própria):
   A legenda do WhatsApp tira o sufixo `_pct`, como a tela.
 - Modelo real: 4 formulações de market share pedem o detalhe; faturamento, unidades, painel direto e
   outro laboratório respondem certo (~US$ 0,75 nas rodadas). Suíte: 1.309.
+
+**Meta em unidades e gráfico só com meses de meta (conversa 99), no ar em 2026-10-14:** imagem
+`0c86652`, task `cockpit-prod-jarvis:54`, bump `08dcd22` mesclado na `main` do `sales_force_crm`
+(`d4cc20a`).
+
+- **Meta de sell out em unidades** = meta de faturamento ÷ ticket médio do SKU (o da B04), com `ROUND`
+  por SKU e mês — não existe unidade decimal. MS1, MS2 e MS3 trazem meta, realizado e atingimento em
+  unidades; YTD set/26: 67.301 de 75.094 unidades (89,6%).
+- **MS6**: painel de market share em unidades com a meta convertida (set/26: 8,03% contra 10,86%);
+  sai a regra "meta de share só em faturamento".
+- **MS5 e MS6 só com os meses que têm meta**: tabela e gráfico realizado × meta ficam em 2026; MAT e
+  variação seguem calculados com os 12 meses.
+- Valor em reais sempre com "R$" (a conversa 99 escreveu o realizado sem). Suíte: 1.309.
