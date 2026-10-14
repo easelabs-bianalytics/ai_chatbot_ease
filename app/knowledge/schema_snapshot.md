@@ -1,6 +1,6 @@
 # Schema do banco de negócio
 
-> Gerado por `manage.py catalog_snapshot` em 2026-10-02 14:38, com o usuário
+> Gerado por `manage.py catalog_snapshot` em 2026-10-14 12:29, com o usuário
 > somente leitura. Não edite à mão: rode o comando de novo.
 >
 > Tabelas e colunas bloqueadas pelo catálogo não aparecem aqui de propósito.
@@ -122,6 +122,7 @@
 - `estoque_redes.estoque_ultima_venda_filtrada` (view materializada): data_recebimento date, rede character varying, cod_loja character varying, cnpj character varying, cod_ean character varying, estoque_qtde double precision, data_processamento timestamp without time zone, id text, ultima_venda date, cod_atualizacao bigint
 - `estoque_redes.fato_adequacao_estoque` (tabela): cnpj_pdv bigint, "CAT" double precision, "Isolado 30 mL" bigint, "Isolado 10 mL" bigint, "Extrato" bigint, "Ultima Venda (dias)" bigint, "SALDO Estoque Ideal 30 mL" double precision, "SALDO Estoque Ideal 10 mL" double precision, "SALDO Estoque Ideal Extrato" bigint, "COBERTURA FV?" text, "STATUS" text, "Estoque Total" bigint, "Rede" text, "Ultima Venda (data)" text, "CAT_TXT" text, "STATUS_PARAMETRIZADO" text, "Positivado" double precision, "DATA_RECEBIMENTO" text, "Estoque Ideal Isolado 30 mL" double precision, "Estoque Ideal Isolado 10 mL" double precision, "Estoque Ideal Extrato" double precision, "Estoque Proposto Final" double precision, "Média Mensal Extrato" double precision, "Média Mensal Isolado 30 mL" double precision, "Média Mensal Isolado 10 mL" double precision, data_insercao timestamp without time zone
 - `estoque_redes.fato_meta_sell_in` (tabela): "SKU" text, "DATA" date, "VALOR" numeric(15,2)
+- `estoque_redes.fato_meta_sell_out` (tabela): data date, sku text, cod_apres bigint, meta_faturamento numeric(15,2)
 - `estoque_redes.fato_meta_sellin_hist` (tabela): competencia date, ean text, produto text, unidades numeric, faturamento numeric, preco numeric, capturado_em timestamp with time zone
 - `estoque_redes.fato_sell_in` (tabela): "Nome da Origem" text, "#" bigint, "#Ent" numeric(15,2), "Entidade" text, "CpfCnpj" text, "Cidade" text, "Estado" text, "Dt Registro" timestamp without time zone, "DT EMISSÃO" timestamp without time zone, "Dt Process." timestamp without time zone, "Utilização" text, "#NFe" text, "NFe" text, "Status" text, "$T NFe" numeric(15,2), "#Prod." numeric(15,2), "Nome" text, "UN" text, "Quant" numeric(15,2), "Preço" numeric(15,2), "$ Prod." numeric(15,2), "Operação" text, "BC PIS" numeric(15,2), "%  PIS" numeric(15,2), "BC COFINS" numeric(15,2), "Frete" numeric(15,2), "Seguro" numeric(15,2), "Desp. Aduan." numeric(15,2), "$Desc." numeric(15,2), "$T" numeric(15,2), "MODAL" text, "PRODUTO" text
 - `estoque_redes.fato_sell_in_projetado_novos_skus` (tabela): "DATA" date, "SKU" text, "VALOR" numeric(15,2), visao text

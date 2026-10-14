@@ -2435,3 +2435,23 @@ as perguntas desses temas (o limite do teste de contexto pede seção própria):
   traz o modelo da pergunta, com a de Troca primeiro e o exemplo "1 - ATENÇÃO".
 - Modelo real: SI7 e SI1 sem o filtro; o esclarecimento do caso 95 oferece a Categoria de Troca com
   exemplo; C30 aprovado (~US$ 0,31). Suíte: 1.309.
+
+### Meta de sell out e o painel de market share da diretoria (2026-10-14)
+
+- **Nova tabela `estoque_redes.fato_meta_sell_out`** (meta mensal de faturamento de sell out por SKU,
+  jan a set/2026, R$ 33.114.480,43), criada por `infra/rds/06_criar_fato_meta_sell_out.py` depois do
+  snapshot `cockpit-prod-db-antes-fato-meta-sell-out-20261014`. Mesmas leituras da `fato_sell_in`,
+  inclusive `bi_chatbot_ro`. `schema_snapshot.md` regerado.
+- **Referências MS0–MS4:** período coberto pela meta (MS0, com a frase pronta "Só tenho a meta de sell
+  out de 01/2026 a 09/2026"), meta mês a mês, meta × realizado e atingimento, YTD e meta de market share
+  (meta ÷ mercado Varejo do TD). SKU sem meta no mês sai como "não existe meta deste SKU no período",
+  nunca "R$ 0,00" (Isolado 20 mL de jan a mar/2026).
+- **Conversa 98 (pergunta da diretoria):** market share sem dizer unidades ou faturamento agora vira
+  pedido de detalhe; o Jarvis assumia unidades. Nova referência **MS5**, o painel executivo: share
+  mensal, variação em p.p., YTD, MAT e meta × realizado (meta só em faturamento). Com a pergunta da
+  conversa 98 e a resposta "Faturamento", o Jarvis entrega MS5 + MS3, tabela, gráfico realizado × meta
+  e Excel.
+- **Gráficos de linha** deixam de começar em zero (web e WhatsApp): 10% contra 12% virava uma reta.
+  A legenda do WhatsApp tira o sufixo `_pct`, como a tela.
+- Modelo real: 4 formulações de market share pedem o detalhe; faturamento, unidades, painel direto e
+  outro laboratório respondem certo (~US$ 0,75 nas rodadas). Suíte: 1.309.

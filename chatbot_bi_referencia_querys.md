@@ -912,6 +912,183 @@ Conferido no RDS em 23/09/2026: com todas as fontes, **4.306** (1–20/09) contr
 ainda estão zerados por falta de carga. A resposta mostra os dois totais e diz que o −14,0% exagera a
 queda até essas fontes chegarem.
 
+#### Meta de sell out da Ease (empresa e SKU)
+
+A meta mensal de **faturamento de sell out da Ease**, por SKU, está em
+`estoque_redes.fato_meta_sell_out` (carregada em 2026-10-14, jan a set/2026). É a meta da
+**empresa**, não a do representante (essa é a `remuneracao_fv`, abaixo).
+
+| Coluna | O que é |
+|---|---|
+| `data` | 1º dia do mês da meta |
+| `sku` | Nome do SKU na planilha (`Isolado 30 mL`, `Isolado 10 mL`, `Isolado 20 mL`, `Extrato 36,76 mL`) |
+| `cod_apres` | Código do SKU — **liga com `cddd.vw_sell_out.cod_apres`** (`234194`, `254655`, `309653`, `259434`) |
+| `meta_faturamento` | Meta de faturamento do mês, em R$ |
+
+Regras:
+
+- **Realizado = faturamento Ease Total da B04**: unidades da `cddd.vw_sell_out`
+  (`cdd + extras + mp + ss - pbm`) × ticket médio do SKU. Mesma régua da meta: faturamento de sell
+  out em R$, todas as fontes, Voucher descontado.
+- **Atingimento = realizado ÷ meta × 100.** Total = soma dos SKUs (nunca média dos percentuais).
+- **Mês corrente é parcial**: o realizado vai até o último dia com venda e a meta é do mês inteiro.
+  Diga isso, e cite as fontes que ainda não têm carga no mês (Extras, Mercado Público e Saúde
+  Suplementar chegam depois do fechamento).
+- **YTD** = de janeiro até o último mês **fechado** (o anterior ao último dia com venda), salvo se o
+  usuário pedir para incluir o mês corrente — aí ele entra parcial, com o aviso.
+- **Meta de market share** = meta de faturamento da Ease ÷ faturamento do **mercado Varejo** (TD,
+  B20) no mesmo período. Compare com o **share realizado** da Ease no Varejo pelo TD (B24). Só entram
+  os meses que já têm carga no TD: diga até quando vai o dado.
+- **Período sem meta: diga qual período existe.** A meta só cobre os meses carregados na tabela
+  (hoje jan a set/2026). Pedido fora disso ("meta de 2025", "meta de dezembro/26") se responde com
+  a MS0, **começando a resposta** por: *"Só tenho a meta de sell out de jan/2026 a set/2026."* — com
+  as datas que a MS0 trouxer, nunca de memória. Período que cobre só parte (ex.: "meta de 2026"): responda os meses com meta e
+  diga que os demais ainda não têm meta. Nunca estime nem repita a meta de outro mês.
+- **SKU sem meta no mês: diga que não há meta.** Meta zero (ex.: Isolado 20 mL de jan a mar/2026,
+  antes do lançamento) ou SKU sem linha na tabela é **"sem meta definida"** para aquele mês: mostre
+  o realizado, não calcule atingimento e diga: *"Não existe meta de sell out do Isolado 20 mL em
+  jan a mar/2026."* Nunca diga "meta de R$ 0,00", nem trate como 0% ou como meta batida.
+
+*"Qual a meta de sell out de 2025?"* · *"Tem meta para dezembro?"* — e antes de qualquer pedido
+de meta cujo período você não tenha certeza que existe:
+
+```sql
+-- MS0 · Período coberto pela meta de sell out, por SKU
+SELECT COALESCE(sku, 'TODOS')                                   AS sku,
+       MIN(data) FILTER (WHERE meta_faturamento > 0)            AS meta_de,
+       MAX(data) FILTER (WHERE meta_faturamento > 0)            AS meta_ate,
+       COUNT(*) FILTER (WHERE meta_faturamento > 0)             AS meses_com_meta,
+       'Só tenho a meta de sell out de '
+         || to_char(MIN(data) FILTER (WHERE meta_faturamento > 0), 'MM/YYYY') || ' a '
+         || to_char(MAX(data) FILTER (WHERE meta_faturamento > 0), 'MM/YYYY')
+         || CASE WHEN sku IS NULL THEN '' ELSE ' para o ' || sku END   AS aviso
+FROM estoque_redes.fato_meta_sell_out
+GROUP BY GROUPING SETS ((sku), ())
+ORDER BY (sku IS NULL) DESC, 1;
+```
+
+*"Qual a meta de sell out mês a mês em 2026, total e por SKU?"*
+
+```sql
+-- MS1 · Meta de sell out mês a mês, por SKU e total
+SELECT m.data                               AS mes,
+       COALESCE(m.sku, 'TOTAL')             AS sku,
+       ROUND(SUM(m.meta_faturamento), 2)    AS meta_faturamento
+FROM estoque_redes.fato_meta_sell_out m
+WHERE m.data BETWEEN :data_ini AND :data_fim
+GROUP BY GROUPING SETS ((m.data, m.sku), (m.data))
+ORDER BY 1, (m.sku IS NULL), 2;
+```
+
+*"Como está o realizado contra a meta em 2026? Qual o atingimento, total e por SKU?"*
+
+```sql
+-- MS2 · Meta × realizado e atingimento mês a mês, por SKU e total
+WITH meta AS (
+  SELECT data AS mes, cod_apres, sku, meta_faturamento
+  FROM estoque_redes.fato_meta_sell_out
+  WHERE data BETWEEN :data_ini AND :data_fim
+),
+realizado AS (
+  SELECT date_trunc('month', s.date)::date AS mes, s.cod_apres,
+         SUM((s.cdd + s.extras + s.mp + s.ss - s.pbm) *
+             CASE s.cod_apres WHEN 259434 THEN 302.00
+                              WHEN 234194 THEN 799.30
+                              WHEN 309653 THEN 174.30
+                              WHEN 254655 THEN 286.00 END) AS faturamento
+  FROM cddd.vw_sell_out s
+  WHERE s.date >= :data_ini AND s.date < (:data_fim::date + INTERVAL '1 month')
+  GROUP BY 1, 2
+),
+base AS (
+  SELECT m.mes, m.sku, m.meta_faturamento, COALESCE(r.faturamento, 0) AS realizado
+  FROM meta m
+  LEFT JOIN realizado r ON r.mes = m.mes AND r.cod_apres = m.cod_apres
+)
+SELECT mes,
+       COALESCE(sku, 'TOTAL')                                                      AS sku,
+       ROUND(NULLIF(SUM(meta_faturamento), 0), 2)                                  AS meta,
+       ROUND(SUM(realizado)::numeric, 2)                                           AS realizado,
+       ROUND((SUM(realizado) - NULLIF(SUM(meta_faturamento), 0))::numeric, 2)      AS diferenca,
+       ROUND((100 * SUM(realizado) / NULLIF(SUM(meta_faturamento), 0))::numeric, 1) AS atingimento_pct,
+       CASE WHEN SUM(meta_faturamento) = 0 THEN 'não existe meta deste SKU no período' END AS situacao_meta,
+       (SELECT MAX(date) FROM cddd.vw_sell_out)                                    AS ultimo_dia_com_venda
+FROM base
+GROUP BY GROUPING SETS ((mes, sku), (mes))
+ORDER BY 1, (sku IS NULL), 2;
+```
+
+*"Qual o realizado contra a meta no acumulado do ano (YTD)?"*
+
+```sql
+-- MS3 · Meta × realizado YTD (jan até o último mês fechado), por SKU e total
+WITH corte AS (
+  SELECT date_trunc('month', MAX(date))::date AS mes_corrente FROM cddd.vw_sell_out
+),
+meta AS (
+  SELECT m.cod_apres, m.sku, SUM(m.meta_faturamento) AS meta
+  FROM estoque_redes.fato_meta_sell_out m CROSS JOIN corte c
+  WHERE m.data >= date_trunc('year', c.mes_corrente) AND m.data < c.mes_corrente
+  GROUP BY 1, 2
+),
+realizado AS (
+  SELECT s.cod_apres,
+         SUM((s.cdd + s.extras + s.mp + s.ss - s.pbm) *
+             CASE s.cod_apres WHEN 259434 THEN 302.00
+                              WHEN 234194 THEN 799.30
+                              WHEN 309653 THEN 174.30
+                              WHEN 254655 THEN 286.00 END) AS faturamento
+  FROM cddd.vw_sell_out s CROSS JOIN corte c
+  WHERE s.date >= date_trunc('year', c.mes_corrente) AND s.date < c.mes_corrente
+  GROUP BY 1
+)
+SELECT COALESCE(m.sku, 'TOTAL')                                                       AS sku,
+       ROUND(SUM(m.meta), 2)                                                          AS meta_ytd,
+       ROUND(SUM(COALESCE(r.faturamento, 0))::numeric, 2)                             AS realizado_ytd,
+       ROUND((100 * SUM(COALESCE(r.faturamento, 0)) / NULLIF(SUM(m.meta), 0))::numeric, 1) AS atingimento_pct,
+       MIN((SELECT date_trunc('year', mes_corrente)::date FROM corte))                AS de,
+       MIN((SELECT (mes_corrente - INTERVAL '1 day')::date FROM corte))               AS ate
+FROM meta m
+LEFT JOIN realizado r ON r.cod_apres = m.cod_apres
+GROUP BY GROUPING SETS ((m.sku), ())
+ORDER BY (m.sku IS NULL), 1;
+```
+
+*"Qual a meta de market share da Ease no Varejo? E o share realizado?"*
+
+```sql
+-- MS4 · Meta de market share (meta Ease ÷ mercado Varejo do TD) × share realizado, por mês
+WITH mercado AS (
+  SELECT to_date(f.cod_anomes, 'YYYYMM') AS mes,
+         SUM(f.valor_) / 1000 AS faturamento_mercado,
+         SUM(f.valor_) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / 1000 AS faturamento_ease_td
+  FROM td.fato_td f
+  LEFT JOIN cddd.canal dc_1 ON dc_1.cod_subcanal = f.cod_subcanal
+  LEFT JOIN cddd.apres a    ON a.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN cddd.prod pr    ON pr.cod_marca = a.cod_marca
+  LEFT JOIN cddd.fab fb     ON fb.cod_fab = pr.cod_fab
+  WHERE dc_1.desc_canal <> 'HOSPITALAR'
+    AND f.cod_anomes BETWEEN to_char(:data_ini::date, 'YYYYMM') AND to_char(:data_fim::date, 'YYYYMM')
+  GROUP BY 1
+),
+meta AS (
+  SELECT data AS mes, SUM(meta_faturamento) AS meta_ease
+  FROM estoque_redes.fato_meta_sell_out
+  WHERE data BETWEEN :data_ini AND :data_fim
+  GROUP BY 1
+)
+SELECT m.mes,
+       ROUND(m.meta_ease, 2)                                                        AS meta_ease,
+       ROUND(me.faturamento_mercado::numeric, 2)                                    AS faturamento_mercado_varejo,
+       ROUND((100 * m.meta_ease / NULLIF(me.faturamento_mercado, 0))::numeric, 2)    AS meta_share_pct,
+       ROUND((100 * me.faturamento_ease_td / NULLIF(me.faturamento_mercado, 0))::numeric, 2) AS share_realizado_pct
+FROM meta m
+JOIN mercado me ON me.mes = m.mes        -- só os meses com carga no TD
+ORDER BY 1;
+-- Para um período agregado (trimestre, YTD), some meta e mercado antes de dividir:
+-- 100 * SUM(meta_ease) / SUM(faturamento_mercado), nunca a média dos percentuais mensais.
+```
+
 #### Meta × resultado
 
 > ⚠️ **O schema `remuneracao_fv` ainda não existe no banco AWS.** Se a consulta falhar, responda que
@@ -1319,6 +1496,102 @@ WHERE dc_1.desc_canal <> 'HOSPITALAR'
 GROUP BY 1, 2
 ORDER BY faturamento_varejo DESC
 LIMIT 50;
+```
+
+#### ⭐ Market share da Ease: a pergunta da diretoria
+
+**Market share sem dizer UNIDADES ou FATURAMENTO: pergunte antes** (pedido de detalhe), numa
+mensagem só: *"O market share em faturamento (R$) ou em unidades? Considero o Varejo, padrão das
+análises de share."* Vale para "market share", "share", "participação de mercado" e "nossa fatia",
+mesmo que a pergunta peça várias visões de uma vez (meta, variação, YTD, MAT). **Nunca assuma
+unidades** (conversa 98, 2026-10-13: o Jarvis adotou unidades sozinho). Não pergunte de novo quando
+a pergunta já disser ("em faturamento", "em R$", "em unidades", "em volume").
+
+- **Laboratório: Ease por padrão.** Outro laboratório (ou o ranking, B24) só quando pedirem.
+- **Canal: Varejo por padrão** (`desc_canal <> 'HOSPITALAR'`), dito na resposta.
+- **Meta de market share só existe em FATURAMENTO** (MS4: meta de faturamento da Ease ÷ mercado
+  Varejo). Em unidades, entregue o resto e diga: *"a meta de market share só existe em faturamento"*.
+- **Variação contra o mês anterior em pontos percentuais (p.p.)**, nunca em %.
+- **YTD** = de janeiro até o último mês com carga no TD, somando Ease e mercado antes de dividir.
+  **MAT** = os 12 meses até o último mês com carga, idem. Nunca média dos percentuais mensais.
+- **Meta YTD** = meta somada ÷ mercado somado nos mesmos meses. **Meta MAT** só existe com 12
+  meses de meta: hoje a meta começa em jan/2026, então diga que a meta MAT ainda não existe.
+- O TD fecha o mês depois: diga até qual mês vai o dado.
+
+**Como entregar (a pergunta é de diretoria):** texto curto, com o último mês, o YTD, o MAT e a
+distância para a meta em p.p.; a tabela mensal; **gráfico de linha com o share realizado e a meta
+de share** (e o YTD, se couber); e o **Excel** com a tabela completa. Se a pergunta também citar o
+acompanhamento de sell out (meta × realizado), entregue junto a MS3 (YTD) como segunda consulta.
+
+*"Quero o market share em faturamento: meta x realizado, variação mês a mês em p.p., YTD e MAT."*
+
+```sql
+-- MS5 · Painel de market share da Ease no Varejo (faturamento): mensal, variação p.p., YTD, MAT e meta
+WITH limite AS (
+  SELECT MAX(to_date(cod_anomes, 'YYYYMM')) AS ultimo_mes FROM td.fato_td
+),
+mensal AS (
+  SELECT to_date(f.cod_anomes, 'YYYYMM') AS mes,
+         SUM(f.valor_) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / 1000 AS faturamento_ease,
+         SUM(f.valor_) / 1000                                          AS faturamento_mercado
+  FROM td.fato_td f
+  LEFT JOIN cddd.canal dc_1 ON dc_1.cod_subcanal = f.cod_subcanal
+  LEFT JOIN cddd.apres a    ON a.cod_apresentacao = f.cod_apresentacao
+  LEFT JOIN cddd.prod pr    ON pr.cod_marca = a.cod_marca
+  LEFT JOIN cddd.fab fb     ON fb.cod_fab = pr.cod_fab
+  CROSS JOIN limite l
+  WHERE dc_1.desc_canal <> 'HOSPITALAR'
+    AND to_date(f.cod_anomes, 'YYYYMM') > (l.ultimo_mes - INTERVAL '24 months')
+  GROUP BY 1
+),
+meta AS (
+  SELECT data AS mes, SUM(meta_faturamento) AS meta_ease
+  FROM estoque_redes.fato_meta_sell_out
+  GROUP BY 1
+  HAVING SUM(meta_faturamento) > 0
+),
+base AS (
+  SELECT m.mes, m.faturamento_ease, m.faturamento_mercado, mt.meta_ease,
+         SUM(m.faturamento_ease)    OVER ano AS ease_ytd,
+         SUM(m.faturamento_mercado) OVER ano AS mercado_ytd,
+         SUM(mt.meta_ease)          OVER ano AS meta_ytd,
+         COUNT(mt.meta_ease)        OVER ano AS meses_com_meta_ytd,
+         COUNT(*)                   OVER ano AS meses_ytd,
+         SUM(m.faturamento_ease)    OVER doze AS ease_mat,
+         SUM(m.faturamento_mercado) OVER doze AS mercado_mat
+  FROM mensal m
+  LEFT JOIN meta mt ON mt.mes = m.mes
+  WINDOW ano  AS (PARTITION BY date_trunc('year', m.mes) ORDER BY m.mes),
+         doze AS (ORDER BY m.mes ROWS BETWEEN 11 PRECEDING AND CURRENT ROW)
+),
+painel AS (
+  SELECT mes,
+         100 * faturamento_ease / NULLIF(faturamento_mercado, 0) AS share,
+         100 * faturamento_ease / NULLIF(faturamento_mercado, 0)
+           - LAG(100 * faturamento_ease / NULLIF(faturamento_mercado, 0)) OVER (ORDER BY mes) AS variacao_pp,
+         100 * meta_ease / NULLIF(faturamento_mercado, 0)        AS meta_share,
+         100 * ease_ytd / NULLIF(mercado_ytd, 0)                 AS share_ytd,
+         CASE WHEN meses_com_meta_ytd = meses_ytd
+              THEN 100 * meta_ytd / NULLIF(mercado_ytd, 0) END   AS meta_share_ytd,
+         100 * ease_mat / NULLIF(mercado_mat, 0)                 AS share_mat,
+         faturamento_ease, faturamento_mercado, meta_ease
+  FROM base
+)
+SELECT p.mes,
+       ROUND(p.faturamento_ease::numeric, 2)                                         AS faturamento_ease,
+       ROUND(p.faturamento_mercado::numeric, 2)                                      AS faturamento_mercado_varejo,
+       ROUND(p.share::numeric, 2)                                                    AS share_realizado_pct,
+       ROUND(p.meta_share::numeric, 2)                                               AS meta_de_share_pct,
+       ROUND((p.share - p.meta_share)::numeric, 2)                                   AS desvio_meta_pp,
+       ROUND(p.variacao_pp::numeric, 2)                                              AS variacao_mes_anterior_pp,
+       ROUND(p.share_ytd::numeric, 2)                                                AS share_ytd_pct,
+       ROUND(p.meta_share_ytd::numeric, 2)                                           AS meta_de_share_ytd_pct,
+       ROUND(p.share_mat::numeric, 2)                                                AS share_mat_pct,
+       (SELECT ultimo_mes FROM limite)                                               AS ultimo_mes_td
+FROM painel p
+WHERE p.mes > ((SELECT ultimo_mes FROM limite) - INTERVAL '12 months')
+ORDER BY p.mes;
+-- Em UNIDADES: troque valor_ por und e tire a meta (só existe em faturamento).
 ```
 
 #### ⭐ Market share de faturamento varejo por laboratório

@@ -2000,6 +2000,129 @@ casos:
       Conversa 95 (2026-10-13): a pergunta de esclarecimento tem de oferecer a Categoria de
       Troca (com exemplo, "1 - ATENÇÃO") além da de Mercado.
 
+  # Meta de sell out da Ease (estoque_redes.fato_meta_sell_out), 2026-10-14.
+  - id: MS1-meta-mes-a-mes
+    grupo: referencia
+    pergunta: Me mostra a meta de faturamento de sell out de cada mês de 2026, por SKU e no total
+    esperado: answer_with_data
+    referencia: MS1
+    parametros: {data_ini: "2026-01-01", data_fim: "2026-09-01"}
+    sql_deve_conter: ["fato_meta_sell_out", "meta_faturamento"]
+
+  - id: MS2-meta-x-realizado
+    grupo: referencia
+    pergunta: Quanto a Ease atingiu da meta de sell out em cada mês de 2026, por SKU e no total?
+    esperado: answer_with_data
+    referencia: MS2
+    parametros: {data_ini: "2026-01-01", data_fim: "2026-09-01"}
+    sql_deve_conter: ["fato_meta_sell_out", "vw_sell_out", "cod_apres"]
+    comparar_resultado: false
+    nota: Realizado = faturamento Ease Total (B04, unidades × ticket médio); atingimento = realizado ÷ meta.
+
+  - id: MS3-meta-ytd
+    grupo: referencia
+    pergunta: Como está o realizado de sell out da Ease contra a meta no acumulado do ano?
+    esperado: answer_with_data
+    referencia: MS3
+    sql_deve_conter: ["fato_meta_sell_out", "vw_sell_out"]
+    comparar_resultado: false
+
+  - id: MS0-meta-fora-do-periodo
+    grupo: referencia
+    pergunta: Qual foi a meta de sell out da Ease em 2025?
+    esperado: answer_with_data
+    referencia: MS0
+    sql_deve_conter: ["fato_meta_sell_out"]
+    comparar_resultado: false
+    nota: >-
+      Não existe meta de 2025: a resposta diz qual período tem meta (hoje jan a set/2026), lido da
+      tabela pela MS0, sem estimar (pedido do Rubens, 2026-10-14).
+
+  - id: MS0-meta-mes-sem-carga
+    grupo: referencia
+    pergunta: Qual a meta de sell out de dezembro de 2026?
+    esperado: answer_with_data
+    sql_deve_conter: ["fato_meta_sell_out"]
+    comparar_resultado: false
+    nota: Dezembro/26 não tem meta carregada; a resposta diz o período que existe.
+
+  - id: MS2-sku-sem-meta
+    grupo: referencia
+    pergunta: Qual foi o atingimento da meta do Isolado 20 mL de janeiro a março de 2026?
+    esperado: answer_with_data
+    sql_deve_conter: ["fato_meta_sell_out"]
+    comparar_resultado: false
+    nota: Meta zero de jan a mar/2026 (antes do lançamento) é "sem meta definida", não 0% nem meta batida.
+
+  - id: MS4-meta-de-market-share
+    grupo: referencia
+    pergunta: Qual a meta de market share da Ease no Varejo em 2026, comparada ao share realizado?
+    esperado: answer_with_data
+    referencia: MS4
+    parametros: {data_ini: "2026-01-01", data_fim: "2026-09-01"}
+    sql_deve_conter: ["fato_meta_sell_out", "fato_td", "HOSPITALAR"]
+    comparar_resultado: false
+    nota: Meta de share = meta de faturamento Ease ÷ faturamento do mercado Varejo (TD) no mesmo período.
+
+  # Market share da Ease: a pergunta da diretoria (conversa 98, 2026-10-13).
+  - id: X-share-conversa-98
+    grupo: esclarecimento
+    pergunta: "Além do acompanhamento de sell-out (meta versus realizado), gostaria de receber uma análise mais detalhada da evolução do nosso market share, contemplando: - Market share: meta versus realizado; - Variação do market share em relação ao mês anterior, em pontos percentuais; - Market share acumulado no ano (YTD); - Market share dos 12 meses (MAT); Você consegue compartilhar essas informações conosco?"
+    esperado: clarify
+    nota: Market share sem dizer unidades ou faturamento → perguntar antes. A conversa 98 assumiu unidades.
+
+  - id: X-share-simples
+    grupo: esclarecimento
+    pergunta: Qual o market share da Ease?
+    esperado: clarify
+
+  - id: X-share-participacao-2026
+    grupo: esclarecimento
+    pergunta: Como está a nossa participação de mercado em 2026, mês a mês?
+    esperado: clarify
+
+  - id: X-share-ytd-mat
+    grupo: esclarecimento
+    pergunta: Me traga o share da Ease no YTD e no MAT, com a variação mês a mês
+    esperado: clarify
+
+  - id: MS5-painel-de-share
+    grupo: referencia
+    pergunta: Quero o market share da Ease em faturamento, com meta versus realizado, variação contra o mês anterior em pontos percentuais, YTD e MAT
+    esperado: answer_with_data
+    referencia: MS5
+    sql_deve_conter: ["fato_meta_sell_out", "fato_td", "valor_", "HOSPITALAR"]
+    comparar_resultado: false
+
+  - id: S-share-faturamento
+    grupo: seguimento
+    antes: ["Além do acompanhamento de sell-out (meta versus realizado), gostaria de receber uma análise mais detalhada da evolução do nosso market share, contemplando: - Market share: meta versus realizado; - Variação do market share em relação ao mês anterior, em pontos percentuais; - Market share acumulado no ano (YTD); - Market share dos 12 meses (MAT); Você consegue compartilhar essas informações conosco?"]
+    pergunta: Faturamento
+    esperado: answer_with_data
+    sql_deve_conter: ["fato_meta_sell_out"]
+    comparar_resultado: false
+    nota: >-
+      Depois do esclarecimento, entrega o painel MS5 com a meta de share e, como a pergunta cita o
+      sell out, a MS3 junto (duas consultas; o verificador olha a última).
+
+  - id: S-share-unidades
+    grupo: seguimento
+    antes: ["Além do acompanhamento de sell-out (meta versus realizado), gostaria de receber uma análise mais detalhada da evolução do nosso market share, contemplando: - Market share: meta versus realizado; - Variação do market share em relação ao mês anterior, em pontos percentuais; - Market share acumulado no ano (YTD); - Market share dos 12 meses (MAT); Você consegue compartilhar essas informações conosco?"]
+    pergunta: Pode ser por quantidade de unidades, por favor
+    esperado: answer_with_data
+    sql_deve_conter: ["fato_td", "und"]
+    sql_nao_deve_conter: ["valor_"]
+    comparar_resultado: false
+    nota: Em unidades a meta de share não existe (só em faturamento); a resposta diz isso.
+
+  - id: B24-share-outro-laboratorio
+    grupo: referencia
+    pergunta: Qual o market share de faturamento da Aché no varejo em 2026?
+    esperado: answer_with_data
+    sql_deve_conter: ["fato_td", "valor_", "HOSPITALAR"]
+    comparar_resultado: false
+    nota: Outro laboratório só quando pedido; aqui pediram a Aché, em faturamento — sem esclarecimento.
+
   - id: CT1-situacao-de-um-cnpj
     grupo: referencia
     pergunta: Qual a situação do PDV de CNPJ 61585865189173?
