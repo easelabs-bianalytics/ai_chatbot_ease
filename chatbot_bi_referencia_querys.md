@@ -942,6 +942,10 @@ Regras:
   pergunta de meta (mês, SKU, YTD, market share) responde em faturamento **ou** em unidades: as MS1,
   MS2 e MS3 trazem as duas, e a MS6 é o painel de share em unidades.
 - **Valor em reais leva "R$"** na resposta (meta, realizado, diferença); unidade leva "unidades".
+- **Meta e realizado lado a lado no texto**, na mesma frase e com "R$": *"realizado de R$ 29,7 mi
+  contra meta de R$ 33,1 mi (89,6%)"* — nunca só o realizado e o percentual. Em unidades, só quando a
+  pergunta pedir unidades; não comente unidades numa pergunta de faturamento (nem que o atingimento
+  em unidades é igual ao de faturamento).
 - **Mês corrente é parcial**: o realizado vai até o último dia com venda e a meta é do mês inteiro.
   Diga isso, e cite as fontes que ainda não têm carga no mês (Extras, Mercado Público e Saúde
   Suplementar chegam depois do fechamento).
