@@ -2471,3 +2471,11 @@ as perguntas desses temas (o limite do teste de contexto pede seção própria):
 - **MS5 e MS6 só com os meses que têm meta**: tabela e gráfico realizado × meta ficam em 2026; MAT e
   variação seguem calculados com os 12 meses.
 - Valor em reais sempre com "R$" (a conversa 99 escreveu o realizado sem). Suíte: 1.309.
+
+**Duas fontes na meta, no ar em 2026-10-14:** imagem `555c946`, task `cockpit-prod-jarvis:55`, bump
+`db53b6c` mesclado na `main` do `sales_force_crm` (`a918f92`).
+
+- Meta × realizado de sell out (MS2, MS3): realizado do Sell Out Ease Total (`vw_sell_out`, B01 a B04);
+  em unidades com o arredondamento da B01 (acima de 0,89 sobe).
+- Market share (MS4, MS5, MS6): Ease e mercado só do `td.fato_td`, nunca a `vw_sell_out` — decisão do
+  Rubens depois de ver as duas versões (set/26: share 10,39% pelo TD contra 9,92% pelo sell out).
