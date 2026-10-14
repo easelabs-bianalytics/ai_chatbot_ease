@@ -2438,6 +2438,9 @@ as perguntas desses temas (o limite do teste de contexto pede seção própria):
 
 ### Meta de sell out e o painel de market share da diretoria (2026-10-14)
 
+**No ar em 2026-10-14:** imagem `4baffc3`, task `cockpit-prod-jarvis:53`, bump `e9b99ad` mesclado na
+`main` do `sales_force_crm` (`abeea97`).
+
 - **Nova tabela `estoque_redes.fato_meta_sell_out`** (meta mensal de faturamento de sell out por SKU,
   jan a set/2026, R$ 33.114.480,43), criada por `infra/rds/06_criar_fato_meta_sell_out.py` depois do
   snapshot `cockpit-prod-db-antes-fato-meta-sell-out-20261014`. Mesmas leituras da `fato_sell_in`,
