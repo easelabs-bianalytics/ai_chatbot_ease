@@ -2479,3 +2479,7 @@ as perguntas desses temas (o limite do teste de contexto pede seção própria):
   em unidades com o arredondamento da B01 (acima de 0,89 sobe).
 - Market share (MS4, MS5, MS6): Ease e mercado só do `td.fato_td`, nunca a `vw_sell_out` — decisão do
   Rubens depois de ver as duas versões (set/26: share 10,39% pelo TD contra 9,92% pelo sell out).
+
+**Meta e realizado lado a lado (conversa 104), no ar em 2026-10-14:** imagem `195035f`, task
+`cockpit-prod-jarvis:56`, bump `02ca911` mesclado na `main` do `sales_force_crm` (`bbec413`). O texto
+cita meta e realizado na mesma frase, com "R$", e só fala de unidades quando a pergunta pede.
