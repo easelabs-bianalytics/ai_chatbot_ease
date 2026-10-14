@@ -201,8 +201,9 @@ def test_do_terceiro_tema_em_diante_vai_o_resumo(catalogo):
     # o tema Sell Out: ~1,8 mil tokens, ~US$ 0,003 por pergunta de vendas; 35 mil
     # com a MS0 e as regras de período e SKU sem meta; 36,5 mil com o painel de
     # market share da diretoria (MS5 e a regra unidades × faturamento, conversa 98);
-    # 38,2 mil com a meta em unidades pelo ticket médio (MS1–MS3) e o painel MS6.
-    assert contexto.tokens_estimados < 38200
+    # 38,2 mil com a meta em unidades pelo ticket médio (MS1–MS3) e o painel MS6;
+    # 38,4 mil com a regra das duas fontes (sell out na meta × realizado, TD no share).
+    assert contexto.tokens_estimados < 38400
 
 
 def test_schema_vai_filtrado_pelas_tabelas_do_tema(catalogo):

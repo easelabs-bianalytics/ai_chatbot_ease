@@ -2092,6 +2092,7 @@ casos:
     esperado: answer_with_data
     referencia: MS5
     sql_deve_conter: ["fato_meta_sell_out", "fato_td", "valor_", "HOSPITALAR"]
+    sql_nao_deve_conter: ["vw_sell_out"]
     comparar_resultado: false
 
   - id: MS6-painel-de-share-unidades
@@ -2100,7 +2101,7 @@ casos:
     esperado: answer_with_data
     referencia: MS6
     sql_deve_conter: ["fato_meta_sell_out", "fato_td", "und", "ROUND"]
-    sql_nao_deve_conter: ["valor_"]
+    sql_nao_deve_conter: ["valor_", "vw_sell_out"]
     comparar_resultado: false
 
   - id: MS2-meta-em-unidades
