@@ -2492,3 +2492,11 @@ cita meta e realizado na mesma frase, com "R$", e só fala de unidades quando a 
   total do mês × ticket, R$ 2 a 4 mil a mais por mês. Jan a set/2026 batem com
   `jarvis_analise_xslx_csv/unidades e faturamento validados.csv` (YTD R$ 29.663.336).
 - Vale para B04, B05, B06, MS2 e MS3, com regra de validação exigindo `cod_ct`, `0.89` e `TRUNC`.
+
+**Ease do TD só como base do share (conversa 107), no ar em 2026-10-15:** imagem `33d656b`, task
+`cockpit-prod-jarvis:58`, bump `68c51de` mesclado na `main` do `sales_force_crm` (`eae4782`).
+
+- A MS5 devolvia `faturamento_ease` calculado do TD, que foi para a tabela e o Excel. Agora MS5 e MS6
+  mostram faturamento/unidades Ease do Sell Out validado (e a MS5, a meta em R$); o share segue pelo TD.
+- B26 a B29 e o share por representante em unidades: a coluna da Ease no TD vira `ease_td_base_share`.
+- Regra de validação reprova `faturamento_ease`/`unidades_ease` vindos do TD nas consultas de share.
