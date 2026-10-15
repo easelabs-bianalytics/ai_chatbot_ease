@@ -104,9 +104,13 @@ def montar(resposta, executor=None) -> list:
 
 
 # "Pelo botão "Baixar Excel" logo abaixo desta resposta" é o chat web. No
-# WhatsApp a planilha vai anexada (produção, 2026-09-25).
+# WhatsApp a planilha vai anexada (produção, 2026-09-25). O nome do botão vem
+# quase sempre em negrito — "**Baixar Excel**", que vira "*Baixar Excel*" no
+# WhatsApp, às vezes com aspas dentro: até 2026-10-15 a troca só aceitava
+# aspas, e as 12 respostas de WhatsApp que citavam o botão saíram com ele.
+_MARCAS = r"[\"“”'*_]*"
 _BOTAO_DA_TELA = re.compile(
-    r"(?:pelo|no|o)\s+bot[aã]o\s*[\"“”']?\s*Baixar\s+Excel\s*[\"“”']?(?:\s+logo)?(?:\s+abaixo(?:\s+(?:desta|da)\s+resposta)?)?",
+    rf"(?:pelo|no|o)\s+bot[aã]o\s*{_MARCAS}\s*Baixar\s+Excel\s*{_MARCAS}(?:\s+logo)?(?:\s+abaixo(?:\s+(?:desta|da)\s+resposta)?)?",
     re.I,
 )
 

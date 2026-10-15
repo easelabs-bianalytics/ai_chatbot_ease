@@ -134,6 +134,24 @@ def test_item_7_texto_nao_promete_planilha_que_nao_foi():
     assert "anexada" not in sem and "Não consegui gerar a planilha" in sem
 
 
+@pytest.mark.parametrize("markdown", [
+    "A tabela completa, com os 161 registros, está disponível abaixo e no botão **Baixar Excel**; a carga é de 18/09/2026.",
+    "O arquivo pode ser baixado pelo botão **“Baixar Excel”** logo abaixo desta resposta.",
+    "Os dados completos estão no botão **Baixar Excel**.",
+    "A planilha completa está no botão **Baixar Excel** abaixo.",
+])
+def test_botao_em_negrito_tambem_vira_a_planilha_anexada(markdown):
+    """Conversa 90 (2026-10-09) e outras 11 respostas de WhatsApp: o Jarvis
+    escreve o botão em negrito ("**Baixar Excel**", "*Baixar Excel*" no
+    WhatsApp), e a troca só aceitava aspas — o texto chegava no celular
+    falando de um botão que só existe na tela."""
+    from whatsapp import formato
+
+    texto = saida._sem_o_botao_da_tela(formato.de_markdown(markdown), tem_planilha=True)
+
+    assert "Baixar Excel" not in texto and "na planilha anexada" in texto
+
+
 def test_item_11_resposta_marcada_incompleta_e_reconhecida_como_cortada():
     """Sem isto a resposta cortada virava "falha da IA", e a segunda
     tentativa mais curta nem acontecia."""
