@@ -37,6 +37,9 @@ regras:
   - nome: ticket médio para faturamento Ease
     referencias: [B04]
     sql_deve_conter: ["302", "799.3", "174.3", "286"]
+  - nome: faturamento Ease arredonda as unidades por CT × SKU × mês antes do ticket (validado)
+    referencias: [B04, B05, B06, MS2, MS3]
+    sql_deve_conter: ["cod_ct", "0.89", "trunc("]
   - nome: vendas extras e Mercado Público ignoram exclusão lógica
     referencias: [B07, B08, B09]
     sql_deve_conter: ["deleted_atisnull"]

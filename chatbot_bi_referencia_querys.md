@@ -694,6 +694,13 @@ O Sell Out tem três cenários. **Identifique qual deles o usuário quer antes d
 
 - `und` da `cddd.fato_cdd` e `und`/`valor_` da `td.fato_td` vêm multiplicados por 1000: divida por 1000.
 - Ticket médio para converter unidades Ease em faturamento: `259434` Extrato **R$ 302,00** · `234194` Isolado 30 mL **R$ 799,30** · `309653` Isolado 20 mg **R$ 174,30** · `254655` Isolado 10 mL **R$ 286,00**.
+- **Faturamento Ease (sell out) se calcula por representante:** some as unidades
+  (`cdd + extras + mp + ss - pbm`) por **mês × `cod_ct` × SKU**, arredonde cada uma pela regra da B01
+  (decimal acima de 0,89 sobe; senão, corta o decimal — `TRUNC`, que leva −11,39 a −11 quando o
+  Voucher passa da venda) e só então multiplique pelo ticket e some. É o número validado pela
+  empresa (jan a set/2026 batem no real). Multiplicar o total do mês sem esse
+  arredondamento dá R$ 2 a 4 mil a mais por mês: **nunca** `SUM(unidades × ticket)` direto na
+  `vw_sell_out`. Toda consulta de faturamento Ease (B04, B05, B06, MS2, MS3) segue essa base.
 
 ### 2.1 Sell Out Ease Total
 
@@ -774,19 +781,25 @@ ORDER BY unidades DESC;
 *"Quanto a Ease faturou por produto mês a mês?"*
 
 ```sql
--- B04 · Faturamento Ease Total por SKU (unidades × ticket médio)
-SELECT date_trunc('month', s.date)::date AS mes,
-       s.cod_apres,
-       SUM(s.cdd + s.extras + s.mp + s.ss - s.pbm) AS unidades,
-       ROUND((SUM(s.cdd + s.extras + s.mp + s.ss - s.pbm) *
-             CASE s.cod_apres WHEN 259434 THEN 302.00
+-- B04 · Faturamento Ease Total por SKU (unidades por CT arredondadas pela B01 × ticket médio)
+WITH por_ct AS (                      -- base do faturamento: mês × CT × SKU
+  SELECT date_trunc('month', s.date)::date AS mes, s.cod_ct, s.cod_apres,
+         SUM(s.cdd + s.extras + s.mp + s.ss - s.pbm) AS u,
+         MIN(CASE s.cod_apres WHEN 259434 THEN 302.00
                               WHEN 234194 THEN 799.30
                               WHEN 309653 THEN 174.30
-                              WHEN 254655 THEN 286.00 END)::numeric, 2) AS faturamento
-FROM cddd.vw_sell_out s
-WHERE s.date >= :data_ini AND s.date < :data_fim
+                              WHEN 254655 THEN 286.00 END) AS ticket
+  FROM cddd.vw_sell_out s
+  WHERE s.date >= :data_ini AND s.date < :data_fim
+  GROUP BY 1, 2, 3
+)
+SELECT mes, cod_apres,
+       CASE WHEN SUM(u) - FLOOR(SUM(u)) > 0.89 THEN CEIL(SUM(u)) ELSE FLOOR(SUM(u)) END AS unidades,
+       ROUND(SUM((CASE WHEN u - TRUNC(u) > 0.89 THEN CEIL(u) ELSE TRUNC(u) END) * ticket)::numeric, 2) AS faturamento
+FROM por_ct
 GROUP BY 1, 2
 ORDER BY 1 DESC, 2;
+-- Total do mês: some o faturamento dos SKUs; as unidades do total levam a B01 sobre a soma.
 ```
 
 #### Mês atual contra o mesmo período do mês anterior
@@ -928,7 +941,7 @@ A meta mensal de **faturamento de sell out da Ease**, por SKU, está em
 Regras:
 
 - **Realizado = faturamento Ease Total da B04**: unidades da `cddd.vw_sell_out`
-  (`cdd + extras + mp + ss - pbm`) × ticket médio do SKU. Mesma régua da meta: faturamento de sell
+  (`cdd + extras + mp + ss - pbm`, arredondadas por CT × SKU × mês) × ticket médio do SKU. Mesma régua da meta: faturamento de sell
   out em R$, todas as fontes, Voucher descontado.
 - **Atingimento = realizado ÷ meta × 100.** Total = soma dos SKUs (nunca média dos percentuais).
 - **Meta em UNIDADES = meta de faturamento ÷ ticket médio do SKU**, o mesmo da B04 (Extrato R$ 302,00 ·
@@ -1008,16 +1021,22 @@ WITH meta AS (
   FROM estoque_redes.fato_meta_sell_out
   WHERE data BETWEEN :data_ini AND :data_fim
 ),
-realizado AS (
-  SELECT date_trunc('month', s.date)::date AS mes, s.cod_apres,
-         SUM((s.cdd + s.extras + s.mp + s.ss - s.pbm) *
-             CASE s.cod_apres WHEN 259434 THEN 302.00
+por_ct AS (                           -- base do faturamento: mês × CT × SKU (regra da seção 2)
+  SELECT date_trunc('month', s.date)::date AS mes, s.cod_ct, s.cod_apres,
+         SUM(s.cdd + s.extras + s.mp + s.ss - s.pbm) AS u,
+         MIN(CASE s.cod_apres WHEN 259434 THEN 302.00
                               WHEN 234194 THEN 799.30
                               WHEN 309653 THEN 174.30
-                              WHEN 254655 THEN 286.00 END) AS faturamento,
-         SUM(s.cdd + s.extras + s.mp + s.ss - s.pbm) AS unidades
+                              WHEN 254655 THEN 286.00 END) AS ticket
   FROM cddd.vw_sell_out s
   WHERE s.date >= :data_ini AND s.date < (:data_fim::date + INTERVAL '1 month')
+  GROUP BY 1, 2, 3
+),
+realizado AS (
+  SELECT mes, cod_apres,
+         SUM((CASE WHEN u - TRUNC(u) > 0.89 THEN CEIL(u) ELSE TRUNC(u) END) * ticket) AS faturamento,
+         SUM(u) AS unidades
+  FROM por_ct
   GROUP BY 1, 2
 ),
 base AS (
@@ -1056,16 +1075,22 @@ meta AS (
   WHERE m.data >= date_trunc('year', c.mes_corrente) AND m.data < c.mes_corrente
   GROUP BY 1, 2
 ),
-realizado AS (
-  SELECT s.cod_apres,
-         SUM((s.cdd + s.extras + s.mp + s.ss - s.pbm) *
-             CASE s.cod_apres WHEN 259434 THEN 302.00
+por_ct AS (                           -- base do faturamento: mês × CT × SKU (regra da seção 2)
+  SELECT date_trunc('month', s.date)::date AS mes, s.cod_ct, s.cod_apres,
+         SUM(s.cdd + s.extras + s.mp + s.ss - s.pbm) AS u,
+         MIN(CASE s.cod_apres WHEN 259434 THEN 302.00
                               WHEN 234194 THEN 799.30
                               WHEN 309653 THEN 174.30
-                              WHEN 254655 THEN 286.00 END) AS faturamento,
-         SUM(s.cdd + s.extras + s.mp + s.ss - s.pbm) AS unidades
+                              WHEN 254655 THEN 286.00 END) AS ticket
   FROM cddd.vw_sell_out s CROSS JOIN corte c
   WHERE s.date >= date_trunc('year', c.mes_corrente) AND s.date < c.mes_corrente
+  GROUP BY 1, 2, 3
+),
+realizado AS (
+  SELECT cod_apres,
+         SUM((CASE WHEN u - TRUNC(u) > 0.89 THEN CEIL(u) ELSE TRUNC(u) END) * ticket) AS faturamento,
+         SUM(u) AS unidades
+  FROM por_ct
   GROUP BY 1
 )
 SELECT COALESCE(m.sku, 'TOTAL')                                                       AS sku,
@@ -1131,15 +1156,19 @@ A meta mensal de cada representante está em `remuneracao_fv.fato_remuneracao`: 
 
 ```sql
 -- B05 · Meta × resultado por representante no mês
-WITH realizado AS (
-  SELECT s.cod_ct,
-         date_trunc('month', s.date)::date AS mes,
-         SUM((s.cdd + s.extras + s.mp + s.ss - s.pbm) *
-             CASE s.cod_apres WHEN 259434 THEN 302.00
+WITH por_ct AS (                      -- base do faturamento: mês × CT × SKU (regra da seção 2)
+  SELECT s.cod_ct, date_trunc('month', s.date)::date AS mes, s.cod_apres,
+         SUM(s.cdd + s.extras + s.mp + s.ss - s.pbm) AS u,
+         MIN(CASE s.cod_apres WHEN 259434 THEN 302.00
                               WHEN 234194 THEN 799.30
                               WHEN 309653 THEN 174.30
-                              WHEN 254655 THEN 286.00 END) AS faturamento
+                              WHEN 254655 THEN 286.00 END) AS ticket
   FROM cddd.vw_sell_out s
+  GROUP BY 1, 2, 3
+),
+realizado AS (
+  SELECT cod_ct, mes, SUM((CASE WHEN u - TRUNC(u) > 0.89 THEN CEIL(u) ELSE TRUNC(u) END) * ticket) AS faturamento
+  FROM por_ct
   GROUP BY 1, 2
 )
 SELECT r.mes, r.nome_representante, r.setor, r.nivel,
@@ -1158,15 +1187,19 @@ ORDER BY pct_meta DESC NULLS LAST;
 
 ```sql
 -- B06 · Meta × resultado por GR no mês
-WITH realizado AS (
-  SELECT s.cod_ct,
-         date_trunc('month', s.date)::date AS mes,
-         SUM((s.cdd + s.extras + s.mp + s.ss - s.pbm) *
-             CASE s.cod_apres WHEN 259434 THEN 302.00
+WITH por_ct AS (                      -- base do faturamento: mês × CT × SKU (regra da seção 2)
+  SELECT s.cod_ct, date_trunc('month', s.date)::date AS mes, s.cod_apres,
+         SUM(s.cdd + s.extras + s.mp + s.ss - s.pbm) AS u,
+         MIN(CASE s.cod_apres WHEN 259434 THEN 302.00
                               WHEN 234194 THEN 799.30
                               WHEN 309653 THEN 174.30
-                              WHEN 254655 THEN 286.00 END) AS faturamento
+                              WHEN 254655 THEN 286.00 END) AS ticket
   FROM cddd.vw_sell_out s
+  GROUP BY 1, 2, 3
+),
+realizado AS (
+  SELECT cod_ct, mes, SUM((CASE WHEN u - TRUNC(u) > 0.89 THEN CEIL(u) ELSE TRUNC(u) END) * ticket) AS faturamento
+  FROM por_ct
   GROUP BY 1, 2
 )
 SELECT g.nome_gr AS gr,
