@@ -2483,3 +2483,12 @@ as perguntas desses temas (o limite do teste de contexto pede seção própria):
 **Meta e realizado lado a lado (conversa 104), no ar em 2026-10-14:** imagem `195035f`, task
 `cockpit-prod-jarvis:56`, bump `02ca911` mesclado na `main` do `sales_force_crm` (`bbec413`). O texto
 cita meta e realizado na mesma frase, com "R$", e só fala de unidades quando a pergunta pede.
+
+**Faturamento Ease como o validado, no ar em 2026-10-15:** imagem `f5652c9`, task
+`cockpit-prod-jarvis:57`, bump `61ba15f` mesclado na `main` do `sales_force_crm` (`21e1c37`).
+
+- O faturamento Ease arredonda as unidades por **mês × CT × SKU** pela regra da B01 (com `TRUNC`, que
+  leva −11,39 a −11 quando o Voucher passa da venda) e só então multiplica pelo ticket. Antes era o
+  total do mês × ticket, R$ 2 a 4 mil a mais por mês. Jan a set/2026 batem com
+  `jarvis_analise_xslx_csv/unidades e faturamento validados.csv` (YTD R$ 29.663.336).
+- Vale para B04, B05, B06, MS2 e MS3, com regra de validação exigindo `cod_ct`, `0.89` e `TRUNC`.
