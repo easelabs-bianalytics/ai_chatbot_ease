@@ -701,6 +701,11 @@ O Sell Out tem três cenários. **Identifique qual deles o usuário quer antes d
   empresa (jan a set/2026 batem no real). Multiplicar o total do mês sem esse
   arredondamento dá R$ 2 a 4 mil a mais por mês: **nunca** `SUM(unidades × ticket)` direto na
   `vw_sell_out`. Toda consulta de faturamento Ease (B04, B05, B06, MS2, MS3) segue essa base.
+- ⛔ **"Faturamento Ease" e "unidades Ease" são SEMPRE o Sell Out validado acima — nunca o TD.** O
+  valor da Ease no `td.fato_td` existe **só como numerador do market share**: não aparece em
+  coluna, tabela, Excel, gráfico ou texto como faturamento ou unidades da Ease. Nas consultas de
+  share ele sai, quando sai, como `ease_td_base_share`; se precisar mostrar o faturamento da Ease ao
+  lado do share, ele vem da `vw_sell_out` (MS5 e MS6 já fazem isso). Conversa 107, 2026-10-15.
 
 ### 2.1 Sell Out Ease Total
 
@@ -1572,7 +1577,9 @@ a pergunta já disser ("em faturamento", "em R$", "em unidades", "em volume").
 - **Laboratório: Ease por padrão.** Outro laboratório (ou o ranking, B24) só quando pedirem.
 - **Canal: Varejo por padrão** (`desc_canal <> 'HOSPITALAR'`), dito na resposta.
 - **Share realizado da Ease vem do TD** (`td.fato_td`, `desc_sigla_fab = 'EAS'`), como o mercado —
-  nunca da `vw_sell_out`. O Sell Out Ease só entra quando pedirem meta × realizado de sell out (MS3).
+  nunca da `vw_sell_out`. Mas o **faturamento / as unidades da Ease mostrados na tabela vêm do Sell
+  Out validado** (colunas `faturamento_ease` / `unidades_ease` da MS5 e MS6): o valor da Ease no TD
+  é só numerador do share e não se mostra.
 - **Meta de market share em faturamento (MS5) ou em unidades (MS6).** Em unidades, a meta de sell
   out vira unidades pelo ticket médio do SKU, com `ROUND` (regra da meta de sell out, acima).
 - **Variação contra o mês anterior em pontos percentuais (p.p.)**, nunca em %.
@@ -1591,13 +1598,13 @@ acompanhamento de sell out (meta × realizado), entregue junto a MS3 (YTD) como 
 *"Quero o market share em faturamento: meta x realizado, variação mês a mês em p.p., YTD e MAT."*
 
 ```sql
--- MS5 · Painel de market share da Ease no Varejo (faturamento): mensal, variação p.p., YTD, MAT e meta
+-- MS5 · Painel de market share da Ease no Varejo (faturamento): share pelo TD; faturamento Ease pelo Sell Out validado
 WITH limite AS (
   SELECT MAX(to_date(cod_anomes, 'YYYYMM')) AS ultimo_mes FROM td.fato_td
 ),
 mensal AS (
   SELECT to_date(f.cod_anomes, 'YYYYMM') AS mes,
-         SUM(f.valor_) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / 1000 AS faturamento_ease,
+         SUM(f.valor_) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / 1000 AS ease_td,
          SUM(f.valor_) / 1000                                          AS faturamento_mercado
   FROM td.fato_td f
   LEFT JOIN cddd.canal dc_1 ON dc_1.cod_subcanal = f.cod_subcanal
@@ -1609,6 +1616,15 @@ mensal AS (
     AND to_date(f.cod_anomes, 'YYYYMM') > (l.ultimo_mes - INTERVAL '24 months')
   GROUP BY 1
 ),
+sell_out AS (                   -- faturamento Ease mostrado na tabela: Sell Out validado (seção 2), nunca o TD
+  SELECT mes, SUM((CASE WHEN u - TRUNC(u) > 0.89 THEN CEIL(u) ELSE TRUNC(u) END) * ticket) AS faturamento_ease
+  FROM (SELECT date_trunc('month', s.date)::date AS mes, s.cod_ct, s.cod_apres,
+               SUM(s.cdd + s.extras + s.mp + s.ss - s.pbm) AS u, MIN(CASE s.cod_apres WHEN 259434 THEN 302.00 WHEN 234194 THEN 799.30 WHEN 309653 THEN 174.30 WHEN 254655 THEN 286.00 END) AS ticket
+        FROM cddd.vw_sell_out s CROSS JOIN limite l
+        WHERE s.date > (l.ultimo_mes - INTERVAL '12 months') AND s.date < (l.ultimo_mes + INTERVAL '1 month')
+        GROUP BY 1, 2, 3) x
+  GROUP BY 1
+),
 meta AS (
   SELECT data AS mes, SUM(meta_faturamento) AS meta_ease
   FROM estoque_redes.fato_meta_sell_out
@@ -1616,13 +1632,13 @@ meta AS (
   HAVING SUM(meta_faturamento) > 0
 ),
 base AS (
-  SELECT m.mes, m.faturamento_ease, m.faturamento_mercado, mt.meta_ease,
-         SUM(m.faturamento_ease)    OVER ano AS ease_ytd,
+  SELECT m.mes, m.ease_td, m.faturamento_mercado, mt.meta_ease,
+         SUM(m.ease_td)    OVER ano AS ease_ytd,
          SUM(m.faturamento_mercado) OVER ano AS mercado_ytd,
          SUM(mt.meta_ease)          OVER ano AS meta_ytd,
          COUNT(mt.meta_ease)        OVER ano AS meses_com_meta_ytd,
          COUNT(*)                   OVER ano AS meses_ytd,
-         SUM(m.faturamento_ease)    OVER doze AS ease_mat,
+         SUM(m.ease_td)    OVER doze AS ease_mat,
          SUM(m.faturamento_mercado) OVER doze AS mercado_mat
   FROM mensal m
   LEFT JOIN meta mt ON mt.mes = m.mes
@@ -1631,19 +1647,20 @@ base AS (
 ),
 painel AS (
   SELECT mes,
-         100 * faturamento_ease / NULLIF(faturamento_mercado, 0) AS share,
-         100 * faturamento_ease / NULLIF(faturamento_mercado, 0)
-           - LAG(100 * faturamento_ease / NULLIF(faturamento_mercado, 0)) OVER (ORDER BY mes) AS variacao_pp,
+         100 * ease_td / NULLIF(faturamento_mercado, 0) AS share,
+         100 * ease_td / NULLIF(faturamento_mercado, 0)
+           - LAG(100 * ease_td / NULLIF(faturamento_mercado, 0)) OVER (ORDER BY mes) AS variacao_pp,
          100 * meta_ease / NULLIF(faturamento_mercado, 0)        AS meta_share,
          100 * ease_ytd / NULLIF(mercado_ytd, 0)                 AS share_ytd,
          CASE WHEN meses_com_meta_ytd = meses_ytd
               THEN 100 * meta_ytd / NULLIF(mercado_ytd, 0) END   AS meta_share_ytd,
          100 * ease_mat / NULLIF(mercado_mat, 0)                 AS share_mat,
-         faturamento_ease, faturamento_mercado, meta_ease
+         ease_td, faturamento_mercado, meta_ease
   FROM base
 )
 SELECT p.mes,
-       ROUND(p.faturamento_ease::numeric, 2)                                         AS faturamento_ease,
+       ROUND(so.faturamento_ease::numeric, 2)                                        AS faturamento_ease,
+       ROUND(p.meta_ease::numeric, 2)                                                AS meta_faturamento_ease,
        ROUND(p.faturamento_mercado::numeric, 2)                                      AS faturamento_mercado_varejo,
        ROUND(p.share::numeric, 2)                                                    AS share_realizado_pct,
        ROUND(p.meta_share::numeric, 2)                                               AS meta_de_share_pct,
@@ -1654,6 +1671,7 @@ SELECT p.mes,
        ROUND(p.share_mat::numeric, 2)                                                AS share_mat_pct,
        (SELECT ultimo_mes FROM limite)                                               AS ultimo_mes_td
 FROM painel p
+LEFT JOIN sell_out so ON so.mes = p.mes
 WHERE p.mes > ((SELECT ultimo_mes FROM limite) - INTERVAL '12 months')
   AND p.meta_share IS NOT NULL      -- só os meses com meta: tabela e gráfico realizado × meta alinhados
 ORDER BY p.mes;
@@ -1664,13 +1682,13 @@ ORDER BY p.mes;
 *"Quero o market share em unidades, com meta x realizado, variação em p.p., YTD e MAT."*
 
 ```sql
--- MS6 · Painel de market share da Ease no Varejo em UNIDADES, com a meta convertida pelo ticket médio
+-- MS6 · Painel de market share da Ease no Varejo em UNIDADES: share pelo TD; unidades Ease pelo Sell Out; meta pelo ticket médio
 WITH limite AS (
   SELECT MAX(to_date(cod_anomes, 'YYYYMM')) AS ultimo_mes FROM td.fato_td
 ),
 mensal AS (
   SELECT to_date(f.cod_anomes, 'YYYYMM') AS mes,
-         SUM(f.und) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / 1000 AS unidades_ease,
+         SUM(f.und) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / 1000 AS ease_td,
          SUM(f.und) / 1000                                          AS unidades_mercado
   FROM td.fato_td f
   LEFT JOIN cddd.canal dc_1 ON dc_1.cod_subcanal = f.cod_subcanal
@@ -1682,6 +1700,13 @@ mensal AS (
     AND to_date(f.cod_anomes, 'YYYYMM') > (l.ultimo_mes - INTERVAL '24 months')
   GROUP BY 1
 ),
+sell_out AS (                   -- unidades Ease mostradas na tabela: Sell Out Ease Total (B01), nunca o TD
+  SELECT date_trunc('month', s.date)::date AS mes,
+         SUM(s.cdd + s.extras + s.mp + s.ss - s.pbm) AS u
+  FROM cddd.vw_sell_out s CROSS JOIN limite l
+  WHERE s.date > (l.ultimo_mes - INTERVAL '12 months') AND s.date < (l.ultimo_mes + INTERVAL '1 month')
+  GROUP BY 1
+),
 meta AS (
   SELECT data AS mes,
          SUM(ROUND(meta_faturamento / CASE cod_apres WHEN 259434 THEN 302.00 WHEN 234194 THEN 799.30 WHEN 309653 THEN 174.30 WHEN 254655 THEN 286.00 END)) AS meta_unidades
@@ -1690,13 +1715,13 @@ meta AS (
   HAVING SUM(meta_faturamento) > 0
 ),
 base AS (
-  SELECT m.mes, m.unidades_ease, m.unidades_mercado, mt.meta_unidades,
-         SUM(m.unidades_ease)    OVER ano AS ease_ytd,
+  SELECT m.mes, m.ease_td, m.unidades_mercado, mt.meta_unidades,
+         SUM(m.ease_td)    OVER ano AS ease_ytd,
          SUM(m.unidades_mercado) OVER ano AS mercado_ytd,
          SUM(mt.meta_unidades)   OVER ano AS meta_ytd,
          COUNT(mt.meta_unidades) OVER ano AS meses_com_meta_ytd,
          COUNT(*)                OVER ano AS meses_ytd,
-         SUM(m.unidades_ease)    OVER doze AS ease_mat,
+         SUM(m.ease_td)    OVER doze AS ease_mat,
          SUM(m.unidades_mercado) OVER doze AS mercado_mat
   FROM mensal m
   LEFT JOIN meta mt ON mt.mes = m.mes
@@ -1704,10 +1729,10 @@ base AS (
          doze AS (ORDER BY m.mes ROWS BETWEEN 11 PRECEDING AND CURRENT ROW)
 ),
 painel AS (
-  SELECT mes, unidades_ease, unidades_mercado, meta_unidades,
-         100 * unidades_ease / NULLIF(unidades_mercado, 0) AS share,
-         100 * unidades_ease / NULLIF(unidades_mercado, 0)
-           - LAG(100 * unidades_ease / NULLIF(unidades_mercado, 0)) OVER (ORDER BY mes) AS variacao_pp,
+  SELECT mes, ease_td, unidades_mercado, meta_unidades,
+         100 * ease_td / NULLIF(unidades_mercado, 0) AS share,
+         100 * ease_td / NULLIF(unidades_mercado, 0)
+           - LAG(100 * ease_td / NULLIF(unidades_mercado, 0)) OVER (ORDER BY mes) AS variacao_pp,
          100 * meta_unidades / NULLIF(unidades_mercado, 0) AS meta_share,
          100 * ease_ytd / NULLIF(mercado_ytd, 0)           AS share_ytd,
          CASE WHEN meses_com_meta_ytd = meses_ytd
@@ -1716,7 +1741,7 @@ painel AS (
   FROM base
 )
 SELECT p.mes,
-       ROUND(p.unidades_ease)::bigint                                AS unidades_ease,
+       (CASE WHEN so.u - FLOOR(so.u) > 0.89 THEN CEIL(so.u) ELSE FLOOR(so.u) END)::bigint AS unidades_ease,
        p.meta_unidades::bigint                                       AS meta_unidades,
        ROUND(p.unidades_mercado)::bigint                             AS unidades_mercado_varejo,
        ROUND(p.share::numeric, 2)                                    AS share_realizado_pct,
@@ -1728,6 +1753,7 @@ SELECT p.mes,
        ROUND(p.share_mat::numeric, 2)                                AS share_mat_pct,
        (SELECT ultimo_mes FROM limite)                               AS ultimo_mes_td
 FROM painel p
+LEFT JOIN sell_out so ON so.mes = p.mes
 WHERE p.mes > ((SELECT ultimo_mes FROM limite) - INTERVAL '12 months')
   AND p.meta_share IS NOT NULL
 ORDER BY p.mes;
@@ -1793,7 +1819,7 @@ LIMIT 10;
 -- B26 · Market share Ease no faturamento VAREJO, mês a mês
 SELECT
   f.cod_anomes,
-  SUM(f.valor_) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / 1000 AS faturamento_ease,
+  SUM(f.valor_) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / 1000 AS ease_td_base_share,
   SUM(f.valor_) / 1000                                          AS faturamento_mercado,
   ROUND(100 * SUM(f.valor_) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / NULLIF(SUM(f.valor_), 0), 2) AS share_ease_pct
 FROM td.fato_td f
@@ -1812,7 +1838,7 @@ ORDER BY 1 DESC;
 -- B27 · Market share Ease no faturamento VAREJO por representante
 SELECT
   fv.desc_territorio AS representante,
-  SUM(f.valor_) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / 1000 AS faturamento_ease,
+  SUM(f.valor_) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / 1000 AS ease_td_base_share,
   SUM(f.valor_) / 1000                                          AS faturamento_mercado,
   ROUND(100 * SUM(f.valor_) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / NULLIF(SUM(f.valor_), 0), 2) AS share_ease_pct
 FROM td.fato_td f
@@ -1833,7 +1859,7 @@ ORDER BY share_ease_pct DESC NULLS LAST;
 -- B28 · Market share Ease no faturamento VAREJO por GR
 SELECT
   COALESCE(d.desc_distrito, 'SEM GR') AS gr,
-  SUM(f.valor_) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / 1000 AS faturamento_ease,
+  SUM(f.valor_) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / 1000 AS ease_td_base_share,
   SUM(f.valor_) / 1000                                          AS faturamento_mercado,
   ROUND(100 * SUM(f.valor_) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / NULLIF(SUM(f.valor_), 0), 2) AS share_ease_pct
 FROM td.fato_td f
@@ -1856,7 +1882,7 @@ ORDER BY share_ease_pct DESC NULLS LAST;
 -- B29 · Market share Ease no faturamento VAREJO por UF
 SELECT
   u.uf,
-  SUM(f.valor_) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / 1000 AS faturamento_ease,
+  SUM(f.valor_) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / 1000 AS ease_td_base_share,
   SUM(f.valor_) / 1000                                          AS faturamento_mercado,
   ROUND(100 * SUM(f.valor_) FILTER (WHERE fb.desc_sigla_fab = 'EAS') / NULLIF(SUM(f.valor_), 0), 2) AS share_ease_pct
 FROM td.fato_td f
@@ -3527,7 +3553,7 @@ vendas AS (   -- os filtros do fato ficam AQUI, não no LEFT JOIN de baixo
 SELECT r.pedaco,
        COALESCE(r.representante, r.nome_abreviado_ct) AS representante,
        r.data_demissao,
-       SUM(v.und) FILTER (WHERE v.desc_sigla_fab = 'EAS') / 1000 AS unidades_ease,
+       SUM(v.und) FILTER (WHERE v.desc_sigla_fab = 'EAS') / 1000 AS ease_td_base_share,
        SUM(v.und) / 1000                                         AS unidades_mercado,
        ROUND(100 * SUM(v.und) FILTER (WHERE v.desc_sigla_fab = 'EAS')
              / NULLIF(SUM(v.und), 0), 2)                         AS share_ease_pct

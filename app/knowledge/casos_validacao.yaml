@@ -37,6 +37,11 @@ regras:
   - nome: ticket médio para faturamento Ease
     referencias: [B04]
     sql_deve_conter: ["302", "799.3", "174.3", "286"]
+  - nome: Ease do TD só como base do share, nunca como faturamento ou unidades Ease (conversa 107)
+    referencias: [MS5, MS6, B26, B27, B28, B29]
+    sql_nao_deve_conter:
+      - "='EAS') / 1000 AS faturamento_ease"
+      - "='EAS') / 1000 AS unidades_ease"
   - nome: faturamento Ease arredonda as unidades por CT × SKU × mês antes do ticket (validado)
     referencias: [B04, B05, B06, MS2, MS3]
     sql_deve_conter: ["cod_ct", "0.89", "trunc("]
@@ -2094,8 +2099,7 @@ casos:
     pergunta: Quero o market share da Ease em faturamento, com meta versus realizado, variação contra o mês anterior em pontos percentuais, YTD e MAT
     esperado: answer_with_data
     referencia: MS5
-    sql_deve_conter: ["fato_meta_sell_out", "fato_td", "valor_", "HOSPITALAR"]
-    sql_nao_deve_conter: ["vw_sell_out"]
+    sql_deve_conter: ["fato_meta_sell_out", "fato_td", "valor_", "HOSPITALAR", "vw_sell_out"]
     comparar_resultado: false
 
   - id: MS6-painel-de-share-unidades
@@ -2103,8 +2107,8 @@ casos:
     pergunta: Me mostra o market share da Ease em unidades no varejo, realizado contra a meta, com variação em p.p., YTD e MAT
     esperado: answer_with_data
     referencia: MS6
-    sql_deve_conter: ["fato_meta_sell_out", "fato_td", "und", "ROUND"]
-    sql_nao_deve_conter: ["valor_", "vw_sell_out"]
+    sql_deve_conter: ["fato_meta_sell_out", "fato_td", "und", "ROUND", "vw_sell_out"]
+    sql_nao_deve_conter: ["valor_"]
     comparar_resultado: false
 
   - id: MS2-meta-em-unidades

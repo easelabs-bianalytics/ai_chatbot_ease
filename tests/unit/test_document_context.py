@@ -203,8 +203,9 @@ def test_do_terceiro_tema_em_diante_vai_o_resumo(catalogo):
     # market share da diretoria (MS5 e a regra unidades × faturamento, conversa 98);
     # 38,2 mil com a meta em unidades pelo ticket médio (MS1–MS3) e o painel MS6;
     # 38,4 mil com a regra das duas fontes (sell out na meta × realizado, TD no share);
-    # 38,9 mil com o faturamento Ease por CT × SKU × mês (B04, B05, B06, MS2, MS3), o validado.
-    assert contexto.tokens_estimados < 38900
+    # 38,9 mil com o faturamento Ease por CT × SKU × mês (B04, B05, B06, MS2, MS3), o validado;
+    # 39,3 mil com a regra "Ease do TD só no share" e o Sell Out na tabela da MS5 e MS6 (conversa 107).
+    assert contexto.tokens_estimados < 39300
 
 
 def test_schema_vai_filtrado_pelas_tabelas_do_tema(catalogo):
