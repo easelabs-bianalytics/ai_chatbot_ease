@@ -2500,3 +2500,8 @@ cita meta e realizado na mesma frase, com "R$", e só fala de unidades quando a 
   mostram faturamento/unidades Ease do Sell Out validado (e a MS5, a meta em R$); o share segue pelo TD.
 - B26 a B29 e o share por representante em unidades: a coluna da Ease no TD vira `ease_td_base_share`.
 - Regra de validação reprova `faturamento_ease`/`unidades_ease` vindos do TD nas consultas de share.
+
+**Botão "Baixar Excel" em negrito no WhatsApp, no ar em 2026-10-15:** imagem `0265fb7`, task
+`cockpit-prod-jarvis:59`, bump `a88b3e6` mesclado na `main` do `sales_force_crm` (`503590e`). A troca do
+botão da tela pela planilha anexada (2026-09-25) só aceitava aspas; o Jarvis escreve o botão em negrito,
+e as 12 respostas de WhatsApp que o citaram (24/09 a 09/10, conversa 90 entre elas) chegaram com ele.
