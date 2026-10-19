@@ -2520,5 +2520,17 @@ e as 12 respostas de WhatsApp que o citaram (24/09 a 09/10, conversa 90 entre el
 - **Conversa 120 (Paulo):** "últimos três meses" virou 90 dias corridos (69 un, molde da B15); a
   regra nova diz meses do calendário (ago a out/26, 65 un, como a 119).
 - Modelo real: "cuibá" e "últimos três meses" deram CUIABA (MT), 65 un. Suíte: 1.325.
-- **Pendente:** "me mande a query" / "query sql" ainda roda a consulta de novo e, no WhatsApp, aponta
-  para um bloco "Consulta executada" que só existe na web.
+- ~~Pendente~~ resolvido em `1e5ccdb` (abaixo): "me mande a query" / "query sql" rodava a consulta
+  de novo e, no WhatsApp, apontava para um bloco "Consulta executada" que só existe na web.
+
+**"Me mande a query" e contato recadastrado, no ar em 2026-10-19:** imagem `1e5ccdb`, task
+`cockpit-prod-jarvis:61`, bump `cab3944` mesclado na `main` do `sales_force_crm` (`3ac9993`).
+
+- Regra `pedido_da_consulta`: devolve o SQL da última resposta com dado da conversa, sem IA e sem
+  rodar nada; no WhatsApp o bloco de código passa intacto e consulta longa sai em blocos fechados.
+- Admin do contato do WhatsApp dava 500 ao recadastrar número apagado (o usuário técnico ficava e o
+  save criava outro com o mesmo username): agora ele é reaproveitado. Número fora de 12–13 dígitos é
+  recusado no formulário.
+- CEOs cadastrados pelo ECS Exec com o código novo: Guilherme Mendes (`5531999050180`, contato 7,
+  usuário técnico reaproveitado) e Gustavo Palhares (`5531996261688`, contato 8). Sobrou o usuário
+  `whatsapp-novo` (id 12), do cadastro com o nome no campo do número, sem contato.
