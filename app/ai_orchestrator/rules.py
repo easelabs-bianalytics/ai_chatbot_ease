@@ -192,3 +192,30 @@ def arquivo_a_seguir(texto: str) -> RuleOutcome | None:
         decision=AIReply.Decision.CLARIFY,
         reply=canned.ARQUIVO_A_SEGUIR,
     )
+
+
+# "query sql", "me mande a query", "mostre o SQL": a pessoa quer ver a
+# consulta da resposta anterior. Em 2026-10-19 (conversas 118 e 120) esses
+# pedidos iam ao planejador, que rodava a consulta de novo (com o filtro
+# errado, inclusive) e respondia que ela estava "no bloco Consulta
+# executada" — que só existe na web; no WhatsApp a pessoa ficou sem a query.
+# Só o inequívoco: "query"/"sql" sem verbo de criar ("crie uma query que
+# traga..." é pergunta de dado), ou "consulta" dita como a já usada.
+_PALAVRA_DE_SQL = re.compile(r"\b(?:query|querys|queries|sql)\b")
+_CONSULTA_FEITA = re.compile(
+    r"\bconsultas?\b.{0,20}\b(?:usad\w*|utilizad\w*|executad\w*|rodad\w*|feita|anterior"
+    r"|que (?:voce )?(?:usou|utilizou|rodou|fez|executou))"
+    r"|\b(?:mostr|mand|envi|pass|compartilh)\w*\s+(?:me\s+)?(?:a|essa|esta)\s+consulta[\s?!.]*$"
+)
+_CRIAR_CONSULTA = re.compile(
+    r"\b(?:fa[cz]a|faz|fazer|crie|criar|cria|gere|gerar|monte|montar|rode|rodar|execute|executar"
+    r"|escreva|escrever|traga|trazer|liste|listar|calcule)\b"
+)
+
+
+def pedido_da_consulta(texto: str) -> bool:
+    """A mensagem pede para ver a consulta (SQL) da resposta anterior?"""
+    normalizado = _normalize(texto)
+    if len(normalizado.split()) > 12 or _CRIAR_CONSULTA.search(normalizado):
+        return False
+    return bool(_PALAVRA_DE_SQL.search(normalizado) or _CONSULTA_FEITA.search(normalizado))

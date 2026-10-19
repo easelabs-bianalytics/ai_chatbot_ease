@@ -19,7 +19,26 @@ MAX_LINHAS_NA_TABELA = 12
 MAX_CARACTERES_POR_MENSAGEM = 3500
 
 
+_BLOCO_DE_CODIGO = re.compile(r"```[a-z]*\n(.*?)```", re.DOTALL)
+
+
 def de_markdown(texto: str) -> str:
+    """O bloco de código (a consulta que a pessoa pediu, 2026-10-19) passa
+    intacto: dentro dele `||` não é tabela nem `*` é itálico. O WhatsApp
+    mostra ``` como monoespaçado, mas escreveria o "sql" de ```sql."""
+    texto = texto or ""
+    if not _BLOCO_DE_CODIGO.search(texto):
+        return _de_markdown_sem_codigo(texto)
+    partes, inicio = [], 0
+    for bloco in _BLOCO_DE_CODIGO.finditer(texto):
+        partes.append(_de_markdown_sem_codigo(texto[inicio:bloco.start()]))
+        partes.append("```\n" + bloco.group(1).strip("\n") + "\n```")
+        inicio = bloco.end()
+    partes.append(_de_markdown_sem_codigo(texto[inicio:]))
+    return "\n\n".join(p for p in partes if p)
+
+
+def _de_markdown_sem_codigo(texto: str) -> str:
     linhas = []
     for linha in (texto or "").splitlines():
         linha = re.sub(r"^(\s*)[-*+]\s+", r"\1• ", linha)
@@ -140,6 +159,20 @@ def _data(valor: str) -> str:
     return f"{data} {iso[4]}:{iso[5]}" if iso[4] else data
 
 
+def _blocos_de_codigo(bloco: str) -> list:
+    linhas = bloco[3:-3].strip("\n").split("\n")
+    limite = MAX_CARACTERES_POR_MENSAGEM - 8
+    blocos, atual = [], []
+    for linha in linhas:
+        linha = linha[:limite]
+        if atual and len("\n".join(atual + [linha])) > limite:
+            blocos.append(atual)
+            atual = []
+        atual.append(linha)
+    blocos.append(atual)
+    return ["```\n" + "\n".join(b) + "\n```" for b in blocos]
+
+
 def dividir(texto: str) -> list:
     """Em partes de até MAX_CARACTERES_POR_MENSAGEM, cortadas em parágrafo."""
     if len(texto) <= MAX_CARACTERES_POR_MENSAGEM:
@@ -152,6 +185,13 @@ def dividir(texto: str) -> list:
             continue
         if atual:
             partes.append(atual)
+        if paragrafo.startswith("```") and paragrafo.endswith("```"):
+            # Consulta longa (o painel MS5 tem ~4 mil caracteres): cortada em
+            # linha inteira, cada pedaço no seu bloco, para o monoespaçado
+            # não abrir numa mensagem e fechar na outra.
+            *pedacos, atual = _blocos_de_codigo(paragrafo)
+            partes.extend(pedacos)
+            continue
         while len(paragrafo) > MAX_CARACTERES_POR_MENSAGEM:
             partes.append(paragrafo[:MAX_CARACTERES_POR_MENSAGEM])
             paragrafo = paragrafo[MAX_CARACTERES_POR_MENSAGEM:]

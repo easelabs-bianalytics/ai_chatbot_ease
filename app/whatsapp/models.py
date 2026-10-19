@@ -11,6 +11,7 @@ import re
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.db import models, transaction
 
 
@@ -46,17 +47,42 @@ class ContatoWhatsApp(models.Model):
         verbose_name = "contato do WhatsApp"
         verbose_name_plural = "contatos do WhatsApp"
 
+    def clean(self):
+        """Número de celular com DDI e DDD: 12 ou 13 dígitos.
+
+        Em 2026-10-19 o cadastro de um CEO foi salvo com o nome no campo do
+        número: sem dígitos, o número ficou vazio, o usuário técnico virou
+        `whatsapp-novo` e o contato nunca casaria com mensagem nenhuma."""
+        super().clean()
+        digitos = so_digitos(self.numero)
+        if not 12 <= len(digitos) <= 13:
+            raise ValidationError({"numero": (
+                f"'{self.numero}' tem {len(digitos)} dígitos. Use DDI + DDD + número, como 5531999998888."
+            )})
+
     def save(self, *args, **kwargs):
         self.numero = so_digitos(self.numero)
         with transaction.atomic():
             if self.user_id is None:
                 User = get_user_model()
                 primeiro, _, sobrenome = (self.nome or "").strip().partition(" ")
-                tecnico = User(username=f"whatsapp-{self.numero[:40] or 'novo'}", is_active=True,
-                               first_name=primeiro[:150], last_name=sobrenome[:150])
-                # Sem senha e sem e-mail: ninguém entra com ele no chat web.
-                tecnico.set_unusable_password()
-                tecnico.save()
+                # O usuário técnico de um número que já foi cadastrado e
+                # apagado continua no banco (apagar o contato não apaga o
+                # usuário, nem as conversas dele). Recadastrar o número criava
+                # outro com o mesmo username, e o Admin dava erro 500
+                # (2026-10-19, os dois CEOs). Agora ele é reaproveitado, com
+                # o histórico de conversas.
+                tecnico, novo = User.objects.get_or_create(
+                    username=f"whatsapp-{self.numero[:40] or 'novo'}",
+                    defaults={"is_active": True, "first_name": primeiro[:150], "last_name": sobrenome[:150]},
+                )
+                if novo:
+                    # Sem senha e sem e-mail: ninguém entra com ele no chat web.
+                    tecnico.set_unusable_password()
+                    tecnico.save(update_fields=["password"])
+                elif primeiro:
+                    tecnico.first_name, tecnico.last_name = primeiro[:150], sobrenome[:150]
+                    tecnico.save(update_fields=["first_name", "last_name"])
                 self.user = tecnico
             super().save(*args, **kwargs)
 

@@ -24,6 +24,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import SimpleNamespace
 
+from django.utils import timezone
+
 from ai_orchestrator import ajuste_grafico, autocritica, budget, canned, limites, progresso, resumo
 from ai_orchestrator.context import MAX_PASSOS_POR_RODADA, MAX_RODADAS, PEDIDO_DE_SECAO, secoes_do_pedido
 from ai_orchestrator.grounding import _tem_suporte, check_grounding, check_grounding_varias, numeros_do_texto
@@ -42,7 +44,7 @@ from ai_orchestrator.providers.base import (
 from ai_orchestrator.providers.fake import FakeAIProvider
 from ai_orchestrator.prompts import PROMPT_VERSION
 from ai_orchestrator import saldo, vega
-from ai_orchestrator.rules import apply_rules, arquivo_a_seguir
+from ai_orchestrator.rules import apply_rules, arquivo_a_seguir, pedido_da_consulta
 from attachments import anexo_sql, deposito, planilha as planilha_anexada, qa as conferencia_da_planilha
 from attachments import imagem as imagem_anexada, transcricao as transcricao_do_print
 from attachments.limites import SEGUNDOS_DA_PLANILHA_NA_CONVERSA, SEGUNDOS_DA_SAIDA, AnexoRecusado
@@ -2874,6 +2876,53 @@ def _interrompida() -> _Decisao:
     )
 
 
+CONSULTAS_NO_PEDIDO_DA_QUERY = 3
+
+
+def _consulta_da_ultima_resposta(message) -> _Decisao:
+    """O SQL que sustentou a última resposta com dado da conversa, sem IA e
+    sem rodar nada de novo.
+
+    Em 2026-10-19 o diretor mandou "query sql" no WhatsApp: o planejador
+    rodou a consulta de novo (US$ 0,02) e a resposta disse que ela estava no
+    bloco "Consulta executada", que só existe na web. Aqui vai o texto da
+    consulta, como foi executada, na própria mensagem."""
+    rodadas = (
+        QueryRun.objects.filter(
+            ai_reply__message__conversation=message.conversation,
+            ai_reply__message__id__lt=message.id,
+            status=QueryRun.Status.SUCCESS,
+        )
+        .select_related("ai_reply__message")
+        .order_by("-ai_reply__message__id", "attempt")
+    )
+    primeira = rodadas.first()
+    if primeira is None:
+        return _Decisao(
+            decision=AIReply.Decision.CONVERSATION, rule="pedido_da_consulta",
+            reply=("Ainda não rodei nenhuma consulta nesta conversa. Faça a pergunta e, depois da "
+                   "resposta, peça a query que eu mando o SQL que usei."),
+        )
+    pergunta = primeira.ai_reply.message
+    da_resposta = [r for r in rodadas if r.ai_reply_id == primeira.ai_reply_id][:CONSULTAS_NO_PEDIDO_DA_QUERY]
+    quando = timezone.localtime(pergunta.created_at).strftime("%d/%m às %H:%M")
+    resumo_da_pergunta = " ".join(pergunta.content.split())
+    if len(resumo_da_pergunta) > 120:
+        resumo_da_pergunta = resumo_da_pergunta[:117] + "..."
+    partes = [
+        f"{'Esta é a consulta' if len(da_resposta) == 1 else 'Estas são as consultas'} da resposta a "
+        f"“{resumo_da_pergunta}” ({quando}), como foi executada no banco:"
+    ]
+    for indice, rodada in enumerate(da_resposta, start=1):
+        titulo = f"**Consulta {indice}**\n\n" if len(da_resposta) > 1 else ""
+        partes.append(f"{titulo}```sql\n{rodada.sql.strip()}\n```")
+    return _Decisao(
+        decision=AIReply.Decision.CONVERSATION, rule="pedido_da_consulta",
+        reply="\n\n".join(partes),
+        raw={"consultas_de": pergunta.id, "query_runs": [r.id for r in da_resposta]},
+    )
+
+
 def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
     if foi_interrompida(message):
         # Parada enquanto esperava na fila: nada foi chamado, nada foi gasto.
@@ -2896,6 +2945,9 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
         return _Decisao(
             decision=regra.decision, reply=regra.reply, rule=regra.rule
         )
+
+    if pedido_da_consulta(message.content) and not message.anexo_tipo:
+        return _consulta_da_ultima_resposta(message)
 
     # O print do gráfico que o Jarvis acabou de mandar segue como texto, e o
     # ajuste sem consulta ainda vale para ele.

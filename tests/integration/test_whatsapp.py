@@ -405,6 +405,36 @@ def test_admin_cadastra_contato_so_com_o_numero(admin_client):
     assert ContatoWhatsApp.objects.get().user.username == "whatsapp-5531988887777"
 
 
+def test_admin_recadastra_numero_apagado_sem_erro(admin_client):
+    """2026-10-19: o contato de um CEO foi apagado e cadastrado de novo. O
+    usuário técnico tinha ficado no banco, o save tentou criar outro com o
+    mesmo username e o Admin dava erro 500. Agora o usuário (e as conversas
+    dele) é reaproveitado."""
+    ContatoWhatsApp.objects.create(numero="5531999050180", nome="Guilherme Mendes").delete()
+
+    resposta_http = admin_client.post("/admin/whatsapp/contatowhatsapp/add/", {
+        "numero": "5531999050180", "nome": "Guilherme Mendes", "user": "", "ativo": "on", "observacao": "CEO",
+    })
+
+    assert resposta_http.status_code == 302, resposta_http.content.decode()[:500]
+    contato = ContatoWhatsApp.objects.get()
+    assert contato.user.username == "whatsapp-5531999050180"
+    assert (contato.user.first_name, contato.user.last_name) == ("Guilherme", "Mendes")
+
+
+def test_admin_recusa_numero_sem_digitos_suficientes(admin_client):
+    """2026-10-19: o nome foi digitado no campo do número; sem dígitos, o
+    contato ficou com número vazio e usuário `whatsapp-novo`, e nunca
+    casaria com mensagem nenhuma. O formulário agora explica o erro."""
+    resposta_http = admin_client.post("/admin/whatsapp/contatowhatsapp/add/", {
+        "numero": "Gustavo Palhares", "nome": "5531996261688", "user": "", "ativo": "on", "observacao": "",
+    })
+
+    assert resposta_http.status_code == 200
+    assert "DDI + DDD" in resposta_http.content.decode()
+    assert not ContatoWhatsApp.objects.exists()
+
+
 # ------------------------------------------------------------ @lid aprendido
 
 
