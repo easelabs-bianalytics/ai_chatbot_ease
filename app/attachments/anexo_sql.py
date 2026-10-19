@@ -228,6 +228,9 @@ class ExecutorComAnexo(QueryExecutor):
     def interno(self) -> QueryExecutor:
         return self._interno
 
+    def valores_cadastrados(self, chave: str, sql: str) -> tuple:
+        return self._interno.valores_cadastrados(chave, sql)
+
     def run(self, sql: str, max_rows: int | None = None, params=None):
         expandido, parametros = expandir(sql, self._disponiveis)
         if parametros is None:

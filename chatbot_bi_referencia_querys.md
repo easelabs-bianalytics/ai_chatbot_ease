@@ -25,6 +25,10 @@ usuário escreveu, não acha nenhum dos dois. O mesmo vale para rede (`PAGUE MEN
 cidade (`cddd.utc.cidade` é sem acento) e produto. Se o pedaço trouxer mais de um, **mostre os que
 encontrou e pergunte qual**; não escolha por conta própria.
 
+**Cidade e representante são conferidos contra o cadastro antes de rodar**: `'%CUIBA%'` ("cuibá")
+pega CARAPICUIBA (SP), não CUIABA (conversa 118). Recusada, use o nome exato indicado, com `=` e a
+UF; traga cidade e UF na saída. Nunca reaproveite o filtro de nome de consulta anterior da conversa.
+
 **Nome de representante é `cddd.forca_vendas.desc_territorio`, e só ali.** Qualquer pergunta
 "por representante" — venda, visita, prescrição, cobertura — traz o nome dessa coluna, ligada pelo
 `cod_territorio` (texto na `forca_vendas`, inteiro na `vw_sell_out`: `s.cod_territorio::text`).
@@ -126,6 +130,10 @@ consulta pronta — a B33 faz isso no mercado, não na prescrição. O caminho:
 **Períodos.** MAT = os 12 meses fechados até o último mês com carga (`MAT Ago/26` = set/25 a
 ago/26). Pedido de MAT que ainda não fechou: use o último MAT completo e diga qual período usou e
 por quê. Trimestre, mês e YTD seguem a mesma lógica: nunca complete meses que não têm carga.
+
+**"Últimos N meses" = N meses do calendário** até o último com carga, um por linha e o total (carga
+até 16/10: ago, set e out/26, out parcial e dito). Nunca 90 dias corridos: é outro número para a
+mesma pergunta (conversas 119 × 120). Dias, só se o usuário falar em dias.
 
 ---
 

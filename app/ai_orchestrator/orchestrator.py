@@ -57,7 +57,8 @@ from datasource.executors.base import (
 )
 from datasource.executors.fake import FakeQueryExecutor
 from datasource.models import QueryRun
-from datasource.sql_guard import validate_sql
+from datasource.conferencia_de_nomes import conferir as conferir_nomes
+from datasource.sql_guard import GuardResult, validate_sql
 from messaging.channels.fake import FakeChannel
 from messaging.models import ArquivoDaConversa, Message
 from messaging.services import deliver_reply
@@ -311,13 +312,23 @@ def _planilha(message) -> str:
     return message.anexo_resumo
 
 
-def _validar(sql, catalog, message, max_rows):
+def _validar(sql, catalog, message, max_rows, executor=None):
     """O validador, com as tabelas da planilha anexada liberadas (ADR-0031).
 
     Um lugar só: toda consulta desta resposta — a principal, a correção, a
     verificação do vazio, as hipóteses, as entregas e o preenchimento — pode
-    citar `anexo.<aba>`, e nenhuma pode citar aba que não existe."""
-    return validate_sql(sql, catalog, max_rows=max_rows, anexo=getattr(message, "tabelas_do_anexo", None) or ())
+    citar `anexo.<aba>`, e nenhuma pode citar aba que não existe.
+
+    Com o executor, os filtros de nome (cidade, representante) são
+    conferidos contra o cadastro: `'%CUIBA%'` pega CARAPICUIBA, e a
+    consulta rodava sem erro com os números da cidade errada (conversa 118,
+    2026-10-19). A recusa traz os nomes certos para a correção."""
+    guard = validate_sql(sql, catalog, max_rows=max_rows, anexo=getattr(message, "tabelas_do_anexo", None) or ())
+    if guard.approved and executor is not None and catalog.name_checks:
+        motivo = conferir_nomes(sql, catalog.name_checks, executor)
+        if motivo:
+            return GuardResult(approved=False, reason=motivo)
+    return guard
 
 
 def _preparar_planilha(message, executor, auditoria):
@@ -365,7 +376,7 @@ def _executar_com_correcao(plano, message, provider, executor, catalog, auditori
     primeira = tentativa = len(auditoria.consultas) + 1
     while True:
         limite = _limite_de_linhas(plano, catalog)
-        guard = _validar(plano.sql, catalog, message, limite)
+        guard = _validar(plano.sql, catalog, message, limite, executor)
 
         if not guard.approved:
             auditoria.consulta(
@@ -472,7 +483,7 @@ def _verificar_o_vazio(message, provider, executor, catalog, auditoria, historic
         return None, plano
 
     tentativa = len(auditoria.consultas) + 1
-    guard = _validar(plano.sql, catalog, message, catalog.max_rows)
+    guard = _validar(plano.sql, catalog, message, catalog.max_rows, executor)
     if not guard.approved:
         auditoria.consulta(
             attempt=tentativa,
@@ -1385,7 +1396,7 @@ def _resultado_para_a_planilha(item, message, executor, catalog, auditoria, ja_e
     pronto = ja_executadas.get(item["sql"])
     if pronto is not None and not pronto.truncated:
         return pronto
-    guard = _validar(item["sql"], catalog, message, LINHAS_DO_PREENCHIMENTO)
+    guard = _validar(item["sql"], catalog, message, LINHAS_DO_PREENCHIMENTO, executor)
     if not guard.approved:
         logger.warning("Consulta da planilha recusada pelo validador: %s", guard.reason)
         return f"a consulta foi recusada pelo validador ({guard.reason})"
@@ -1896,7 +1907,7 @@ def _testar_hipotese(passo, rodada, message, executor, catalog, auditoria,
     }
 
     limite = limite or catalog.max_rows
-    guard = _validar(passo["sql"], catalog, message, limite)
+    guard = _validar(passo["sql"], catalog, message, limite, executor)
     if not guard.approved:
         auditoria.consulta(
             **registro,
@@ -3092,6 +3103,15 @@ def _processar(message, provider, executor, catalog, auditoria) -> _Decisao:
         )
 
     if resultado is None:
+        if plano.intent == Plan.Intent.CLARIFY and plano.clarification_question:
+            # A correção decidiu perguntar: a conferência dos nomes mostrou
+            # que o nome pega mais de uma cidade ou representante, e só o
+            # usuário sabe qual (regra "pergunte qual" do documento).
+            return _Decisao(
+                decision=AIReply.Decision.CLARIFY,
+                reply=plano.clarification_question,
+                raw={"reason": plano.reason, "erro": erro, **_deixar_planilha_pendente(message)},
+            )
         if plano.intent == Plan.Intent.UNKNOWN:
             return _Decisao(
                 decision=AIReply.Decision.UNKNOWN,

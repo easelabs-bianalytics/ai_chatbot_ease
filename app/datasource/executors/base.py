@@ -81,3 +81,23 @@ class QueryExecutor(ABC):
         eles entram como parâmetro do driver, nunca colados no SQL. Nenhum
         outro caminho passa parâmetro.
         """
+
+    # Cadastro lido para a conferência dos filtros de nome, por coluna: muda
+    # pouco (PDV e brick novos entram na carga), e reler a cada pergunta
+    # custaria uma consulta a mais em toda resposta com cidade.
+    _cadastros: dict = {}
+    SEGUNDOS_DO_CADASTRO = 6 * 3600
+    LINHAS_DO_CADASTRO = 50_000
+
+    def valores_cadastrados(self, chave: str, sql: str) -> tuple:
+        """Os valores de uma coluna de nome do cadastro (`conferencia_de_nomes`),
+        guardados por algumas horas. `sql` é montado pelo catálogo, nunca
+        pela IA."""
+        import time
+
+        guardado = QueryExecutor._cadastros.get(chave)
+        if guardado and guardado[0] > time.monotonic():
+            return guardado[1]
+        linhas = self.run(sql, max_rows=self.LINHAS_DO_CADASTRO).rows
+        QueryExecutor._cadastros[chave] = (time.monotonic() + self.SEGUNDOS_DO_CADASTRO, linhas)
+        return linhas

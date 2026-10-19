@@ -82,6 +82,23 @@ limites:
   timeout_ms: 60000
   linhas_para_o_modelo: 50
 
+# Filtros de nome conferidos contra o cadastro antes de a consulta rodar
+# (datasource/conferencia_de_nomes.py). Em 2026-10-19 (conversa 118) o
+# diretor escreveu "cuibá", a IA filtrou cidade ILIKE '%CUIBA%' — que pega
+# CARAPICUIBA (SP), não CUIABA — e respondeu os números de Carapicuíba como
+# Cuiabá. Filtro que não pega nenhum nome, pega vários, pega um nome que não
+# é o escrito ou cidade de nome repetido em outra UF sem filtrar a UF vira
+# recusa com os nomes certos, para a correção única.
+nomes_conferidos:
+  - coluna: cddd.pdvs.cidade
+    uf: uf
+    rotulo: cidade
+  - coluna: cddd.utc.cidade
+    uf: uf
+    rotulo: cidade
+  - coluna: cddd.forca_vendas.desc_territorio
+    rotulo: representante
+
 # As regras de negócio (unidades ×1000, filtros do Sell Out, grupos do TDD)
 # estão no documento de referência. Aqui só o que não está lá.
 dicionario: []

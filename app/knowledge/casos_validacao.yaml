@@ -813,6 +813,27 @@ casos:
     parametros: {cod_utc: 52087070325}
     nota: Conta a partir da data máxima da base, não de hoje.
 
+  - id: X-cidade-digitada-errada
+    grupo: cruzado
+    pergunta: qual a venda sell-out de cuibá nos ultimos 3 meses?
+    esperado: answer_with_data
+    sql_deve_conter: ["CUIABA"]
+    sql_nao_deve_conter: ["CUIBA'", "CUIBA%", "90 days"]
+    comparar_resultado: false
+    nota: >-
+      Conversa 118 (2026-10-19): '%CUIBA%' pegava CARAPICUIBA (SP) e o diretor recebeu os números
+      de Carapicuíba. A conferência dos nomes recusa e a correção usa CUIABA (MT); "últimos 3
+      meses" são ago, set e out/26 (meses do calendário), nunca 90 dias.
+
+  - id: X-cidade-ultimos-3-meses
+    grupo: cruzado
+    pergunta: Quantas unidades a Ease vendeu em Cuiabá nos últimos três meses?
+    esperado: answer_with_data
+    sql_deve_conter: ["CUIAB"]
+    sql_nao_deve_conter: ["90 days"]
+    comparar_resultado: false
+    nota: Conversa 120 usou 90 dias corridos (69 un) e a 119 os meses do calendário (65 un); vale a 119.
+
   - id: B16-top10-ademilson
     grupo: referencia
     pergunta: Quais as 10 cidades com mais unidades Ease dispensadas no território do Ademilson no último trimestre?

@@ -20,6 +20,7 @@ from pathlib import Path
 import yaml
 
 from catalog.errors import CatalogError
+from datasource.conferencia_de_nomes import NomeConferido
 from catalog.snapshot import DEFAULT_SNAPSHOT_PATH
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -60,6 +61,9 @@ class Catalog:
     schema_text: str = ""
     # Schemas previstos que ainda não existem no banco (ex.: metas).
     future_schemas: frozenset = frozenset()
+    # Colunas de nome cujos filtros são conferidos contra o cadastro antes
+    # de rodar (`datasource/conferencia_de_nomes.py`).
+    name_checks: tuple = ()
 
     def blocked_columns_for(self, table: str) -> frozenset:
         return self.blocked_columns.get(table.lower(), frozenset())
@@ -155,7 +159,21 @@ def build_catalog(dados: dict, references_text: str, hash_: str, schema_text: st
         hash=hash_,
         schema_text=schema_text,
         future_schemas=frozenset(str(s).lower() for s in dados.get("schemas_futuros") or []),
+        name_checks=_nomes_conferidos(dados.get("nomes_conferidos") or []),
     )
+
+
+def _nomes_conferidos(itens) -> tuple:
+    conferidos = []
+    for item in itens:
+        partes = str(item["coluna"]).lower().split(".")
+        if len(partes) != 3:
+            raise CatalogError(f"nome conferido sem schema.tabela.coluna: {item['coluna']!r}")
+        conferidos.append(NomeConferido(
+            tabela=f"{partes[0]}.{partes[1]}", coluna=partes[2],
+            uf=str(item.get("uf") or "").lower(), rotulo=str(item.get("rotulo") or "nome"),
+        ))
+    return tuple(conferidos)
 
 
 def load_catalog(

@@ -21,10 +21,16 @@ VAZIO = make_result(("valor",), [])
 
 
 class FakeQueryExecutor(QueryExecutor):
-    def __init__(self, resultados=None):
+    def __init__(self, resultados=None, cadastro=None):
         """`resultados` são consumidos em ordem, um por execução. Um item que
-        seja exceção é levantado, o que é como se programa uma falha."""
+        seja exceção é levantado, o que é como se programa uma falha.
+
+        `cadastro`: as linhas de cada coluna de nome conferida
+        (`{"cddd.pdvs.cidade": [("CUIABA", "MT"), ...]}`). Sem ele a
+        conferência dos nomes não acha cadastro e deixa passar — os testes
+        que não são dela não gastam resultado programado com isso."""
         self._resultados = list(resultados or [])
+        self._cadastro = dict(cadastro or {})
         self.executed = []
         # Parâmetros de cada execução (None sem planilha anexada), na ordem.
         self.params = []
@@ -43,3 +49,6 @@ class FakeQueryExecutor(QueryExecutor):
         if isinstance(proximo, Exception):
             raise proximo
         return proximo
+
+    def valores_cadastrados(self, chave: str, sql: str) -> tuple:
+        return tuple(tuple(linha) for linha in self._cadastro.get(chave, ()))

@@ -204,8 +204,9 @@ def test_do_terceiro_tema_em_diante_vai_o_resumo(catalogo):
     # 38,2 mil com a meta em unidades pelo ticket médio (MS1–MS3) e o painel MS6;
     # 38,4 mil com a regra das duas fontes (sell out na meta × realizado, TD no share);
     # 38,9 mil com o faturamento Ease por CT × SKU × mês (B04, B05, B06, MS2, MS3), o validado;
-    # 39,3 mil com a regra "Ease do TD só no share" e o Sell Out na tabela da MS5 e MS6 (conversa 107).
-    assert contexto.tokens_estimados < 39300
+    # 39,3 mil com a regra "Ease do TD só no share" e o Sell Out na tabela da MS5 e MS6 (conversa 107);
+    # 39,4 mil com as regras de nome conferido e de "últimos N meses" no núcleo (conversa 118).
+    assert contexto.tokens_estimados < 39400
 
 
 def test_schema_vai_filtrado_pelas_tabelas_do_tema(catalogo):
@@ -232,7 +233,10 @@ def test_sem_tema_reconhecido_vai_so_o_nucleo(catalogo):
     # 4 mil com a regra do CRM LINK (2026-10-01, ADR-0032): ~250 tokens, no
     # prefixo que o cache reaproveita. É pedido do Rubens que ela vá em toda
     # pergunta: o médico liga entre bases por UF + CRM, nunca pelo número.
-    assert contexto.tokens_estimados < 4000
+    # 4,1 mil com a conferência de cidade e representante e os "últimos N
+    # meses" (2026-10-19, conversas 118 a 120): ~80 tokens, vão em toda
+    # pergunta porque cidade e período aparecem em todos os temas.
+    assert contexto.tokens_estimados < 4100
 
 
 def test_segunda_tentativa_pede_o_documento_inteiro(catalogo):
@@ -252,8 +256,9 @@ def test_contexto_da_resposta_nao_leva_o_documento(catalogo):
     assert "```sql" not in contexto.texto
     # Era 1,5 mil; subiu com o preâmbulo (ver o teste do núcleo acima).
     # 2,3 mil com a regra do CRM LINK (2026-10-01); 2,35 mil com os títulos
-    # das seções 8 e 9 no índice (2026-10-09).
-    assert contexto.tokens_estimados < 2350
+    # das seções 8 e 9 no índice (2026-10-09); 2,46 mil com as regras de
+    # nome conferido e "últimos N meses" (2026-10-19).
+    assert contexto.tokens_estimados < 2460
     assert "ainda não está disponível" in contexto.texto
 
 
