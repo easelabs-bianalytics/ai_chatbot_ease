@@ -2505,3 +2505,20 @@ cita meta e realizado na mesma frase, com "R$", e só fala de unidades quando a 
 `cockpit-prod-jarvis:59`, bump `a88b3e6` mesclado na `main` do `sales_force_crm` (`503590e`). A troca do
 botão da tela pela planilha anexada (2026-09-25) só aceitava aspas; o Jarvis escreve o botão em negrito,
 e as 12 respostas de WhatsApp que o citaram (24/09 a 09/10, conversa 90 entre elas) chegaram com ele.
+
+### Filtro de cidade e representante conferido contra o cadastro (2026-10-19)
+
+**No ar em 2026-10-19:** imagem `f894e32`, task `cockpit-prod-jarvis:60`, bump `24c4a65` mesclado na
+`main` do `sales_force_crm` (`bf043c7`).
+
+- **Conversa 118 (Fernando):** "cuibá" virou `pdvs.cidade ILIKE '%CUIBA%'`, que pega CARAPICUIBA (SP);
+  a resposta deu 1, 2 e 1 un de Carapicuíba como Cuiabá, e as perguntas seguintes copiaram a consulta
+  do histórico. `datasource/conferencia_de_nomes.py` confere todo filtro de nome das colunas de
+  `nomes_conferidos` (cidade de `pdvs` e `utc`, `forca_vendas.desc_territorio`) contra o cadastro e
+  recusa, com os nomes certos para a correção, filtro que não pega nenhum nome, pega vários, pega um
+  que não é o escrito, ou cidade de nome repetido sem UF.
+- **Conversa 120 (Paulo):** "últimos três meses" virou 90 dias corridos (69 un, molde da B15); a
+  regra nova diz meses do calendário (ago a out/26, 65 un, como a 119).
+- Modelo real: "cuibá" e "últimos três meses" deram CUIABA (MT), 65 un. Suíte: 1.325.
+- **Pendente:** "me mande a query" / "query sql" ainda roda a consulta de novo e, no WhatsApp, aponta
+  para um bloco "Consulta executada" que só existe na web.
