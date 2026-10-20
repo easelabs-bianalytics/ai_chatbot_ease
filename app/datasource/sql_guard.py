@@ -20,6 +20,7 @@ import sqlglot
 from sqlglot import exp
 
 from catalog.loader import Catalog
+from datasource import filtros_obrigatorios
 
 DIALETO = "postgres"
 
@@ -340,6 +341,10 @@ def validate_sql(sql: str, catalog: Catalog, max_rows: int | None = None, anexo=
             catalog.blocked_function_prefixes
         ):
             return _recusa(f"a função {nome}() não é permitida")
+
+    motivo = filtros_obrigatorios.conferir(arvore, getattr(catalog, "required_filters", ()))
+    if motivo:
+        return _recusa(motivo)
 
     limite = catalog.max_rows if max_rows is None else max_rows
     return GuardResult(approved=True, sql=_aplicar_limite(_round_com_numeric(texto), limite))

@@ -4965,7 +4965,7 @@ jan/2023 (conferido em 2026-10-09).
 | Coluna | O que é |
 |---|---|
 | `"DT EMISSÃO"` | Data de emissão da nota — **é a data do Sell In**. Há também `"Dt Registro"` e `"Dt Process."` |
-| `"Utilização"` | Natureza da operação: `Venda` e `Venda - PBM` — **as duas são Sell In** (ver as regras) |
+| `"Utilização"` | Natureza da operação: só `Venda` e `Venda - PBM` são Sell In — **filtro obrigatório** (ver as regras) |
 | `"Entidade"` · `"CpfCnpj"` | Cliente que comprou (razão social e CNPJ) |
 | `"Cidade"` · `"Estado"` | Onde está o cliente |
 | `"NFe"` · `"#NFe"` | Número da nota |
@@ -4979,18 +4979,15 @@ jan/2023 (conferido em 2026-10-09).
 reservada (`"$T"`, `"DT EMISSÃO"`, `"Utilização"`, `"Quant"`).
 
 Período coberto, antes de responder:
-`SELECT min("DT EMISSÃO")::date, max("DT EMISSÃO")::date, count(*) FROM estoque_redes.fato_sell_in;`
+`SELECT min("DT EMISSÃO")::date, max("DT EMISSÃO")::date, count(*) FROM estoque_redes.fato_sell_in WHERE "Utilização" IN ('Venda', 'Venda - PBM');`
 
 ### 8.2 Regras
 
-- **Faturamento de Sell In = `SUM("$T")` de TODAS as linhas da `fato_sell_in`, sem filtro de
-  natureza.** `Venda` e `Venda - PBM` (desde abr/2026) são, as duas, Sell In da Ease: **nunca filtre
-  `"Utilização"` por conta própria.** Separe por natureza só quando o usuário pedir ("só Venda",
-  "quanto foi PBM") — e aí mostre as duas em colunas, dizendo qual é qual. Decisão do Rubens em
-  2026-10-13 (conversa 93: o filtro `= 'Venda'` deixou o PBM de fora e o faturamento saiu menor).
-  A consulta de faturamento mês a mês é a SI1, e ela é o gabarito:
-  `SELECT TO_CHAR(DATE_TRUNC('month', "DT EMISSÃO"::date), 'YYYY-MM') AS mes, SUM("$T") AS faturamento
-  FROM estoque_redes.fato_sell_in GROUP BY 1 ORDER BY 1 DESC`.
+- **Sell In realizado = só `"Utilização" IN ('Venda', 'Venda - PBM')`, em TODA consulta** (Rubens, 2026-10-20):
+  as próximas cargas trarão outros tipos de utilização (devolução, bonificação, remessa), que não
+  são venda. O filtro vai no WHERE de cada uso da tabela, inclusive em CTE e subconsulta; o
+  validador recusa a consulta sem ele. Nunca só `= 'Venda'`: deixa o PBM de fora (conversa 93).
+  Separe Venda × PBM só quando o usuário pedir, em colunas. A SI1 é o gabarito do mês a mês.
 - **Fature por `"$T"`, nunca por `"$T NFe"`.** O total da nota se repete em todas as linhas dela:
   somado, dá 2,1 vezes o faturamento real (conferido em 2026-10-09).
 - **Unidades: `"Quant"`.** Sem divisão por 1000 — esta base não é o painel de mercado.
@@ -5012,6 +5009,7 @@ SELECT TO_CHAR(DATE_TRUNC('month', "DT EMISSÃO"::date), 'YYYY-MM') AS mes,
        ROUND(SUM("Quant")::numeric)     AS unidades,
        COUNT(DISTINCT "NFe")            AS notas
 FROM estoque_redes.fato_sell_in
+WHERE "Utilização" IN ('Venda', 'Venda - PBM')
 GROUP BY 1
 ORDER BY 1 DESC;
 ```
@@ -5026,6 +5024,7 @@ SELECT "Nome" AS produto,
        ROUND((SUM("$T")/NULLIF(SUM("Quant"), 0))::numeric, 2) AS preco_medio
 FROM estoque_redes.fato_sell_in
 WHERE "DT EMISSÃO" >= :data_ini
+  AND "Utilização" IN ('Venda', 'Venda - PBM')
 GROUP BY 1
 ORDER BY faturamento DESC;
 ```
@@ -5040,6 +5039,7 @@ SELECT "Entidade" AS cliente,
        ROUND(SUM("$T")::numeric, 2) AS faturamento
 FROM estoque_redes.fato_sell_in
 WHERE "DT EMISSÃO" >= :data_ini
+  AND "Utilização" IN ('Venda', 'Venda - PBM')
   -- AND "Entidade" ILIKE '%RAIA%'        -- um cliente específico
 GROUP BY 1
 ORDER BY faturamento DESC;
@@ -5054,6 +5054,7 @@ SELECT "Estado" AS uf,
        ROUND(100*SUM("$T")/SUM(SUM("$T")) OVER ()::numeric, 1) AS share_pct
 FROM estoque_redes.fato_sell_in
 WHERE "DT EMISSÃO" >= :data_ini
+  AND "Utilização" IN ('Venda', 'Venda - PBM')
 GROUP BY 1
 ORDER BY faturamento DESC;
 ```
@@ -5068,6 +5069,7 @@ somaria o atraso da carga a todos os clientes. Diga a data de corte na resposta.
 WITH corte AS (
   SELECT MAX("DT EMISSÃO")::date AS data_corte
   FROM estoque_redes.fato_sell_in
+  WHERE "Utilização" IN ('Venda', 'Venda - PBM')
 )
 SELECT f."Entidade" AS cliente,
        MAX(f."DT EMISSÃO")::date                      AS ultima_compra,
@@ -5077,6 +5079,7 @@ SELECT f."Entidade" AS cliente,
 FROM estoque_redes.fato_sell_in f
 CROSS JOIN corte c
 WHERE f."DT EMISSÃO"::date >= c.data_corte - INTERVAL '12 months'
+  AND f."Utilização" IN ('Venda', 'Venda - PBM')
 GROUP BY f."Entidade", c.data_corte
 ORDER BY dias_sem_comprar DESC;
 ```
@@ -5087,7 +5090,7 @@ ORDER BY dias_sem_comprar DESC;
 -- SI6 · Sell In contra Sell Out, em unidades, mês a mês
 WITH si AS (
   SELECT to_char(date_trunc('month', "DT EMISSÃO"), 'YYYY-MM') AS mes, SUM("Quant") AS un_sell_in
-  FROM estoque_redes.fato_sell_in GROUP BY 1
+  FROM estoque_redes.fato_sell_in WHERE "Utilização" IN ('Venda', 'Venda - PBM') GROUP BY 1
 ),
 so AS (
   SELECT to_char(date_trunc('month', date), 'YYYY-MM') AS mes,

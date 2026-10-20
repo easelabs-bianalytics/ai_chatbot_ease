@@ -1955,12 +1955,13 @@ casos:
     pergunta: Como evoluiu o Sell In realizado mês a mês, desde o começo da base?
     esperado: answer_with_data
     referencia: SI1
-    sql_deve_conter: ["fato_sell_in", "$T"]
-    sql_nao_deve_conter: ["Utilização", "$T NFe"]
+    sql_deve_conter: ["fato_sell_in", "$T", "Venda - PBM"]
+    sql_nao_deve_conter: ["$T NFe"]
     comparar_resultado: false
     nota: >-
-      Faturamento de Sell In soma todas as naturezas (Venda e Venda - PBM), por "$T" (nunca
-      "$T NFe", que dá 2,1×). Conversa 93 (2026-10-13): o filtro = 'Venda' deixou o PBM de fora.
+      Sell In realizado = "Utilização" IN ('Venda', 'Venda - PBM') (2026-10-20: novas cargas trarão
+      outros tipos), por "$T" (nunca "$T NFe", que dá 2,1×). Conversa 93: só 'Venda' deixava o PBM
+      de fora.
 
   - id: SI2-sell-in-por-produto
     grupo: referencia
@@ -1968,8 +1969,7 @@ casos:
     esperado: answer_with_data
     referencia: SI2
     parametros: {data_ini: "2026-01-01"}
-    sql_deve_conter: ["fato_sell_in", "Nome"]
-    sql_nao_deve_conter: ["Utilização"]
+    sql_deve_conter: ["fato_sell_in", "Nome", "Venda - PBM"]
 
   - id: SI3-sell-in-por-cliente
     grupo: referencia
@@ -1977,8 +1977,7 @@ casos:
     esperado: answer_with_data
     referencia: SI3
     parametros: {data_ini: "2026-01-01"}
-    sql_deve_conter: ["fato_sell_in", "Entidade"]
-    sql_nao_deve_conter: ["Utilização"]
+    sql_deve_conter: ["fato_sell_in", "Entidade", "Venda - PBM"]
 
   - id: SI4-sell-in-por-uf
     grupo: referencia
@@ -1986,7 +1985,7 @@ casos:
     esperado: answer_with_data
     referencia: SI4
     parametros: {data_ini: "2026-01-01"}
-    sql_deve_conter: ["fato_sell_in", "Estado"]
+    sql_deve_conter: ["fato_sell_in", "Estado", "Venda - PBM"]
     nota: A UF é a do cliente que comprou (CD em SP abastece o país), não demanda regional.
 
   - id: SI5-sell-in-quem-parou
@@ -1994,15 +1993,14 @@ casos:
     pergunta: Quais clientes pararam de comprar no Sell In?
     esperado: answer_with_data
     referencia: SI5
-    sql_deve_conter: ["fato_sell_in", "Entidade"]
-    sql_nao_deve_conter: ["Utilização"]
+    sql_deve_conter: ["fato_sell_in", "Entidade", "Venda - PBM"]
 
   - id: SI6-sell-in-contra-sell-out
     grupo: referencia
     pergunta: Estamos vendendo Sell In para as redes mais do que elas vendem de sell out?
     esperado: answer_with_data
     referencia: SI6
-    sql_deve_conter: ["fato_sell_in", "vw_sell_out"]
+    sql_deve_conter: ["fato_sell_in", "vw_sell_out", "Venda - PBM"]
     comparar_resultado: false
     nota: O mês pode vir como data ou como texto 'YYYY-MM'; os números são os mesmos.
 
@@ -2016,10 +2014,9 @@ casos:
     grupo: referencia
     pergunta: Quero ver a curva de faturamento sell in e faturamento sell out ease em 2026
     esperado: answer_with_data
-    sql_deve_conter: ["fato_sell_in", "$T", "vw_sell_out"]
-    sql_nao_deve_conter: ["Utilização"]
+    sql_deve_conter: ["fato_sell_in", "$T", "vw_sell_out", "Venda - PBM"]
     comparar_resultado: false
-    nota: Conversa 93 (2026-10-13), a pergunta exata; o Sell In entra com todas as naturezas.
+    nota: Conversa 93 (2026-10-13), a pergunta exata; o Sell In entra com Venda e Venda - PBM.
 
   - id: X-categoria-do-pdv-oferece-troca
     grupo: esclarecimento

@@ -21,6 +21,7 @@ import yaml
 
 from catalog.errors import CatalogError
 from datasource.conferencia_de_nomes import NomeConferido
+from datasource.filtros_obrigatorios import FiltroObrigatorio
 from catalog.snapshot import DEFAULT_SNAPSHOT_PATH
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -64,6 +65,9 @@ class Catalog:
     # Colunas de nome cujos filtros são conferidos contra o cadastro antes
     # de rodar (`datasource/conferencia_de_nomes.py`).
     name_checks: tuple = ()
+    # Filtros que toda consulta a certas tabelas tem de ter
+    # (`datasource/filtros_obrigatorios.py`): Sell In só Venda e Venda - PBM.
+    required_filters: tuple = ()
 
     def blocked_columns_for(self, table: str) -> frozenset:
         return self.blocked_columns.get(table.lower(), frozenset())
@@ -160,7 +164,22 @@ def build_catalog(dados: dict, references_text: str, hash_: str, schema_text: st
         schema_text=schema_text,
         future_schemas=frozenset(str(s).lower() for s in dados.get("schemas_futuros") or []),
         name_checks=_nomes_conferidos(dados.get("nomes_conferidos") or []),
+        required_filters=_filtros_obrigatorios(dados.get("filtros_obrigatorios") or []),
     )
+
+
+def _filtros_obrigatorios(itens) -> tuple:
+    filtros = []
+    for item in itens:
+        tabela = str(item["tabela"]).lower()
+        if "." not in tabela:
+            raise CatalogError(f"filtro obrigatório sem schema: {tabela!r}")
+        valores = tuple(str(v) for v in item.get("valores") or [])
+        if not valores:
+            raise CatalogError(f"filtro obrigatório de {tabela} sem valores")
+        filtros.append(FiltroObrigatorio(tabela=tabela, coluna=str(item["coluna"]), valores=valores,
+                                         motivo=" ".join(str(item.get("motivo") or "").split())))
+    return tuple(filtros)
 
 
 def _nomes_conferidos(itens) -> tuple:

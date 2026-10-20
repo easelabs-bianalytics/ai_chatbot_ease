@@ -99,6 +99,24 @@ nomes_conferidos:
   - coluna: cddd.forca_vendas.desc_territorio
     rotulo: representante
 
+# Filtros que toda consulta a estas tabelas tem de ter, em cada uso da tabela
+# (datasource/filtros_obrigatorios.py). Sell In realizado é só Venda e Venda -
+# PBM (Rubens, 2026-10-20): as próximas cargas trarão outros tipos de
+# utilização, que não podem entrar no faturamento.
+filtros_obrigatorios:
+  - tabela: estoque_redes.fato_sell_in
+    coluna: "Utilização"
+    valores: ["Venda", "Venda - PBM"]
+    motivo: >-
+      Sell In realizado é só Venda e Venda - PBM; outros tipos de utilização (devolução,
+      bonificação, remessa) não são venda. Para só um dos dois, filtre só ele.
+  - tabela: estoque_redes.vw_dados_sell_in
+    coluna: tipo_movimentacao
+    valores: ["Venda", "Venda - PBM"]
+    motivo: >-
+      Sell In realizado é só Venda e Venda - PBM (tipo_movimentacao é a "Utilização" da
+      fato_sell_in).
+
 # As regras de negócio (unidades ×1000, filtros do Sell Out, grupos do TDD)
 # estão no documento de referência. Aqui só o que não está lá.
 dicionario: []
