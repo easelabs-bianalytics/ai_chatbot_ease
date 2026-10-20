@@ -2534,3 +2534,16 @@ e as 12 respostas de WhatsApp que o citaram (24/09 a 09/10, conversa 90 entre el
 - CEOs cadastrados pelo ECS Exec com o código novo: Guilherme Mendes (`5531999050180`, contato 7,
   usuário técnico reaproveitado) e Gustavo Palhares (`5531996261688`, contato 8). Sobrou o usuário
   `whatsapp-novo` (id 12), do cadastro com o nome no campo do número, sem contato.
+
+### Sell In realizado só com Utilização = Venda ou Venda - PBM (2026-10-20)
+
+**No ar em 2026-10-20:** imagem `4e1a99c`, task `cockpit-prod-jarvis:62`, bump `a447a81` mesclado na
+`main` do `sales_force_crm` (`b8187a4`). A `feat/infra-jarvis` tinha divergido (o bump do forecast,
+`4d88825`, de outra sessão): `origin/main` mesclada nela sem conflito antes do plan.
+
+- `datasource/filtros_obrigatorios.py`, no `sql_guard`: toda consulta à `estoque_redes.fato_sell_in`
+  (e à `vw_dados_sell_in`, por `tipo_movimentacao`) precisa de `"Utilização" IN ('Venda', 'Venda -
+  PBM')` no WHERE de cada uso da tabela, como condição do AND; sem ele, recusa com o motivo.
+  Configuração em `catalog.yaml` (`filtros_obrigatorios`).
+- SI1 a SI6 e a consulta do período com o filtro; sai a regra "nunca filtre Utilização" (conversa
+  93). Hoje a base só tem as duas naturezas: os números não mudam. Suíte: 1.351.
